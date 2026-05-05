@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>I Have a Cause — Dashboard</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/js/all.min.js" defer></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #080808; --bg2: #0F0F0F; --bg3: #141414;
+      --border: #1C1C1C; --border2: #252525;
+      --text: #F0EBE1; --text2: #8A8580; --text3: #4A4845;
+      --green: #1DB954; --green-bg: rgba(29,185,84,0.08);
+      --red: #E5484D; --red-bg: rgba(229,72,77,0.08);
+      --amber: #F5A623; --amber-bg: rgba(245,166,35,0.08);
+      --blue: #4A90D9; --purple: #9B59B6;
+      --font-d: 'Syne', sans-serif;
+      --font-m: 'JetBrains Mono', monospace;
+    }
+    html, body { height: 100%; background: var(--bg); color: var(--text); font-family: var(--font-m); overflow: hidden; }
+    ::-webkit-scrollbar { width: 3px; } ::-webkit-scrollbar-thumb { background: var(--border2); }
+    button { cursor: pointer; font-family: var(--font-m); }
+    input, textarea { font-family: var(--font-m); }
+
+    /* ── Login ── */
+    #login-screen {
+      min-height: 100vh; display: flex; align-items: center; justify-content: center;
+      background: radial-gradient(ellipse at 50% 0%, #0D1F0D 0%, #080808 60%);
+    }
+    .login-box { width: 100%; max-width: 400px; padding: 20px; }
+    .login-logo { text-align: center; margin-bottom: 40px; }
+    .login-logo-sub { font-size: 11px; letter-spacing: 6px; color: var(--text3); text-transform: uppercase; margin-bottom: 12px; }
+    .login-logo-title { font-family: var(--font-d); font-size: 28px; font-weight: 800; line-height: 1.2; }
+    .login-card { background: var(--bg2); border: 1px solid var(--border); border-radius: 12px; padding: 32px; }
+    .login-desc { font-size: 13px; color: var(--text2); margin-bottom: 24px; line-height: 1.6; }
+    .login-input {
+      width: 100%; padding: 12px 14px; background: var(--bg3);
+      border: 1px solid var(--border2); border-radius: 6px; color: var(--text);
+      font-size: 13px; margin-bottom: 12px; outline: none; transition: border-color 0.2s;
+    }
+    .login-input:focus { border-color: var(--green); }
+    .login-btn {
+      width: 100%; padding: 12px; background: var(--green); color: #000;
+      border: none; border-radius: 6px; font-size: 12px; font-weight: 500;
+      letter-spacing: 1px; text-transform: uppercase; transition: opacity 0.2s;
+    }
+    .login-btn:disabled { opacity: 0.4; background: var(--bg3); color: var(--text3); }
+    .login-sent { text-align: center; }
+    .login-sent-icon { font-size: 32px; margin-bottom: 16px; }
+    .login-sent-title { font-family: var(--font-d); font-size: 16px; font-weight: 600; margin-bottom: 8px; }
+    .login-sent-desc { font-size: 12px; color: var(--text2); line-height: 1.7; }
+    .login-footer { text-align: center; margin-top: 20px; font-size: 11px; color: var(--text3); letter-spacing: 1px; }
+
+    /* ── Dashboard ── */
+    #dashboard-screen { height: 100vh; display: flex; flex-direction: column; display: none; }
+    .header { border-bottom: 1px solid var(--border); padding: 0 20px; display: flex; align-items: center; height: 52px; flex-shrink: 0; gap: 16px; }
+    .header-logo { font-family: var(--font-d); font-weight: 800; font-size: 14px; letter-spacing: 2px; white-space: nowrap; }
+    .header-sub { font-size: 10px; color: var(--text3); letter-spacing: 2px; }
+    .header-filters { margin-left: auto; display: flex; gap: 2px; }
+    .filter-btn { background: none; border: none; padding: 6px 12px; font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--text3); border-bottom: 1px solid transparent; transition: all 0.15s; }
+    .filter-btn.active { color: var(--text); border-bottom-color: var(--text); }
+    .signout-btn { background: none; border: none; font-size: 10px; color: var(--text3); letter-spacing: 1px; text-transform: uppercase; padding: 4px 8px; transition: color 0.15s; }
+    .signout-btn:hover { color: var(--text); }
+    .stats-bar { border-bottom: 1px solid var(--border); padding: 8px 20px; display: flex; gap: 28px; flex-shrink: 0; align-items: center; }
+    .stat { display: flex; align-items: baseline; gap: 6px; }
+    .stat-val { font-family: var(--font-d); font-size: 20px; font-weight: 700; }
+    .stat-lbl { font-size: 9px; color: var(--text3); letter-spacing: 2px; }
+    .saving-indicator { margin-left: auto; font-size: 10px; color: var(--text3); letter-spacing: 1px; display: none; }
+    .body { flex: 1; display: flex; overflow: hidden; }
+
+    /* Story list */
+    .story-list { width: 310px; border-right: 1px solid var(--border); overflow-y: auto; flex-shrink: 0; }
+    .story-item { padding: 13px 15px; border-bottom: 1px solid var(--border); cursor: pointer; transition: background 0.1s; }
+    .story-item:hover, .story-item.active { background: var(--bg2); }
+    .story-meta { display: flex; align-items: center; justify-content: space-between; margin-bottom: 7px; }
+    .niche-tag { display: inline-flex; align-items: center; gap: 5px; border-radius: 3px; padding: 2px 7px; border-width: 1px; border-style: solid; }
+    .niche-dot { width: 4px; height: 4px; border-radius: 50%; }
+    .niche-lbl { font-size: 9px; letter-spacing: 1px; text-transform: uppercase; font-weight: 500; }
+    .story-time { font-size: 10px; color: var(--text3); }
+    .story-title { font-size: 12px; color: var(--text); line-height: 1.5; margin-bottom: 7px; font-weight: 500; }
+    .viral-row { display: flex; justify-content: space-between; margin-bottom: 4px; }
+    .viral-lbl { font-size: 9px; color: var(--text3); letter-spacing: 1px; }
+    .viral-val { font-size: 9px; }
+    .viral-bar { height: 2px; background: var(--border2); border-radius: 1px; margin-bottom: 7px; }
+    .viral-fill { height: 100%; border-radius: 1px; }
+    .script-pills { display: flex; gap: 3px; flex-wrap: wrap; }
+    .script-pill { font-size: 9px; padding: 2px 6px; border-radius: 3px; border-width: 1px; border-style: solid; }
+
+    /* Detail panel */
+    .detail-panel { flex: 1; overflow-y: auto; padding: 22px; display: flex; flex-direction: column; gap: 16px; }
+    .detail-empty { flex: 1; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 10px; }
+    .detail-empty-icon { font-size: 28px; opacity: 0.2; }
+    .detail-empty-txt { font-size: 11px; color: var(--text3); letter-spacing: 2px; }
+    .detail-niche { font-size: 10px; color: var(--text3); letter-spacing: 2px; margin-bottom: 7px; }
+    .detail-title { font-family: var(--font-d); font-size: 17px; font-weight: 700; line-height: 1.4; margin-bottom: 9px; }
+    .detail-summary { font-size: 12px; color: var(--text2); line-height: 1.8; }
+    .script-tabs { border-bottom: 1px solid var(--border); display: flex; flex-wrap: wrap; gap: 0; }
+    .script-tab { background: none; border: none; padding: 7px 12px; font-size: 10px; letter-spacing: 1px; text-transform: uppercase; border-bottom: 2px solid transparent; transition: all 0.15s; }
+    .status-badge { display: inline-flex; align-items: center; padding: 4px 12px; border-radius: 4px; font-size: 10px; font-weight: 500; letter-spacing: 1.5px; border-width: 1px; border-style: solid; }
+    .script-meta { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
+    .script-detail-lbl { font-size: 9px; color: var(--text3); letter-spacing: 2px; margin-bottom: 7px; }
+    .script-text-box {
+      white-space: pre-wrap; font-size: 12px; line-height: 1.9;
+      background: var(--bg2); border: 1px solid var(--border);
+      border-radius: 6px; padding: 14px; color: var(--text2);
+      max-height: 300px; overflow-y: auto; margin-bottom: 14px;
+    }
+    .actions { display: flex; gap: 10px; margin-bottom: 18px; flex-wrap: wrap; }
+    .action-btn { padding: 8px 18px; border-radius: 4px; font-size: 11px; font-weight: 500; letter-spacing: 0.5px; text-transform: uppercase; border-width: 1px; border-style: solid; transition: all 0.15s; }
+    .feedback-lbl { font-size: 9px; color: var(--text3); letter-spacing: 2px; margin-bottom: 7px; }
+    .feedback-ta {
+      width: 100%; background: var(--bg2); border: 1px solid var(--border2); border-radius: 4px;
+      color: var(--text); padding: 10px 12px; font-size: 12px; outline: none;
+      resize: vertical; line-height: 1.6; transition: border-color 0.2s; margin-bottom: 8px;
+    }
+    .feedback-ta:focus { border-color: var(--amber); }
+    .feedback-btn { padding: 8px 18px; border-radius: 4px; font-size: 11px; font-weight: 500; letter-spacing: 0.5px; text-transform: uppercase; border-width: 1px; border-style: solid; transition: all 0.15s; }
+
+    /* Toast */
+    #toast { position: fixed; top: 20px; right: 20px; z-index: 9999; padding: 10px 18px; border-radius: 6px; font-size: 12px; letter-spacing: 0.5px; background: var(--bg2); border: 1px solid var(--green); color: var(--green); display: none; box-shadow: 0 4px 20px rgba(0,0,0,0.5); }
+  </style>
+</head>
+<body>
+
+<!-- ── LOGIN ──────────────────────────────────────────────────────────────── -->
+<div id="login-screen">
+  <div class="login-box">
+    <div class="login-logo">
+      <div class="login-logo-sub">Content Engine</div>
+      <div class="login-logo-title">I Have a <span style="color:var(--green)">Cause</span></div>
+    </div>
+    <div class="login-card">
+      <div id="login-form-wrap">
+        <div class="login-desc">Enter your email to receive a secure login link. No password needed.</div>
+        <input class="login-input" id="email-input" type="email" placeholder="ihaveacause@gmail.com" />
+        <div id="login-error" style="font-size:12px;color:var(--red);margin-bottom:10px;display:none"></div>
+        <button class="login-btn" id="login-btn" onclick="sendMagicLink()">Send Login Link</button>
+      </div>
+      <div id="login-sent-wrap" class="login-sent" style="display:none">
+        <div class="login-sent-icon">📬</div>
+        <div class="login-sent-title">Check your email</div>
+        <div class="login-sent-desc">Login link sent to<br><span style="color:var(--green)" id="sent-email"></span><br><br>Click the link to access the dashboard. Expires in 1 hour.</div>
+      </div>
+    </div>
+    <div class="login-footer">SECURE · ENCRYPTED · PRIVATE</div>
+  </div>
+</div>
+
+<!-- ── DASHBOARD ──────────────────────────────────────────────────────────── -->
+<div id="dashboard-screen">
+  <div class="header">
+    <div class="header-logo"><span style="color:var(--green)">●</span> I HAVE A CAUSE</div>
+    <div class="header-sub">CONTENT ENGINE</div>
+    <div class="header-filters">
+      <button class="filter-btn active" onclick="setFilter('all',this)">All</button>
+      <button class="filter-btn" onclick="setFilter('pending',this)">Pending</button>
+      <button class="filter-btn" onclick="setFilter('approved',this)">Approved</button>
+      <button class="filter-btn" onclick="setFilter('revision',this)">Revision</button>
+    </div>
+    <button class="signout-btn" onclick="signOut()">Sign out</button>
+  </div>
+  <div class="stats-bar">
+    <div class="stat"><span class="stat-val" id="stat-total" style="color:var(--text2)">0</span><span class="stat-lbl">TOTAL</span></div>
+    <div class="stat"><span class="stat-val" id="stat-pending" style="color:var(--amber)">0</span><span class="stat-lbl">PENDING</span></div>
+    <div class="stat"><span class="stat-val" id="stat-approved" style="color:var(--green)">0</span><span class="stat-lbl">APPROVED</span></div>
+    <div class="stat"><span class="stat-val" id="stat-revision" style="color:var(--purple)">0</span><span class="stat-lbl">REVISION</span></div>
+    <span class="saving-indicator" id="saving-ind">SAVING...</span>
+  </div>
+  <div class="body">
+    <div class="story-list" id="story-list"></div>
+    <div id="detail-area" style="flex:1;overflow-y:auto;display:flex">
+      <div class="detail-empty" style="flex:1;display:flex">
+        <div class="detail-empty-icon">◈</div>
+        <div class="detail-empty-txt">SELECT A STORY TO REVIEW</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ── CONFIG — REPLACE THESE TWO VALUES ──────────────────────────────────────
+const SUPABASE_URL  = 'https://alfuvzlmatfkgdrkeqgk.supabase.co'
+const SUPABASE_KEY  = 'sb_publishable_W6dVLZyqGI60qF6nDchJWg_kv2ZFfhn'
+// ──────────────────────────────────────────────────────────────────────────
+
+const { createClient } = supabase
+const db = createClient(SUPABASE_URL, SUPABASE_KEY)
+
+const NICHES = {
+  tn_pol:       { label:'Tamil Politics', color:'#1DB954', bg:'rgba(29,185,84,0.08)' },
+  in_pol:       { label:'India Politics', color:'#4A90D9', bg:'rgba(74,144,217,0.08)' },
+  global_meme:  { label:'Global Satire',  color:'#F5A623', bg:'rgba(245,166,35,0.08)' },
+  tb_community: { label:'Tamil Brahmin',  color:'#E5484D', bg:'rgba(229,72,77,0.08)' },
+}
+const FMT = { youtube_long:'▶', youtube_short:'⚡', instagram_reel:'◉', meme:'◈', facebook_post:'◻' }
+const STATUS = {
+  pending:  { label:'Pending',  color:'#F5A623', bg:'rgba(245,166,35,0.1)'  },
+  approved: { label:'Approved', color:'#1DB954', bg:'rgba(29,185,84,0.1)'   },
+  rejected: { label:'Rejected', color:'#E5484D', bg:'rgba(229,72,77,0.1)'   },
+  revision: { label:'Revision', color:'#9B59B6', bg:'rgba(155,89,182,0.1)'  },
+}
+const SEED = [
+  { id:'story_001', niche_id:'tn_pol', title:'Annamalai calls out DMK corruption in Chennai municipality contracts', summary:'BJP Tamil Nadu president revealed alleged irregularities in Chennai municipality contract allocations worth ₹400 crore under the current DMK administration.', source:'dinamalar.com', viral_score:0.87, sensitivity:'clean', published_at:'2 hours ago',
+    scripts:[
+      { id:'sc_001a', content_type:'youtube_short', language:'Tamil', status:'pending', estimated_duration_sec:55, script_text:'[0:00] மக்களே! ₹400 crore எங்கே போச்சு?\n[0:08] Annamalai press conference-ல பேசினார்\n[0:15] DMK government-ல municipality contracts scandal\n[0:30] Common man tax money waste ஆகுது\n[0:45] Share பண்ணுங்க! Subscribe பண்ணுங்க!' },
+      { id:'sc_001b', content_type:'meme', language:'Tamil', status:'pending', estimated_duration_sec:0, script_text:'MEME 1:\nImage: Man watching money disappear\nTop: "DMK Municipality Contract"\nBottom: "கண்ணுக்கு தெரியாம ₹400 Crore போச்சு" 💸\n\nMEME 2:\nImage: Dog in fire "This is fine"\nTop: "Chennai Roads After ₹400Cr Repair"\nBottom: "Next monsoon ready 👍"' },
+      { id:'sc_001c', content_type:'instagram_reel', language:'English', status:'approved', estimated_duration_sec:45, script_text:'[0:00] BREAKING: ₹400 CRORE missing from Chennai municipality\n[0:05] BJP\'s Annamalai just dropped receipts\n[0:15] Same roads "repaired" every monsoon. Coincidence?\n[0:30] Comment: Is this normal in your city too?\n[0:40] Follow for Tamil Nadu politics daily 🔴' },
+    ]},
+  { id:'story_002', niche_id:'global_meme', title:'Elon Musk DOGE cuts federal spending — then submits $4.2B NASA contract', summary:"DOGE cut federal budgets by 15% while SpaceX submitted a $4.2B NASA proposal simultaneously, drawing widespread irony online.", source:'BBC / Reddit', viral_score:0.94, sensitivity:'clean', published_at:'45 mins ago',
+    scripts:[
+      { id:'sc_002a', content_type:'meme', language:'English', status:'pending', estimated_duration_sec:0, script_text:'MEME 1:\nImage: Spider-Man pointing\nTop: "Cutting wasteful govt spending"\nBottom: "Billing govt $4.2 billion 🚀"\n\nCaption: "The audacity is literally the product." #DOGE #ElonMusk' },
+      { id:'sc_002b', content_type:'instagram_reel', language:'English', status:'pending', estimated_duration_sec:30, script_text:'[0:00] POV: You cut "wasteful" govt spending by 15%\n[0:05] Then ask the same govt for $4.2 BILLION\n[0:12] This isn\'t hypocrisy. It\'s a business model.\n[0:28] Genius or audacity? Comment below 👇' },
+    ]},
+  { id:'story_003', niche_id:'tb_community', title:'HR&CE takes over 3 more temples in Coimbatore — Archakar families protest', summary:'Three more private temples in Coimbatore brought under HR&CE administration. Families serving for generations staged a Collectorate protest.', source:'newindianexpress.com', viral_score:0.71, sensitivity:'clean', published_at:'5 hours ago',
+    scripts:[
+      { id:'sc_003a', content_type:'youtube_long', language:'Tamil', status:'pending', estimated_duration_sec:720, script_text:'[HOOK – 0:00]\nCoimbatore-ல மேலும் 3 கோவில்கள் HR&CE கைக்கு போச்சு!\n\n[CONTEXT – 0:30]\nயாரோட கோவில்கள்? என்ன நடந்தது?\n\n[LEGAL ANGLE – 3:00]\nHR&CE Act — government எப்படி takeover பண்ணலாம்?\n\n[COMMUNITY IMPACT – 7:00]\n60+ years of service குடும்பங்கள் இன்று என்னாகும்?\n\n[CTA – 11:45]\nComment பண்ணுங்க. Share பண்ணுங்க!' },
+    ]},
+  { id:'story_004', niche_id:'in_pol', title:'Parliament: Opposition walks out over NEET scam JPC demand', summary:'Congress and DMK staged a Rajya Sabha walkout demanding Joint Parliamentary Committee probe into NEET paper leak affecting 24 lakh students.', source:'thehindu.com', viral_score:0.78, sensitivity:'clean', published_at:'3 hours ago',
+    scripts:[
+      { id:'sc_004a', content_type:'youtube_short', language:'Tamil', status:'revision', estimated_duration_sec:55, script_text:'[0:00] Parliament-ல போர்!\n[0:08] NEET scam investigation demand\n[0:20] 24 lakh students future affected\n[0:40] Subscribe!', feedback:'Too short on context. Add what JPC means in simple Tamil.' },
+      { id:'sc_004b', content_type:'meme', language:'English', status:'pending', estimated_duration_sec:0, script_text:'MEME:\nImage: Exam hall with smoke\nTop: "NEET 2024 Paper Security"\nBottom: "Available on Telegram before exam day 📱"\n\nCaption: "24 lakh students worked hard. The paper worked harder." #NEET #India' },
+    ]},
+]
+
+let stories = [], selectedStory = null, selectedScript = null, currentFilter = 'all'
+
+// ── Auth ───────────────────────────────────────────────────────────────────
+async function sendMagicLink() {
+  const email = document.getElementById('email-input').value.trim()
+  if (!email) return
+  const btn = document.getElementById('login-btn')
+  btn.disabled = true; btn.textContent = 'Sending...'
+  const { error } = await db.auth.signInWithOtp({ email, options: { emailRedirectTo: window.location.href } })
+  if (error) {
+    document.getElementById('login-error').textContent = error.message
+    document.getElementById('login-error').style.display = 'block'
+    btn.disabled = false; btn.textContent = 'Send Login Link'
+  } else {
+    document.getElementById('sent-email').textContent = email
+    document.getElementById('login-form-wrap').style.display = 'none'
+    document.getElementById('login-sent-wrap').style.display = 'block'
+  }
+}
+
+async function signOut() { await db.auth.signOut(); showLogin() }
+
+function showLogin() {
+  document.getElementById('login-screen').style.display = 'flex'
+  document.getElementById('dashboard-screen').style.display = 'none'
+}
+
+function showDashboard() {
+  document.getElementById('login-screen').style.display = 'none'
+  document.getElementById('dashboard-screen').style.display = 'flex'
+  loadStories()
+}
+
+// ── Data ───────────────────────────────────────────────────────────────────
+async function loadStories() {
+  try {
+    const { data, error } = await db.from('stories').select('*').order('created_at', { ascending: false })
+    if (error || !data?.length) { await seedData(); return }
+    const { data: scripts } = await db.from('scripts').select('*')
+    stories = data.map(s => ({ ...s, scripts: (scripts||[]).filter(sc => sc.story_id === s.id) }))
+  } catch { await seedData(); return }
+  renderAll()
+}
+
+async function seedData() {
+  try {
+    for (const s of SEED) {
+      const { scripts, ...sd } = s
+      await db.from('stories').upsert({ ...sd, created_at: new Date().toISOString() })
+      for (const sc of scripts) await db.from('scripts').upsert({ ...sc, story_id: s.id, created_at: new Date().toISOString() })
+    }
+  } catch {}
+  stories = SEED.map(s => ({ ...s }))
+  renderAll()
+}
+
+async function updateScript(id, status, feedback = '') {
+  document.getElementById('saving-ind').style.display = 'block'
+  try {
+    await db.from('scripts').update({ status, feedback: feedback || null, ...(status==='approved'?{approved_at:new Date().toISOString()}:{}) }).eq('id', id)
+    stories = stories.map(s => ({ ...s, scripts: s.scripts.map(sc => sc.id===id ? {...sc, status, feedback: feedback||null} : sc) }))
+    if (selectedScript?.id === id) selectedScript = { ...selectedScript, status, feedback: feedback||null }
+    renderAll(); renderDetail()
+    const msgs = { approved:'✓ Approved — queued for publish', rejected:'✕ Rejected', revision:'↺ Sent for AI revision' }
+    showToast(msgs[status]||'Saved', status==='rejected'?'error':'success')
+  } catch { showToast('Error saving', 'error') }
+  document.getElementById('saving-ind').style.display = 'none'
+}
+
+// ── Render ─────────────────────────────────────────────────────────────────
+function renderAll() {
+  updateStats()
+  const list = document.getElementById('story-list')
+  const filtered = currentFilter === 'all' ? stories : stories.filter(s => s.scripts?.some(sc => sc.status === currentFilter))
+  if (!filtered.length) { list.innerHTML = '<div style="padding:24px;font-size:12px;color:var(--text3);text-align:center">No stories found</div>'; return }
+  list.innerHTML = filtered.map(s => {
+    const nc = NICHES[s.niche_id] || { label: s.niche_id, color:'#888', bg:'rgba(136,136,136,0.08)' }
+    const vColor = s.viral_score > 0.8 ? 'var(--green)' : s.viral_score > 0.6 ? 'var(--amber)' : 'var(--text3)'
+    const pills = (s.scripts||[]).map(sc => {
+      const st = STATUS[sc.status] || STATUS.pending
+      return `<span class="script-pill" style="color:${st.color};background:${st.bg};border-color:${st.color}33">${FMT[sc.content_type]||'▸'} ${sc.language?.slice(0,2)?.toUpperCase()}</span>`
+    }).join('')
+    return `<div class="story-item${selectedStory?.id===s.id?' active':''}" onclick="selectStory('${s.id}')">
+      <div class="story-meta">
+        <div class="niche-tag" style="background:${nc.bg};border-color:${nc.color}22">
+          <div class="niche-dot" style="background:${nc.color}"></div>
+          <span class="niche-lbl" style="color:${nc.color}">${nc.label}</span>
+        </div>
+        <span class="story-time">${s.published_at||''}</span>
+      </div>
+      <div class="story-title">${s.title}</div>
+      <div class="viral-row"><span class="viral-lbl">VIRAL SCORE</span><span class="viral-val" style="color:${vColor}">${Math.round(s.viral_score*100)}%</span></div>
+      <div class="viral-bar"><div class="viral-fill" style="width:${s.viral_score*100}%;background:${vColor}"></div></div>
+      <div class="script-pills">${pills}</div>
+    </div>`
+  }).join('')
+}
+
+function updateStats() {
+  const all = stories.flatMap(s => s.scripts||[])
+  document.getElementById('stat-total').textContent = all.length
+  document.getElementById('stat-pending').textContent = all.filter(s=>s.status==='pending').length
+  document.getElementById('stat-approved').textContent = all.filter(s=>s.status==='approved').length
+  document.getElementById('stat-revision').textContent = all.filter(s=>s.status==='revision').length
+}
+
+function selectStory(id) {
+  selectedStory = stories.find(s => s.id === id)
+  selectedScript = selectedStory?.scripts?.[0] || null
+  renderAll()
+  renderDetail()
+}
+
+function selectScript(id) {
+  selectedScript = selectedStory?.scripts?.find(s => s.id === id) || null
+  document.getElementById('feedback-ta').value = ''
+  renderDetail()
+}
+
+function renderDetail() {
+  const area = document.getElementById('detail-area')
+  if (!selectedStory) { area.innerHTML = '<div class="detail-empty" style="flex:1;display:flex"><div class="detail-empty-icon">◈</div><div class="detail-empty-txt">SELECT A STORY TO REVIEW</div></div>'; return }
+  const nc = NICHES[selectedStory.niche_id] || { label: selectedStory.niche_id }
+  const tabs = (selectedStory.scripts||[]).map(sc => {
+    const st = STATUS[sc.status] || STATUS.pending
+    const active = selectedScript?.id === sc.id
+    return `<button class="script-tab" onclick="selectScript('${sc.id}')" style="color:${active?st.color:'var(--text3)'};border-bottom-color:${active?st.color:'transparent'}">${FMT[sc.content_type]||'▸'} ${sc.content_type?.replace('_',' ')||''} · ${sc.language?.slice(0,2)||''}</button>`
+  }).join('')
+
+  let scriptSection = ''
+  if (selectedScript) {
+    const st = STATUS[selectedScript.status] || STATUS.pending
+    const dur = selectedScript.estimated_duration_sec > 0 ? ` · ${Math.ceil(selectedScript.estimated_duration_sec/60)} min` : ''
+    scriptSection = `
+      <div class="script-meta">
+        <span class="status-badge" style="color:${st.color};background:${st.bg};border-color:${st.color}44">${st.label.toUpperCase()}</span>
+        <span style="font-size:11px;color:var(--text3)">${selectedScript.content_type?.replace('_',' ')||''} · ${selectedScript.language||''}${dur}</span>
+        ${selectedScript.feedback ? `<span style="font-size:11px;color:var(--purple);flex:1;text-align:right">↺ "${selectedScript.feedback}"</span>` : ''}
+      </div>
+      <div class="script-detail-lbl">GENERATED SCRIPT</div>
+      <div class="script-text-box">${selectedScript.script_text?.replace(/</g,'&lt;')||''}</div>
+      <div class="actions">
+        <button class="action-btn" style="color:var(--green);background:var(--green-bg);border-color:var(--green)33" onclick="updateScript('${selectedScript.id}','approved')">✓ Approve</button>
+        <button class="action-btn" style="color:var(--red);background:var(--red-bg);border-color:var(--red)33" onclick="updateScript('${selectedScript.id}','rejected')">✕ Reject</button>
+      </div>
+      <div class="feedback-lbl">SEND FEEDBACK — AI WILL REWRITE</div>
+      <textarea class="feedback-ta" id="feedback-ta" rows="3" placeholder="e.g. Make tone more neutral. Add more context. Shorten by 30%. Change CTA."></textarea>
+      <button class="feedback-btn" style="color:var(--amber);background:var(--amber-bg);border-color:var(--amber)33" onclick="submitFeedback()">↺ Send to AI — Regenerate</button>
+    `
+  }
+
+  area.innerHTML = `<div class="detail-panel">
+    <div>
+      <div class="detail-niche">${nc.label} · ${selectedStory.source||''}</div>
+      <div class="detail-title">${selectedStory.title}</div>
+      <div class="detail-summary">${selectedStory.summary||''}</div>
+    </div>
+    <div class="script-tabs">${tabs}</div>
+    ${scriptSection}
+  </div>`
+}
+
+function submitFeedback() {
+  const fb = document.getElementById('feedback-ta')?.value?.trim()
+  if (!fb || !selectedScript) return
+  updateScript(selectedScript.id, 'revision', fb)
+  if (document.getElementById('feedback-ta')) document.getElementById('feedback-ta').value = ''
+}
+
+function setFilter(f, btn) {
+  currentFilter = f
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'))
+  btn.classList.add('active')
+  renderAll()
+}
+
+function showToast(msg, type='success') {
+  const t = document.getElementById('toast')
+  t.textContent = msg
+  t.style.display = 'block'
+  t.style.borderColor = type==='error' ? 'var(--red)' : 'var(--green)'
+  t.style.color = type==='error' ? 'var(--red)' : 'var(--green)'
+  setTimeout(() => t.style.display = 'none', 2500)
+}
+
+// ── Init ───────────────────────────────────────────────────────────────────
+document.getElementById('email-input')?.addEventListener('keydown', e => { if (e.key==='Enter') sendMagicLink() })
+
+db.auth.onAuthStateChange((event, session) => {
+  if (session) showDashboard()
+  else showLogin()
+})
+
+db.auth.getSession().then(({ data: { session } }) => {
+  if (session) showDashboard()
+})
+</script>
+</body>
+</html>
