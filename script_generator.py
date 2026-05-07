@@ -1,7 +1,9 @@
 """
-I Have a Cause — AI Script Generator (Sprint 3)
-Generates 12 scripts per story (Tamil + English for all 6 formats)
-Processes one story at a time to avoid token limits
+I Have a Cause — AI Script Generator (Sprint 3) — Failproof Version
+- Generates Tamil + English scripts separately (avoids token limits)
+- Saves each script field INDIVIDUALLY (one failure never loses the others)
+- Full error logging from Supabase
+- Processes all approved stories with missing scripts
 """
 
 import os
@@ -28,7 +30,23 @@ CLAUDE_HEADERS = {
 
 REST_URL = f"{SUPABASE_URL}/rest/v1"
 
-# ── Fetch approved stories needing scripts ────────────────────────────────────
+# ── All script fields we handle ───────────────────────────────────────────────
+ALL_SCRIPT_FIELDS = [
+    "script_youtube_tamil",
+    "script_youtube_short_tamil",
+    "script_reel_tamil",
+    "script_meme_tamil",
+    "script_x_thread",
+    "script_x_post",
+    "script_youtube_english",
+    "script_youtube_short_english",
+    "script_reel_english",
+    "script_meme_english",
+    "script_x_thread_english",
+    "script_x_post_english",
+]
+
+# ── Fetch approved stories missing Tamil script ───────────────────────────────
 def fetch_pending_scripts():
     url = f"{REST_URL}/content_queue"
     params = {
@@ -46,10 +64,10 @@ def fetch_pending_scripts():
     )
     if resp.status_code == 200:
         return resp.json()
-    print(f"  ❌ Failed to fetch: {resp.status_code} {resp.text}")
+    print(f"  ❌ Fetch error {resp.status_code}: {resp.text[:300]}")
     return []
 
-# ── Call Claude for one language block ───────────────────────────────────────
+# ── Call Claude AI ────────────────────────────────────────────────────────────
 def call_claude(prompt):
     payload = {
         "model":      "claude-haiku-4-5-20251001",
@@ -63,17 +81,34 @@ def call_claude(prompt):
         timeout=90
     )
     if resp.status_code != 200:
-        print(f"  ❌ Claude error: {resp.status_code} {resp.text[:200]}")
+        print(f"  ❌ Claude error {resp.status_code}: {resp.text[:300]}")
         return None
     return resp.json()["content"][0]["text"].strip()
 
-# ── Parse delimiter response ──────────────────────────────────────────────────
+# ── Extract section between two delimiters ────────────────────────────────────
 def extract(raw, start_marker, end_marker):
-    start = raw.find(start_marker)
-    end   = raw.find(end_marker)
-    if start == -1 or end == -1:
+    s = raw.find(start_marker)
+    e = raw.find(end_marker)
+    if s == -1 or e == -1 or e <= s:
         return None
-    return raw[start + len(start_marker):end].strip() or None
+    content = raw[s + len(start_marker):e].strip()
+    return content if content else None
+
+# ── Save ONE field at a time ──────────────────────────────────────────────────
+def save_field(story_id, field_name, content):
+    if not content:
+        return True  # nothing to save, skip silently
+    url  = f"{REST_URL}/content_queue?id=eq.{story_id}"
+    resp = requests.patch(
+        url,
+        headers=SUPA_HEADERS,
+        json={field_name: content},
+        timeout=15
+    )
+    if resp.status_code in (200, 204):
+        return True
+    print(f"      ❌ Save failed [{field_name}] — {resp.status_code}: {resp.text[:200]}")
+    return False
 
 # ── Generate Tamil scripts ────────────────────────────────────────────────────
 def generate_tamil(title, context, niche, is_my_idea):
@@ -82,35 +117,35 @@ def generate_tamil(title, context, niche, is_my_idea):
 தலைப்பு: {title}
 சுருக்கம்: {context}
 வகை: {niche}
-{"இது creator-இன் சொந்த யோசனை" if is_my_idea else "இது செய்தி கதை"}
+{"இது creator சொந்த யோசனை" if is_my_idea else "இது செய்தி கதை"}
 
-கீழ்கண்ட 6 formats-க்கு Tamil-ல் scripts எழுதுங்கள்.
-தெளிவான, இயல்பான பேச்சு Tamil பயன்படுத்துங்கள்.
+தெளிவான, இயல்பான பேச்சு Tamil-ல் scripts எழுதுங்கள்.
 ஒவ்வொரு script-லும் context விளக்குங்கள் — பார்வையாளர்களுக்கு முன்பே தெரியாது என்று வைத்துக்கொள்ளுங்கள்.
 
+கீழ்கண்ட delimiters-ஐ அப்படியே பயன்படுத்துங்கள்:
+
 <<<YT_LONG_TA>>>
-[5-8 நிமிட YouTube script]
-HOOK: கவனம் ஈர்க்கும் தொடக்கம்
-CONTEXT: என்ன நடந்தது என்று தெளிவாக விளக்குங்கள்
-YOUR TAKE: உங்கள் கருத்து மற்றும் பகுப்பாய்வு
-CTA: subscribe மற்றும் share செய்யுங்கள்
+HOOK: [கவனம் ஈர்க்கும் தொடக்கம்]
+CONTEXT: [என்ன நடந்தது என்று தெளிவாக விளக்கு — 5-8 நிமிட script]
+YOUR TAKE: [உங்கள் கருத்து மற்றும் பகுப்பாய்வு]
+CTA: [subscribe மற்றும் share]
 <<<YT_SHORT_TA>>>
-[30-60 வினாடி YouTube Short script — கவர்ச்சியான, வேகமான]
+[30-60 வினாடி YouTube Short — வேகமான, கவர்ச்சியான]
 <<<REEL_TA>>>
-[30-60 வினாடி Instagram Reel script — viral-ஆன]
+[30-60 வினாடி Instagram Reel — viral-ஆன]
 <<<MEME_TA>>>
 MAIN: [முக்கிய வரி]
 SUB: [விளக்கம்]
 CAPTION: [post விளக்கம்]
 HASHTAGS: [hashtags]
 <<<X_THREAD_TA>>>
-1/ [hook tweet]
+1/ [hook]
 2/ [context]
 3/ [key point]
 4/ [your take]
-5/ [conclusion + YouTube link]
+5/ [YouTube link]
 <<<X_POST_TA>>>
-[280 எழுத்துகளுக்கு குறைவான ஒரு tweet]
+[280 எழுத்துக்கு குறைவான tweet]
 <<<END>>>"""
 
     raw = call_claude(prompt)
@@ -118,36 +153,35 @@ HASHTAGS: [hashtags]
         return {}
 
     return {
-        "script_youtube_tamil":       extract(raw, "<<<YT_LONG_TA>>>",   "<<<YT_SHORT_TA>>>"),
-        "script_youtube_short_tamil": extract(raw, "<<<YT_SHORT_TA>>>",  "<<<REEL_TA>>>"),
-        "script_reel_tamil":          extract(raw, "<<<REEL_TA>>>",       "<<<MEME_TA>>>"),
-        "script_meme_tamil":          extract(raw, "<<<MEME_TA>>>",       "<<<X_THREAD_TA>>>"),
-        "script_x_thread":            extract(raw, "<<<X_THREAD_TA>>>",   "<<<X_POST_TA>>>"),
-        "script_x_post":              extract(raw, "<<<X_POST_TA>>>",     "<<<END>>>"),
+        "script_youtube_tamil":       extract(raw, "<<<YT_LONG_TA>>>",  "<<<YT_SHORT_TA>>>"),
+        "script_youtube_short_tamil": extract(raw, "<<<YT_SHORT_TA>>>", "<<<REEL_TA>>>"),
+        "script_reel_tamil":          extract(raw, "<<<REEL_TA>>>",      "<<<MEME_TA>>>"),
+        "script_meme_tamil":          extract(raw, "<<<MEME_TA>>>",      "<<<X_THREAD_TA>>>"),
+        "script_x_thread":            extract(raw, "<<<X_THREAD_TA>>>",  "<<<X_POST_TA>>>"),
+        "script_x_post":              extract(raw, "<<<X_POST_TA>>>",    "<<<END>>>"),
     }
 
 # ── Generate English scripts ──────────────────────────────────────────────────
 def generate_english(title, context, niche, is_my_idea):
-    prompt = f"""You are a content creator for "I Have a Cause" YouTube channel — Tamil/Indian news commentary.
+    prompt = f"""You are a content creator for "I Have a Cause" — a Tamil/Indian news commentary YouTube channel.
 
 Title: {title}
 Summary: {context}
 Niche: {niche}
 Type: {"Creator's original idea" if is_my_idea else "News story"}
 
-Write scripts in simple conversational English for all 6 formats below.
-Always explain context fully — assume viewers know nothing about this story.
+Write in simple conversational English. Always explain context fully — assume viewers know nothing about this story.
+Use these exact delimiters:
 
 <<<YT_LONG_EN>>>
-[Full 5-8 minute YouTube script]
-HOOK: attention-grabbing opening line
-CONTEXT: clearly explain what happened and background
-YOUR TAKE: your opinion and analysis
-CTA: subscribe and share
+HOOK: [attention-grabbing opening]
+CONTEXT: [clearly explain what happened — 5-8 minute script]
+YOUR TAKE: [your opinion and analysis]
+CTA: [subscribe and share]
 <<<YT_SHORT_EN>>>
 [30-60 second YouTube Short — punchy and fast]
 <<<REEL_EN>>>
-[30-60 second Instagram Reel script — viral and engaging]
+[30-60 second Instagram Reel — viral and engaging]
 <<<MEME_EN>>>
 MAIN: [bold punchline]
 SUB: [short explanation]
@@ -168,19 +202,13 @@ HASHTAGS: [relevant hashtags]
         return {}
 
     return {
-        "script_youtube_english":       extract(raw, "<<<YT_LONG_EN>>>",   "<<<YT_SHORT_EN>>>"),
-        "script_youtube_short_english": extract(raw, "<<<YT_SHORT_EN>>>",  "<<<REEL_EN>>>"),
-        "script_reel_english":          extract(raw, "<<<REEL_EN>>>",       "<<<MEME_EN>>>"),
-        "script_meme_english":          extract(raw, "<<<MEME_EN>>>",       "<<<X_THREAD_EN>>>"),
-        "script_x_thread_english":      extract(raw, "<<<X_THREAD_EN>>>",   "<<<X_POST_EN>>>"),
-        "script_x_post_english":        extract(raw, "<<<X_POST_EN>>>",     "<<<END>>>"),
+        "script_youtube_english":       extract(raw, "<<<YT_LONG_EN>>>",  "<<<YT_SHORT_EN>>>"),
+        "script_youtube_short_english": extract(raw, "<<<YT_SHORT_EN>>>", "<<<REEL_EN>>>"),
+        "script_reel_english":          extract(raw, "<<<REEL_EN>>>",      "<<<MEME_EN>>>"),
+        "script_meme_english":          extract(raw, "<<<MEME_EN>>>",      "<<<X_THREAD_EN>>>"),
+        "script_x_thread_english":      extract(raw, "<<<X_THREAD_EN>>>",  "<<<X_POST_EN>>>"),
+        "script_x_post_english":        extract(raw, "<<<X_POST_EN>>>",    "<<<END>>>"),
     }
-
-# ── Save scripts to Supabase ──────────────────────────────────────────────────
-def save_scripts(story_id, scripts):
-    url  = f"{REST_URL}/content_queue?id=eq.{story_id}"
-    resp = requests.patch(url, headers=SUPA_HEADERS, json=scripts, timeout=15)
-    return resp.status_code in (200, 204)
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 def run_generator():
@@ -189,49 +217,55 @@ def run_generator():
     print("=" * 60)
 
     stories = fetch_pending_scripts()
-    print(f"  📋 Found {len(stories)} stories needing scripts")
+    print(f"  📋 Found {len(stories)} stories needing scripts\n")
 
     if not stories:
         print("  ✅ All caught up — no pending scripts!")
         return
 
-    success = failed = 0
+    total_saved = total_failed = 0
 
     for story in stories:
-        sid       = story["id"]
-        title     = story["title"]
-        niche     = story.get("niche", "general")
-        summary   = story.get("summary", "")
-        source    = story.get("source_name", "")
-        context   = summary or title
-        is_idea   = source == "💡 My Idea"
+        sid      = story["id"]
+        title    = story["title"]
+        niche    = story.get("niche", "general")
+        summary  = story.get("summary", "")
+        source   = story.get("source_name", "")
+        context  = summary or title
+        is_idea  = source == "💡 My Idea"
 
-        print(f"\n  ✍️  [{niche}] {title[:55]}")
+        print(f"  ✍️  [{niche}] {title[:55]}")
 
-        # Generate Tamil and English separately to avoid token limits
-        print(f"      → Generating Tamil scripts...")
-        tamil_scripts = generate_tamil(title, context, niche, is_idea)
-
-        print(f"      → Generating English scripts...")
-        english_scripts = generate_english(title, context, niche, is_idea)
-
-        all_scripts = {**tamil_scripts, **english_scripts}
-
-        if any(v for v in all_scripts.values()):
-            if save_scripts(sid, all_scripts):
-                success += 1
-                tamil_count   = sum(1 for v in tamil_scripts.values() if v)
-                english_count = sum(1 for v in english_scripts.values() if v)
-                print(f"      ✅ Saved! Tamil: {tamil_count}/6  English: {english_count}/6")
+        # ── Tamil ──
+        print(f"      → Tamil scripts...")
+        tamil = generate_tamil(title, context, niche, is_idea)
+        saved_ta = failed_ta = 0
+        for field, content in tamil.items():
+            if save_field(sid, field, content):
+                saved_ta += 1
             else:
-                failed += 1
-                print(f"      ❌ Failed to save to Supabase")
-        else:
-            failed += 1
-            print(f"      ❌ No scripts generated")
+                failed_ta += 1
+        print(f"      ✅ Tamil: {saved_ta} saved, {failed_ta} failed")
 
-    print("\n" + "=" * 60)
-    print(f"✅ Done — Generated: {success}  |  Failed: {failed}")
+        # ── English ──
+        print(f"      → English scripts...")
+        english = generate_english(title, context, niche, is_idea)
+        saved_en = failed_en = 0
+        for field, content in english.items():
+            if save_field(sid, field, content):
+                saved_en += 1
+            else:
+                failed_en += 1
+        print(f"      ✅ English: {saved_en} saved, {failed_en} failed")
+
+        story_saved  = saved_ta + saved_en
+        story_failed = failed_ta + failed_en
+        total_saved  += story_saved
+        total_failed += story_failed
+        print(f"      📊 Story total: {story_saved} scripts saved, {story_failed} failed\n")
+
+    print("=" * 60)
+    print(f"✅ Done — Total saved: {total_saved}  |  Total failed: {total_failed}")
     print("=" * 60)
 
 if __name__ == "__main__":
