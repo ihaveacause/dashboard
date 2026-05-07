@@ -1,9 +1,9 @@
 name: AI Script Generator
 
 on:
-  workflow_dispatch:        # manual trigger from GitHub Actions tab
+  workflow_dispatch:
   schedule:
-    - cron: '0 4 * * *'    # runs at 9:30 AM IST daily (after scanner at 8:30 AM)
+    - cron: '*/30 * * * *'   # every 30 minutes — catches approvals quickly
 
 jobs:
   generate:
