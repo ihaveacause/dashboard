@@ -117,15 +117,15 @@ Return ONLY valid JSON (no markdown, no explanation):
 Return ONLY valid JSON: {{"tags": ["tag1","tag2","tag3","tag4","tag5","tag6","tag7","tag8","tag9","tag10"]}}"""))
 
     return {
-        "title_tamil":          ta.get("title",""),
-        "description_tamil":    ta.get("description",""),
-        "thumbnail_text_tamil": ta.get("thumbnail_text",""),
-        "chapters_tamil":       ta.get("chapters",[]),
-        "title_english":        en.get("title",""),
-        "description_english":  en.get("description",""),
-        "thumbnail_text_english": en.get("thumbnail_text",""),
-        "chapters_english":     en.get("chapters",[]),
-        "tags":                 tags.get("tags",[]),
+        "title_tamil":            ta.get("title") or title,
+        "description_tamil":      ta.get("description") or "",
+        "thumbnail_text_tamil":   ta.get("thumbnail_text") or title[:40],
+        "chapters_tamil":         ta.get("chapters") or [{"time":"0:00","title":"தொடக்கம்"},{"time":"3:00","title":"விவரம்"},{"time":"6:00","title":"கருத்து"},{"time":"9:00","title":"முடிவு"}],
+        "title_english":          en.get("title") or title,
+        "description_english":    en.get("description") or "",
+        "thumbnail_text_english": en.get("thumbnail_text") or title[:40],
+        "chapters_english":       en.get("chapters") or [{"time":"0:00","title":"Introduction"},{"time":"3:00","title":"Background"},{"time":"6:00","title":"Analysis"},{"time":"9:00","title":"Conclusion"}],
+        "tags":                   tags.get("tags") or [],
     }
 
 def gen_yt_short(s):
