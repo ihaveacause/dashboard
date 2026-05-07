@@ -70,39 +70,63 @@ def fetch_creating_stories():
 
 # ── Package generators ────────────────────────────────────────────────────────
 def gen_yt_long(s):
-    title  = s.get("title","")
+    title     = s.get("title","")
     script_ta = s.get("script_youtube_tamil") or title
     script_en = s.get("script_youtube_english") or title
-    result = call_claude(f"""Create a complete YouTube publishing package. Generate TWO versions — Tamil and English.
+
+    # Tamil package
+    ta = parse_json(call_claude(f"""Create a YouTube publishing package in TAMIL.
 
 Title: {title}
-Tamil Script: {script_ta[:1500]}
-English Script: {script_en[:1500]}
+Script: {script_ta[:1800]}
 
-Return ONLY valid JSON (no markdown):
+Return ONLY valid JSON (no markdown, no explanation):
 {{
-  "title_tamil": "engaging Tamil title under 60 chars",
-  "title_english": "engaging English title under 60 chars",
-  "description_tamil": "Tamil description 150-200 words with keywords in Tamil",
-  "description_english": "English description 150-200 words with keywords in English",
-  "tags": ["tag1","tag2","tag3","tag4","tag5","tag6","tag7","tag8","tag9","tag10"],
-  "thumbnail_text_tamil": "5-7 dramatic Tamil words for thumbnail",
-  "thumbnail_text_english": "5-7 dramatic English words for thumbnail",
-  "chapters_tamil": [
-    {{"time":"0:00","title":"தொடக்கம்"}},
+  "title": "engaging Tamil title under 60 chars",
+  "description": "Tamil description 150-200 words with keywords",
+  "thumbnail_text": "5-7 dramatic Tamil words for thumbnail",
+  "chapters": [
+    {{"time":"0:00","title":"Tamil chapter title"}},
     {{"time":"2:00","title":"Tamil chapter title"}},
     {{"time":"5:00","title":"Tamil chapter title"}},
     {{"time":"8:00","title":"முடிவு"}}
-  ],
-  "chapters_english": [
+  ]
+}}"""))
+
+    # English package
+    en = parse_json(call_claude(f"""Create a YouTube publishing package in ENGLISH.
+
+Title: {title}
+Script: {script_en[:1800]}
+
+Return ONLY valid JSON (no markdown, no explanation):
+{{
+  "title": "engaging English title under 60 chars",
+  "description": "English description 150-200 words with keywords",
+  "thumbnail_text": "5-7 dramatic English words for thumbnail",
+  "chapters": [
     {{"time":"0:00","title":"Introduction"}},
     {{"time":"2:00","title":"English chapter title"}},
     {{"time":"5:00","title":"English chapter title"}},
     {{"time":"8:00","title":"Conclusion"}}
   ]
-}}""")
-    data = parse_json(result)
-    return data if data else {"title_tamil": title, "title_english": title}
+}}"""))
+
+    # Tags (one call, language-neutral)
+    tags = parse_json(call_claude(f"""Generate 10 YouTube tags for this video: {title}
+Return ONLY valid JSON: {{"tags": ["tag1","tag2","tag3","tag4","tag5","tag6","tag7","tag8","tag9","tag10"]}}"""))
+
+    return {
+        "title_tamil":          ta.get("title",""),
+        "description_tamil":    ta.get("description",""),
+        "thumbnail_text_tamil": ta.get("thumbnail_text",""),
+        "chapters_tamil":       ta.get("chapters",[]),
+        "title_english":        en.get("title",""),
+        "description_english":  en.get("description",""),
+        "thumbnail_text_english": en.get("thumbnail_text",""),
+        "chapters_english":     en.get("chapters",[]),
+        "tags":                 tags.get("tags",[]),
+    }
 
 def gen_yt_short(s):
     title  = s.get("title","")
