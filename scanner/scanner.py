@@ -1,6 +1,8 @@
 """
 I Have a Cause — News Scanner Bot v3
 Uses direct Supabase REST API (no supabase-py library issues)
+Fetches Tamil/Indian news daily, scores virality, stores in Supabase
+Scripts are generated separately by the AI Script Generator (Sprint 3)
 """
 
 import os
@@ -61,16 +63,6 @@ def classify_niche(title, description=""):
         if count > best_count:
             best_count, best = count, niche
     return best
-
-def generate_scripts(title, description, niche):
-    desc = (description or title)[:200]
-    return {
-        "youtube_tamil":   f'[யூடியூப் ஸ்கிரிப்ட்]\n\n🎬 HOOK: "{title}"\n\n📖 BODY:\n• {desc}\n• இந்த நிகழ்வின் பின்னணி என்ன?\n• மக்களுக்கு என்ன தாக்கம்?\n\n✅ CTA: Subscribe & Share!',
-        "youtube_english": f'[YouTube Script]\n\n🎬 HOOK: "{title}"\n\n📖 BODY:\n• {desc}\n• Background and context\n• What this means for Tamil Nadu\n\n✅ CTA: Subscribe for daily Tamil news!',
-        "reel_tamil":      f'[Reel Tamil]\n"{title}"\n{desc[:100]}...\nComment பண்ணுங்க! 👇\n#TamilNews #IHaveACause',
-        "reel_english":    f'[Reel English]\n"{title}"\n{desc[:100]}...\nDrop your thoughts! 👇\n#TamilNadu #IHaveACause',
-        "meme":            f'[Meme]\nTop: "{title[:55]}..."\nBottom: "I Have a Cause 🔴"\nAlt: POV — you found out about this {niche} story first 👀'
-    }
 
 def db_select(table, filters=None):
     url = f"{REST_URL}/{table}"
@@ -153,7 +145,6 @@ def run_scanner():
 
             niche       = classify_niche(title, desc)
             viral_score = score_virality(title, desc)
-            scripts     = generate_scripts(title, desc, niche)
 
             # Check duplicate
             existing = db_select("content_queue", {"source_url": f"eq.{url}", "select": "id"})
@@ -161,17 +152,19 @@ def run_scanner():
                 print(f"  ⏭  skip — {title[:55]}")
                 continue
 
+            # Store only raw news data — scripts generated separately by Sprint 3
             row = {
-                "title": title, "summary": desc[:500] or None,
-                "source_url": url, "source_name": source,
+                "title":        title,
+                "summary":      desc[:500] or None,
+                "source_url":   url,
+                "source_name":  source,
                 "published_at": pub_at or None,
-                "niche": niche, "viral_score": viral_score, "status": "pending",
-                "script_youtube_tamil":   scripts["youtube_tamil"],
-                "script_youtube_english": scripts["youtube_english"],
-                "script_reel_tamil":      scripts["reel_tamil"],
-                "script_reel_english":    scripts["reel_english"],
-                "meme_caption":           scripts["meme"],
+                "niche":        niche,
+                "viral_score":  viral_score,
+                "status":       "pending",
+                "formats":      "[]",
             }
+
             if db_insert("content_queue", row):
                 stories_added += 1
                 print(f"  ✅ [{niche:13s}] score={viral_score:3d} — {title[:55]}")
