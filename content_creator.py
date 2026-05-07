@@ -75,7 +75,7 @@ def gen_yt_long(s):
     script_en = s.get("script_youtube_english") or title
 
     # Tamil package
-    ta = parse_json(call_claude(f"""Create a YouTube publishing package in TAMIL.
+    raw_ta = call_claude(f"""Create a YouTube publishing package in TAMIL.
 
 Title: {title}
 Script: {script_ta[:1800]}
@@ -91,10 +91,15 @@ Return ONLY valid JSON (no markdown, no explanation):
     {{"time":"5:00","title":"Tamil chapter title"}},
     {{"time":"8:00","title":"முடிவு"}}
   ]
-}}"""))
+}}""")
+    print(f"  DEBUG Tamil raw: {str(raw_ta)[:300]}")
+    ta = parse_json(raw_ta)
+    print(f"  DEBUG Tamil parsed keys: {list(ta.keys()) if ta else 'EMPTY'}")
+    print(f"  DEBUG thumbnail_text: {ta.get('thumbnail_text')}")
+    print(f"  DEBUG chapters: {ta.get('chapters')}")
 
     # English package
-    en = parse_json(call_claude(f"""Create a YouTube publishing package in ENGLISH.
+    raw_en = call_claude(f"""Create a YouTube publishing package in ENGLISH.
 
 Title: {title}
 Script: {script_en[:1800]}
@@ -110,7 +115,12 @@ Return ONLY valid JSON (no markdown, no explanation):
     {{"time":"5:00","title":"English chapter title"}},
     {{"time":"8:00","title":"Conclusion"}}
   ]
-}}"""))
+}}""")
+    print(f"  DEBUG English raw: {str(raw_en)[:300]}")
+    en = parse_json(raw_en)
+    print(f"  DEBUG English parsed keys: {list(en.keys()) if en else 'EMPTY'}")
+    print(f"  DEBUG thumbnail_text_en: {en.get('thumbnail_text')}")
+    print(f"  DEBUG chapters_en: {en.get('chapters')}")
 
     # Tags (one call, language-neutral)
     tags = parse_json(call_claude(f"""Generate 10 YouTube tags for this video: {title}
