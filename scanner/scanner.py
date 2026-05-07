@@ -1,19 +1,27 @@
 """
-I Have a Cause — News Scanner Bot v2
-Sprint 2: Google News RSS (free) + NewsAPI top-headlines
-Runs daily at 8:30 AM IST via Render cron job
+I Have a Cause — News Scanner Bot v3
+Uses direct Supabase REST API (no supabase-py library issues)
 """
 
 import os
+import json
 import xml.etree.ElementTree as ET
 import requests
 from datetime import datetime, timezone, timedelta
-from supabase import create_client, Client
 
 # ── Config ─────────────────────────────────────────────────────────────────
 SUPABASE_URL  = os.environ["SUPABASE_URL"]
 SUPABASE_KEY  = os.environ["SUPABASE_KEY"]
 NEWS_API_KEY  = os.environ.get("NEWS_API_KEY", "")
+
+HEADERS = {
+    "apikey": SUPABASE_KEY,
+    "Authorization": f"Bearer {SUPABASE_KEY}",
+    "Content-Type": "application/json",
+    "Prefer": "return=minimal"
+}
+
+REST_URL = f"{SUPABASE_URL}/rest/v1"
 
 GOOGLE_NEWS_FEEDS = [
     "https://news.google.com/rss/search?q=Tamil+Nadu&hl=en-IN&gl=IN&ceid=IN:en",
@@ -27,15 +35,15 @@ GOOGLE_NEWS_FEEDS = [
 ]
 
 NICHE_KEYWORDS = {
-    "politics": ["dmk","aiadmk","stalin","tamil nadu government","bjp","election","parliament","modi","edappadi","seeman","ntk","minister","mla","mp"],
-    "crime":    ["arrest","murder","crime","scam","corruption","cbi","drug","robbery","fraud","cheating","accused","police"],
+    "politics":      ["dmk","aiadmk","stalin","tamil nadu government","bjp","election","parliament","modi","edappadi","seeman","ntk","minister","mla","mp"],
+    "crime":         ["arrest","murder","crime","scam","corruption","cbi","drug","robbery","fraud","cheating","accused","police"],
     "entertainment": ["kollywood","tamil cinema","vijay","ajith","rajinikanth","tamil movie","thalapathy","sun tv","vijay tv","kamal","actor","actress","ott","film","box office"],
-    "sports":   ["csk","ipl","cricket","kabaddi","football","sports","karthik","ashwin","dhoni","match","tournament"],
-    "business": ["economy","startup","it","infosys","tcs","investment","jobs","employment","industry","manufacturing"],
-    "viral":    ["viral","trending","social media","meme","twitter","funny","shock","outrage","controversy"],
+    "sports":        ["csk","ipl","cricket","kabaddi","football","sports","karthik","ashwin","dhoni","match","tournament"],
+    "business":      ["economy","startup","it","infosys","tcs","investment","jobs","employment","industry","manufacturing"],
+    "viral":         ["viral","trending","social media","meme","twitter","funny","shock","outrage","controversy"],
 }
 
-VIRALITY_BOOSTERS = ["breaking","exclusive","arrest","viral","shocking","massive","historic","first time","record","exposed","leaked","ban","death","scam","crisis","resign","fired","win","victory","controversy","outrage","protest","clash"]
+VIRALITY_BOOSTERS = ["breaking","exclusive","arrest","viral","shocking","massive","historic","record","exposed","leaked","ban","death","scam","crisis","resign","fired","win","victory","controversy","outrage","protest"]
 
 def score_virality(title, description=""):
     text = (title + " " + (description or "")).lower()
@@ -57,12 +65,25 @@ def classify_niche(title, description=""):
 def generate_scripts(title, description, niche):
     desc = (description or title)[:200]
     return {
-        "youtube_tamil": f"""[யூடியூப் ஸ்கிரிப்ட்]\n\n🎬 HOOK: "{title}" — இதை பத்தி நீங்க தெரிஞ்சுக்கணும்!\n\n📖 BODY:\n• {desc}\n• இந்த நிகழ்வின் பின்னணி என்ன?\n• மக்களுக்கு என்ன தாக்கம்?\n\n✅ CTA: "வீடியோவை ஷேர் செய்யுங்கள். Channel-ஐ Subscribe பண்ணுங்கள்!\"""",
-        "youtube_english": f"""[YouTube Script — English]\n\n🎬 HOOK: "{title}" — Here's what you need to know.\n\n📖 BODY:\n• {desc}\n• Background and context\n• What this means for Tamil Nadu / India\n\n✅ CTA: "Share this video. Subscribe for daily Tamil news coverage.\"""",
-        "reel_tamil": f"""[Reel 30–60 sec — Tamil]\n\n🎙 VO: "{title}"\n{desc[:100]}...\nஉங்க கருத்து என்ன? Comment பண்ணுங்க! 👇\n\n#TamilNews #IHaveACause #TamilNadu #Trending""",
-        "reel_english": f"""[Reel 30–60 sec — English]\n\n🎙 VO: "{title}"\n{desc[:100]}...\nWhat do you think? Drop your thoughts below! 👇\n\n#TamilNadu #IndiaNews #IHaveACause #Viral""",
-        "meme": f"""[Meme]\nTop: "{title[:55]}..."\nBottom: "I Have a Cause 🔴 — Follow for Tamil news"\n\nAlt: POV — you found out about this {niche} story first 👀"""
+        "youtube_tamil":   f'[யூடியூப் ஸ்கிரிப்ட்]\n\n🎬 HOOK: "{title}"\n\n📖 BODY:\n• {desc}\n• இந்த நிகழ்வின் பின்னணி என்ன?\n• மக்களுக்கு என்ன தாக்கம்?\n\n✅ CTA: Subscribe & Share!',
+        "youtube_english": f'[YouTube Script]\n\n🎬 HOOK: "{title}"\n\n📖 BODY:\n• {desc}\n• Background and context\n• What this means for Tamil Nadu\n\n✅ CTA: Subscribe for daily Tamil news!',
+        "reel_tamil":      f'[Reel Tamil]\n"{title}"\n{desc[:100]}...\nComment பண்ணுங்க! 👇\n#TamilNews #IHaveACause',
+        "reel_english":    f'[Reel English]\n"{title}"\n{desc[:100]}...\nDrop your thoughts! 👇\n#TamilNadu #IHaveACause',
+        "meme":            f'[Meme]\nTop: "{title[:55]}..."\nBottom: "I Have a Cause 🔴"\nAlt: POV — you found out about this {niche} story first 👀'
     }
+
+def db_select(table, filters=None):
+    url = f"{REST_URL}/{table}"
+    params = filters or {}
+    resp = requests.get(url, headers={**HEADERS, "Prefer": "return=representation"}, params=params, timeout=10)
+    if resp.status_code == 200:
+        return resp.json()
+    return []
+
+def db_insert(table, row):
+    url = f"{REST_URL}/{table}"
+    resp = requests.post(url, headers=HEADERS, json=row, timeout=10)
+    return resp.status_code in (200, 201)
 
 def fetch_google_news_rss(feed_url):
     try:
@@ -72,10 +93,10 @@ def fetch_google_news_rss(feed_url):
         root = ET.fromstring(resp.content)
         articles = []
         for item in root.findall(".//item"):
-            title  = item.findtext("title", "").strip()
-            link   = item.findtext("link", "").strip()
-            desc   = item.findtext("description", "").strip()
-            pub    = item.findtext("pubDate", "")
+            title = item.findtext("title", "").strip()
+            link  = item.findtext("link", "").strip()
+            desc  = item.findtext("description", "").strip()
+            pub   = item.findtext("pubDate", "")
             source_el = item.find("source")
             source = source_el.text if source_el is not None else "Google News"
             if title and link:
@@ -85,34 +106,27 @@ def fetch_google_news_rss(feed_url):
         print(f"  ⚠️  RSS error: {e}")
         return []
 
-def fetch_newsapi_headlines():
-    if not NEWS_API_KEY:
-        return []
-    try:
-        resp = requests.get("https://newsapi.org/v2/top-headlines",
-            params={"country": "in", "pageSize": 20, "apiKey": NEWS_API_KEY}, timeout=10)
-        resp.raise_for_status()
-        raw = resp.json().get("articles", [])
-        return [{"title": a.get("title",""), "url": a.get("url",""), "description": a.get("description",""),
-                 "publishedAt": a.get("publishedAt",""), "source": a.get("source",{}).get("name","NewsAPI")}
-                for a in raw if a.get("title") and "[Removed]" not in a.get("title","")]
-    except Exception as e:
-        print(f"  ⚠️  NewsAPI error: {e}")
-        return []
-
 def fetch_all_stories():
     seen_urls, all_stories = set(), []
     for feed in GOOGLE_NEWS_FEEDS:
-        articles = fetch_google_news_rss(feed)
-        print(f"  📡 RSS: {len(articles)} stories")
-        for a in articles:
+        for a in fetch_google_news_rss(feed):
             if a["url"] not in seen_urls:
                 seen_urls.add(a["url"])
                 all_stories.append(a)
-    for a in fetch_newsapi_headlines():
-        if a["url"] not in seen_urls:
-            seen_urls.add(a["url"])
-            all_stories.append(a)
+    # NewsAPI bonus
+    if NEWS_API_KEY:
+        try:
+            resp = requests.get("https://newsapi.org/v2/top-headlines",
+                params={"country": "in", "pageSize": 20, "apiKey": NEWS_API_KEY}, timeout=10)
+            for a in resp.json().get("articles", []):
+                url = a.get("url","")
+                if url and url not in seen_urls and "[Removed]" not in a.get("title",""):
+                    seen_urls.add(url)
+                    all_stories.append({"title": a.get("title",""), "url": url,
+                        "description": a.get("description",""), "publishedAt": a.get("publishedAt",""),
+                        "source": a.get("source",{}).get("name","NewsAPI")})
+        except Exception as e:
+            print(f"  ⚠️  NewsAPI: {e}")
     print(f"  ✅ Total unique stories: {len(all_stories)}")
     return all_stories
 
@@ -120,23 +134,37 @@ def run_scanner():
     print("=" * 60)
     print(f"🤖 Scanner started — {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("=" * 60)
-    supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+    # Test DB connection
+    test = db_select("content_queue", {"limit": "1"})
+    print(f"  ✅ DB connected — test query returned {len(test)} rows")
+
     stories_found = stories_added = 0
     try:
         articles = fetch_all_stories()
         stories_found = len(articles)
+
         for article in articles:
             url, title = article.get("url",""), article.get("title","").strip()
             desc, source = article.get("description","") or "", article.get("source","Unknown")
             pub_at = article.get("publishedAt")
             if not title or not url or len(title) < 10:
                 continue
+
             niche       = classify_niche(title, desc)
             viral_score = score_virality(title, desc)
             scripts     = generate_scripts(title, desc, niche)
+
+            # Check duplicate
+            existing = db_select("content_queue", {"source_url": f"eq.{url}", "select": "id"})
+            if existing:
+                print(f"  ⏭  skip — {title[:55]}")
+                continue
+
             row = {
                 "title": title, "summary": desc[:500] or None,
-                "source_url": url, "source_name": source, "published_at": pub_at or None,
+                "source_url": url, "source_name": source,
+                "published_at": pub_at or None,
                 "niche": niche, "viral_score": viral_score, "status": "pending",
                 "script_youtube_tamil":   scripts["youtube_tamil"],
                 "script_youtube_english": scripts["youtube_english"],
@@ -144,26 +172,20 @@ def run_scanner():
                 "script_reel_english":    scripts["reel_english"],
                 "meme_caption":           scripts["meme"],
             }
-            try:
-                existing = supabase.table("content_queue").select("id").eq("source_url", url).execute()
-                if not existing.data:
-                    supabase.table("content_queue").insert(row).execute()
-                    stories_added += 1
-                    print(f"  ✅ [{niche:13s}] score={viral_score:3d} — {title[:55]}")
-                else:
-                    print(f"  ⏭  skip — {title[:55]}")
-            except Exception as e:
-                print(f"  ❌ DB error: {e}")
-        supabase.table("scanner_logs").insert({"stories_found": stories_found, "stories_added": stories_added, "status": "success"}).execute()
+            if db_insert("content_queue", row):
+                stories_added += 1
+                print(f"  ✅ [{niche:13s}] score={viral_score:3d} — {title[:55]}")
+            else:
+                print(f"  ❌ insert failed — {title[:55]}")
+
+        db_insert("scanner_logs", {"stories_found": stories_found, "stories_added": stories_added, "status": "success"})
         print("=" * 60)
         print(f"✅ Done — Found: {stories_found}  |  Added: {stories_added}")
         print("=" * 60)
+
     except Exception as e:
         print(f"❌ Fatal: {e}")
-        try:
-            supabase.table("scanner_logs").insert({"stories_found": stories_found, "stories_added": stories_added, "status": "error", "error_message": str(e)}).execute()
-        except Exception:
-            pass
+        db_insert("scanner_logs", {"stories_found": stories_found, "stories_added": stories_added, "status": "error", "error_message": str(e)})
         raise
 
 if __name__ == "__main__":
