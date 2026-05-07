@@ -215,6 +215,28 @@
   .toast.show{opacity:1;}
   .toast.ok{border-color:var(--green);color:var(--green);}
   .toast.err{border-color:var(--red);color:var(--red);}
+  /* REVIEW PANEL (ready cards) */
+  .review-header{padding:14px 18px;background:rgba(46,204,113,0.06);border-bottom:1px solid rgba(46,204,113,0.15);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;}
+  .review-title{font-size:13px;font-weight:600;color:var(--green);}
+  .review-sub{font-size:11px;color:var(--muted);margin-top:2px;}
+  .review-actions{display:flex;gap:8px;flex-wrap:wrap;}
+  .btn-back-scripted{padding:6px 12px;background:transparent;border:1px solid var(--border);border-radius:7px;color:var(--muted);font-family:inherit;font-size:12px;cursor:pointer;}
+  .btn-back-scripted:hover{border-color:var(--text);color:var(--text);}
+  .btn-approve-publish{padding:8px 18px;background:var(--green);border:none;border-radius:8px;color:#0d0f14;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;}
+  .btn-approve-publish:hover{background:#27ae60;}
+  .per-fmt-review{padding:12px 18px;border-top:1px solid var(--border);background:var(--surface2);}
+  .per-fmt-title{font-size:11px;color:var(--muted);font-family:'DM Mono',monospace;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px;}
+  .fmt-review-row{display:flex;align-items:center;gap:8px;margin-bottom:8px;padding:8px 12px;background:var(--surface);border-radius:8px;border:1px solid var(--border);}
+  .fmt-review-label{font-size:12px;font-weight:500;flex:1;}
+  .fmt-review-status{font-size:10px;font-family:'DM Mono',monospace;padding:2px 8px;border-radius:5px;}
+  .frs-ready{background:rgba(46,204,113,0.15);color:var(--green);}
+  .frs-missing{background:rgba(120,128,160,0.1);color:var(--muted);}
+  .frs-approved{background:rgba(155,89,182,0.2);color:var(--purple);}
+  .btn-fmt-approve{padding:4px 10px;background:rgba(46,204,113,0.12);border:1px solid rgba(46,204,113,0.25);border-radius:6px;color:var(--green);font-family:inherit;font-size:11px;font-weight:600;cursor:pointer;}
+  .btn-fmt-approve:hover{background:rgba(46,204,113,0.22);}
+  .btn-fmt-approve.approved{background:var(--green);color:#0d0f14;border-color:var(--green);}
+  .btn-fmt-drop{padding:4px 10px;background:transparent;border:1px solid var(--border);border-radius:6px;color:var(--muted);font-family:inherit;font-size:11px;cursor:pointer;}
+  .btn-fmt-drop:hover{border-color:var(--red);color:var(--red);}
   @media(max-width:600px){.regen-cols{grid-template-columns:1fr;}}
 </style>
 </head>
@@ -409,7 +431,7 @@ function buildCard(s){
   } else if(s.status==='scripted'){
     bodyHtml=buildScriptedActions(s)+buildScriptsPanel(s)+buildRegenPanel(s);
   } else if(s.status==='ready'){
-    bodyHtml=buildReadyActions(s)+buildScriptsPanel(s);
+    bodyHtml=buildReadyReview(s);
   } else if(s.status==='published'){
     bodyHtml=buildPublishedActions(s);
   }
@@ -471,6 +493,71 @@ function buildScriptedActions(s){
     <button class="btn btn-reject" onclick="reject('${s.id}')">❌ Reject</button>
     <button class="btn ${btnCls}" onclick="toggleScripts('${s.id}')">📄 Review Scripts ▼</button>
     <button class="btn btn-regenerate" onclick="toggleRegen('${s.id}')">🔄 Regenerate All</button>
+  </div>`;
+}
+
+function buildReadyReview(s){
+  // Scripts panel - open by default for ready cards
+  const fmtTabs=FORMATS.map((f,i)=>{
+    const has=!!(s[f.ta]||s[f.en]);
+    return `<div class="fmt-tab ${has?'has':''} ${i===0?'active':''}" id="ftab-${s.id}-${f.key}" onclick="switchFmt('${s.id}','${f.key}')">${f.icon} ${f.label}</div>`;
+  }).join('');
+
+  const fmtPanels=FORMATS.map((f,i)=>{
+    const langTabs=`<div class="lang-tabs">
+      <div class="lang-tab ${s[f.ta]?'has':''} active" id="ltab-${s.id}-${f.key}-ta" onclick="switchLang('${s.id}','${f.key}','ta')">🇮🇳 Tamil</div>
+      <div class="lang-tab ${s[f.en]?'has':''}"         id="ltab-${s.id}-${f.key}-en" onclick="switchLang('${s.id}','${f.key}','en')">🇬🇧 English</div>
+    </div>`;
+    const taPane=buildScriptDisplay(s.id,f.key,'ta',f.ta,s[f.ta]);
+    const enPane=buildScriptDisplay(s.id,f.key,'en',f.en,s[f.en]);
+    return `<div class="fmt-panel ${i===0?'active':''}" id="fpanel-${s.id}-${f.key}">
+      ${langTabs}
+      <div class="script-area">
+        <div class="lang-panel active" id="lpanel-${s.id}-${f.key}-ta">${taPane}</div>
+        <div class="lang-panel"        id="lpanel-${s.id}-${f.key}-en">${enPane}</div>
+      </div>
+    </div>`;
+  }).join('');
+
+  // Per-format approve rows
+  const approvedFmts=safeJson(s.formats);
+  const fmtRows=FORMATS.map(f=>{
+    const hasContent=!!(s[f.ta]||s[f.en]);
+    const isApproved=approvedFmts.includes(f.key);
+    const statusBadge=isApproved
+      ?`<span class="fmt-review-status frs-approved">✅ Approved for publish</span>`
+      :hasContent
+        ?`<span class="fmt-review-status frs-ready">📄 Script ready</span>`
+        :`<span class="fmt-review-status frs-missing">⏳ No script</span>`;
+    const approveBtnCls=isApproved?'btn-fmt-approve approved':'btn-fmt-approve';
+    const approveBtn=hasContent?`<button class="${approveBtnCls}" id="fapprove-${s.id}-${f.key}" onclick="toggleFmtApprove('${s.id}','${f.key}')">${isApproved?'✅ Approved':'Approve'}</button>`:'';
+    return `<div class="fmt-review-row">
+      <span class="fmt-review-label">${f.icon} ${f.label}</span>
+      ${statusBadge}
+      ${approveBtn}
+    </div>`;
+  }).join('');
+
+  return `
+  <div class="review-header">
+    <div>
+      <div class="review-title">📋 Content Review — Approve formats for publishing</div>
+      <div class="review-sub">Review each script below. Approve the formats you want published. Then click "Send to Publish Queue".</div>
+    </div>
+    <div class="review-actions">
+      <button class="btn-back-scripted" onclick="backToScripted('${s.id}')">← Back to Edit</button>
+      <button class="btn-create" style="padding:8px 16px;background:rgba(155,89,182,0.15);color:var(--purple);border:1px solid rgba(155,89,182,0.3);border-radius:8px;font-family:inherit;font-size:13px;font-weight:500;cursor:pointer;" onclick="createContent('${s.id}')">🎬 Create Content <span style="font-size:10px;opacity:0.6">(Sprint 4)</span></button>
+    </div>
+  </div>
+
+  <div class="per-fmt-review">
+    <div class="per-fmt-title">Approve formats for publishing</div>
+    ${fmtRows}
+  </div>
+
+  <div style="border-top:1px solid var(--border);">
+    <div class="format-tabs">${fmtTabs}</div>
+    <div id="fpanels-${s.id}">${fmtPanels}</div>
   </div>`;
 }
 
@@ -615,6 +702,24 @@ async function requestRegen(sid){
 }
 
 // ── Actions ───────────────────────────────────────────────────────────────────
+async function toggleFmtApprove(sid, fkey){
+  const s=stories.find(x=>x.id===sid);
+  if(!s) return;
+  const fmts=safeJson(s.formats);
+  const idx=fmts.indexOf(fkey);
+  if(idx>-1) fmts.splice(idx,1); else fmts.push(fkey);
+  await patch(sid,{formats:JSON.stringify(fmts)});
+  upd(sid,{formats:JSON.stringify(fmts)});
+  render();
+  toast(idx>-1?`Removed ${fkey} from publish queue`:`✅ ${fkey} approved for publishing`,'ok');
+}
+
+async function backToScripted(id){
+  await patch(id,{status:'scripted'});
+  upd(id,{status:'scripted'}); updateStats(); render();
+  toast('↩️ Moved back to Scripted for editing','ok');
+}
+
 async function approve(id){
   await patch(id,{status:'approved',approved_at:new Date().toISOString()});
   upd(id,{status:'approved'}); updateStats(); render();
