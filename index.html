@@ -4,7 +4,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>I Have a Cause — Dashboard</title>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
   :root {
@@ -19,45 +18,11 @@
     --green: #2ecc71;
     --yellow: #f1c40f;
     --blue: #3498db;
-    --purple: #9b59b6;
     --red: #e74c3c;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
 
-  /* AUTH SCREEN */
-  #auth-screen {
-    display: flex; align-items: center; justify-content: center;
-    min-height: 100vh;
-    background: radial-gradient(ellipse at 60% 40%, #1a0a0a 0%, var(--bg) 70%);
-  }
-  .auth-box {
-    background: var(--surface); border: 1px solid var(--border);
-    border-radius: 16px; padding: 48px 40px; width: 380px; text-align: center;
-  }
-  .auth-logo { font-size: 32px; font-weight: 600; margin-bottom: 6px; }
-  .auth-logo span { color: var(--accent); }
-  .auth-sub { color: var(--muted); font-size: 14px; margin-bottom: 36px; }
-  .auth-box input {
-    width: 100%; padding: 12px 16px; background: var(--surface2);
-    border: 1px solid var(--border); border-radius: 10px; color: var(--text);
-    font-family: inherit; font-size: 15px; margin-bottom: 14px; outline: none;
-    transition: border-color 0.2s;
-  }
-  .auth-box input:focus { border-color: var(--accent); }
-  .btn-primary {
-    width: 100%; padding: 13px; background: var(--accent);
-    border: none; border-radius: 10px; color: white; font-family: inherit;
-    font-size: 15px; font-weight: 600; cursor: pointer; transition: background 0.2s;
-  }
-  .btn-primary:hover { background: var(--accent2); }
-  .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
-  .auth-msg { margin-top: 16px; font-size: 14px; color: var(--muted); min-height: 20px; }
-  .auth-msg.success { color: var(--green); }
-  .auth-msg.error { color: var(--red); }
-
-  /* APP SCREEN */
-  #app-screen { display: none; }
   .topbar {
     display: flex; align-items: center; justify-content: space-between;
     padding: 16px 28px; border-bottom: 1px solid var(--border);
@@ -65,7 +30,6 @@
   }
   .topbar-logo { font-size: 18px; font-weight: 600; }
   .topbar-logo span { color: var(--accent); }
-  .topbar-right { display: flex; align-items: center; gap: 16px; }
   .stats-bar { display: flex; gap: 8px; }
   .stat-pill {
     padding: 5px 12px; border-radius: 20px; font-size: 12px; font-weight: 500;
@@ -74,16 +38,9 @@
   .stat-pill.pending { background: rgba(241,196,15,0.12); color: var(--yellow); }
   .stat-pill.approved { background: rgba(46,204,113,0.12); color: var(--green); }
   .stat-pill.rejected { background: rgba(231,76,60,0.12); color: var(--red); }
-  .btn-signout {
-    padding: 7px 14px; background: transparent; border: 1px solid var(--border);
-    border-radius: 8px; color: var(--muted); font-family: inherit; font-size: 13px;
-    cursor: pointer; transition: all 0.2s;
-  }
-  .btn-signout:hover { border-color: var(--text); color: var(--text); }
 
   .main { padding: 24px 28px; max-width: 1100px; margin: 0 auto; }
 
-  /* FILTERS */
   .filters { display: flex; gap: 8px; margin-bottom: 24px; flex-wrap: wrap; align-items: center; }
   .filter-btn {
     padding: 8px 16px; border-radius: 8px; border: 1px solid var(--border);
@@ -94,11 +51,9 @@
   .filter-btn.active { background: var(--accent); border-color: var(--accent); color: white; }
   .niche-filter {
     margin-left: auto; padding: 8px 14px; background: var(--surface2); border: 1px solid var(--border);
-    border-radius: 8px; color: var(--text); font-family: inherit; font-size: 13px;
-    cursor: pointer; outline: none;
+    border-radius: 8px; color: var(--text); font-family: inherit; font-size: 13px; cursor: pointer; outline: none;
   }
 
-  /* STORIES GRID */
   .stories-grid { display: grid; gap: 16px; }
   .story-card {
     background: var(--surface); border: 1px solid var(--border);
@@ -110,9 +65,7 @@
   .story-card.revision { border-left: 3px solid var(--yellow); }
 
   .card-header { padding: 18px 20px 14px; }
-  .card-meta {
-    display: flex; align-items: center; gap: 8px; margin-bottom: 10px; flex-wrap: wrap;
-  }
+  .card-meta { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
   .niche-tag {
     padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600;
     text-transform: uppercase; letter-spacing: 0.5px; font-family: 'DM Mono', monospace;
@@ -133,12 +86,8 @@
   .score-mid { background: rgba(241,196,15,0.15); color: var(--yellow); }
   .score-low { background: rgba(120,128,160,0.1); color: var(--muted); }
 
-  .card-title {
-    font-size: 15px; font-weight: 600; line-height: 1.5; margin-bottom: 8px; color: var(--text);
-  }
-  .card-source {
-    font-size: 12px; color: var(--muted); font-family: 'DM Mono', monospace;
-  }
+  .card-title { font-size: 15px; font-weight: 600; line-height: 1.5; margin-bottom: 8px; }
+  .card-source { font-size: 12px; color: var(--muted); font-family: 'DM Mono', monospace; }
   .card-source a { color: var(--muted); text-decoration: none; }
   .card-source a:hover { color: var(--text); }
 
@@ -164,7 +113,6 @@
   .btn-send { background: rgba(232,65,42,0.15); color: var(--accent2); border: 1px solid rgba(232,65,42,0.3); white-space: nowrap; }
   .btn-send:hover { background: rgba(232,65,42,0.25); }
 
-  /* LOADING & EMPTY */
   .loading { text-align: center; padding: 80px 20px; color: var(--muted); }
   .loading-spinner {
     width: 36px; height: 36px; border: 3px solid var(--border);
@@ -176,288 +124,209 @@
   .empty-icon { font-size: 48px; margin-bottom: 16px; }
   .empty h3 { font-size: 18px; color: var(--text); margin-bottom: 8px; }
 
-  .date-label { font-size: 12px; color: var(--muted); padding: 20px 0 8px; font-weight: 500; letter-spacing: 0.5px; text-transform: uppercase; font-family: 'DM Mono', monospace; }
+  .date-label {
+    font-size: 12px; color: var(--muted); padding: 20px 0 8px; font-weight: 500;
+    letter-spacing: 0.5px; text-transform: uppercase; font-family: 'DM Mono', monospace;
+  }
   .date-label:first-child { padding-top: 0; }
 </style>
 </head>
 <body>
 
-<!-- AUTH SCREEN -->
-<div id="auth-screen">
-  <div class="auth-box">
-    <div class="auth-logo">I Have a <span>Cause</span></div>
-    <div class="auth-sub">Content approval dashboard</div>
-    <input type="email" id="email-input" placeholder="ihaveacause@gmail.com" value="ihaveacause@gmail.com">
-    <button class="btn-primary" id="magic-link-btn" onclick="sendMagicLink()">Send Magic Link</button>
-    <div class="auth-msg" id="auth-msg"></div>
+<div class="topbar">
+  <div class="topbar-logo">I Have a <span>Cause</span></div>
+  <div class="stats-bar">
+    <div class="stat-pill pending" id="stat-pending">⏳ 0 pending</div>
+    <div class="stat-pill approved" id="stat-approved">✅ 0 approved</div>
+    <div class="stat-pill rejected" id="stat-rejected">❌ 0 rejected</div>
   </div>
 </div>
 
-<!-- APP SCREEN -->
-<div id="app-screen">
-  <div class="topbar">
-    <div class="topbar-logo">I Have a <span>Cause</span></div>
-    <div class="topbar-right">
-      <div class="stats-bar">
-        <div class="stat-pill pending" id="stat-pending">⏳ 0 pending</div>
-        <div class="stat-pill approved" id="stat-approved">✅ 0 approved</div>
-        <div class="stat-pill rejected" id="stat-rejected">❌ 0 rejected</div>
-      </div>
-      <button class="btn-signout" onclick="signOut()">Sign out</button>
-    </div>
+<div class="main">
+  <div class="filters">
+    <button class="filter-btn active" onclick="setFilter('all', this)">All</button>
+    <button class="filter-btn" onclick="setFilter('pending', this)">Pending</button>
+    <button class="filter-btn" onclick="setFilter('approved', this)">Approved</button>
+    <button class="filter-btn" onclick="setFilter('rejected', this)">Rejected</button>
+    <button class="filter-btn" onclick="setFilter('revision', this)">Revision</button>
+    <select class="niche-filter" onchange="setNiche(this.value)">
+      <option value="all">All niches</option>
+      <option value="politics">Politics</option>
+      <option value="entertainment">Entertainment</option>
+      <option value="crime">Crime</option>
+      <option value="sports">Sports</option>
+      <option value="business">Business</option>
+      <option value="viral">Viral</option>
+      <option value="general">General</option>
+    </select>
   </div>
 
-  <div class="main">
-    <div class="filters">
-      <button class="filter-btn active" onclick="setFilter('all', this)">All</button>
-      <button class="filter-btn" onclick="setFilter('pending', this)">Pending</button>
-      <button class="filter-btn" onclick="setFilter('approved', this)">Approved</button>
-      <button class="filter-btn" onclick="setFilter('rejected', this)">Rejected</button>
-      <button class="filter-btn" onclick="setFilter('revision', this)">Revision</button>
-      <select class="niche-filter" id="niche-select" onchange="setNiche(this.value)">
-        <option value="all">All niches</option>
-        <option value="politics">Politics</option>
-        <option value="entertainment">Entertainment</option>
-        <option value="crime">Crime</option>
-        <option value="sports">Sports</option>
-        <option value="business">Business</option>
-        <option value="viral">Viral</option>
-        <option value="general">General</option>
-      </select>
-    </div>
-
-    <div id="stories-container">
-      <div class="loading">
-        <div class="loading-spinner"></div>
-        <div>Loading stories...</div>
-      </div>
+  <div id="stories-container">
+    <div class="loading">
+      <div class="loading-spinner"></div>
+      <div>Loading stories...</div>
     </div>
   </div>
 </div>
 
 <script>
 const SUPABASE_URL = 'https://alfuvzlmatfkgdrkeqgk.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFsZnV2emxtYXRma2dkcmtlcWdrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc5OTkzOTQsImV4cCI6MjA5MzU3NTM5NH0.JtxVTVdjR3vPWooM41xM1MCvJNH7WDnFjzfowjuDiRg';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFsZnV2emxtYXRma2dkcmtlcWdrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc5OTkzOTQsImV4cCI6MjA5MzU3NTM5NH0.JtxVTVdjR3vPWooM41xM1MCvJNH7WDnFjzfowjuDiRg';
 
-const { createClient } = supabase;
-const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const HEADERS = {
+  'apikey': SUPABASE_KEY,
+  'Authorization': `Bearer ${SUPABASE_KEY}`,
+  'Content-Type': 'application/json'
+};
 
 let currentFilter = 'all';
 let currentNiche = 'all';
 let allStories = [];
 
-// ── Auth ────────────────────────────────────────────────────────────────────
-
-async function sendMagicLink() {
-  const email = document.getElementById('email-input').value.trim();
-  const btn = document.getElementById('magic-link-btn');
-  const msg = document.getElementById('auth-msg');
-  if (!email) { msg.textContent = 'Enter your email first.'; msg.className = 'auth-msg error'; return; }
-  btn.disabled = true;
-  btn.textContent = 'Sending...';
-  msg.textContent = '';
-  const { error } = await sb.auth.signInWithOtp({ email, options: { emailRedirectTo: window.location.href } });
-  if (error) {
-    msg.textContent = error.message;
-    msg.className = 'auth-msg error';
-    btn.disabled = false;
-    btn.textContent = 'Send Magic Link';
-  } else {
-    msg.textContent = '✉️ Check your Gmail — click the link to sign in!';
-    msg.className = 'auth-msg success';
-    btn.textContent = 'Link sent!';
-  }
-}
-
-function signOut() {
-  sb.auth.signOut();
-  document.getElementById('app-screen').style.display = 'none';
-  document.getElementById('auth-screen').style.display = 'flex';
-}
-
-sb.auth.onAuthStateChange(async (event, session) => {
-  if (session) {
-    document.getElementById('auth-screen').style.display = 'none';
-    document.getElementById('app-screen').style.display = 'block';
-    await loadStories();
-  } else {
-    document.getElementById('auth-screen').style.display = 'flex';
-    document.getElementById('app-screen').style.display = 'none';
-  }
-});
-
-// ── Load stories ─────────────────────────────────────────────────────────────
-
 async function loadStories() {
-  showLoading();
-  const { data, error } = await sb
-    .from('content_queue')
-    .select('*')
-    .order('created_at', { ascending: false })
-    .limit(200);
-
-  if (error) {
+  try {
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/content_queue?select=*&order=created_at.desc&limit=200`,
+      { headers: HEADERS }
+    );
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    allStories = await res.json();
+    updateStats();
+    renderStories();
+  } catch (e) {
     document.getElementById('stories-container').innerHTML =
-      `<div class="empty"><div class="empty-icon">⚠️</div><h3>Error loading stories</h3><p>${error.message}</p></div>`;
-    return;
+      `<div class="empty"><div class="empty-icon">⚠️</div><h3>Error loading stories</h3><p style="color:var(--muted);font-size:14px">${e.message}</p></div>`;
   }
-
-  allStories = data || [];
-  updateStats();
-  renderStories();
-}
-
-function showLoading() {
-  document.getElementById('stories-container').innerHTML =
-    '<div class="loading"><div class="loading-spinner"></div><div>Loading stories...</div></div>';
 }
 
 function updateStats() {
-  const pending = allStories.filter(s => s.status === 'pending').length;
-  const approved = allStories.filter(s => s.status === 'approved').length;
-  const rejected = allStories.filter(s => s.status === 'rejected').length;
-  document.getElementById('stat-pending').textContent = `⏳ ${pending} pending`;
-  document.getElementById('stat-approved').textContent = `✅ ${approved} approved`;
-  document.getElementById('stat-rejected').textContent = `❌ ${rejected} rejected`;
+  const p = allStories.filter(s => s.status === 'pending').length;
+  const a = allStories.filter(s => s.status === 'approved').length;
+  const r = allStories.filter(s => s.status === 'rejected').length;
+  document.getElementById('stat-pending').textContent = `⏳ ${p} pending`;
+  document.getElementById('stat-approved').textContent = `✅ ${a} approved`;
+  document.getElementById('stat-rejected').textContent = `❌ ${r} rejected`;
 }
 
-// ── Filters ───────────────────────────────────────────────────────────────────
-
-function setFilter(filter, btn) {
-  currentFilter = filter;
+function setFilter(f, btn) {
+  currentFilter = f;
   document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
   renderStories();
 }
 
-function setNiche(niche) {
-  currentNiche = niche;
-  renderStories();
-}
-
-function getFilteredStories() {
-  return allStories.filter(s => {
-    const statusMatch = currentFilter === 'all' || s.status === currentFilter;
-    const nicheMatch = currentNiche === 'all' || s.niche === currentNiche;
-    return statusMatch && nicheMatch;
-  });
-}
-
-// ── Render ────────────────────────────────────────────────────────────────────
+function setNiche(n) { currentNiche = n; renderStories(); }
 
 function renderStories() {
-  const stories = getFilteredStories();
-  const container = document.getElementById('stories-container');
+  const stories = allStories.filter(s => {
+    const sm = currentFilter === 'all' || s.status === currentFilter;
+    const nm = currentNiche === 'all' || s.niche === currentNiche;
+    return sm && nm;
+  });
 
-  if (stories.length === 0) {
-    container.innerHTML = `<div class="empty">
-      <div class="empty-icon">📭</div>
+  const container = document.getElementById('stories-container');
+  if (!stories.length) {
+    container.innerHTML = `<div class="empty"><div class="empty-icon">📭</div>
       <h3>No stories found</h3>
-      <p style="color:var(--muted);font-size:14px;margin-top:8px;">
+      <p style="color:var(--muted);font-size:14px;margin-top:8px">
         ${currentFilter === 'pending' ? 'All caught up! Check back after 8:30 AM IST.' : 'Try a different filter.'}
-      </p>
-    </div>`;
+      </p></div>`;
     return;
   }
 
-  // Group by date
   const groups = {};
   stories.forEach(s => {
     const d = new Date(s.created_at);
-    const label = isToday(d) ? 'Today' : isYesterday(d) ? 'Yesterday' : d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
-    if (!groups[label]) groups[label] = [];
-    groups[label].push(s);
+    const label = isToday(d) ? 'Today' : isYesterday(d) ? 'Yesterday'
+      : d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+    (groups[label] = groups[label] || []).push(s);
   });
 
   let html = '';
   for (const [label, group] of Object.entries(groups)) {
-    html += `<div class="date-label">${label} · ${group.length} stories</div>`;
-    html += '<div class="stories-grid">';
-    group.forEach(s => { html += renderCard(s); });
+    html += `<div class="date-label">${label} · ${group.length} stories</div><div class="stories-grid">`;
+    group.forEach(s => { html += card(s); });
     html += '</div>';
   }
   container.innerHTML = html;
 }
 
-function renderCard(s) {
-  const nicheClass = `niche-${s.niche || 'general'}`;
-  const score = s.viral_score || 50;
-  const scoreClass = score >= 70 ? 'score-high' : score >= 45 ? 'score-mid' : 'score-low';
-  const cardClass = s.status !== 'pending' ? s.status : '';
-  const approveActive = s.status === 'approved' ? 'active' : '';
-  const rejectActive = s.status === 'rejected' ? 'active' : '';
-
-  const timeAgo = getTimeAgo(new Date(s.created_at));
-  const sourceHtml = s.source_url
-    ? `<a href="${s.source_url}" target="_blank" rel="noopener">${s.source_name || 'Source'}</a> · ${timeAgo}`
-    : `${s.source_name || 'Scanner'} · ${timeAgo}`;
-
-  return `
-  <div class="story-card ${cardClass}" id="card-${s.id}">
+function card(s) {
+  const nc = `niche-${s.niche || 'general'}`;
+  const sc = s.viral_score >= 70 ? 'score-high' : s.viral_score >= 45 ? 'score-mid' : 'score-low';
+  const cc = s.status !== 'pending' ? s.status : '';
+  const aa = s.status === 'approved' ? 'active' : '';
+  const ra = s.status === 'rejected' ? 'active' : '';
+  const src = s.source_url
+    ? `<a href="${s.source_url}" target="_blank" rel="noopener">${esc(s.source_name||'Source')}</a> · ${ago(s.created_at)}`
+    : `${esc(s.source_name||'Scanner')} · ${ago(s.created_at)}`;
+  return `<div class="story-card ${cc}" id="card-${s.id}">
     <div class="card-header">
       <div class="card-meta">
-        <span class="niche-tag ${nicheClass}">${s.niche || 'general'}</span>
-        <span class="viral-score ${scoreClass}">🔥 ${score}</span>
+        <span class="niche-tag ${nc}">${s.niche||'general'}</span>
+        <span class="viral-score ${sc}">🔥 ${s.viral_score||50}</span>
       </div>
-      <div class="card-title">${escHtml(s.title)}</div>
-      <div class="card-source">${sourceHtml}</div>
+      <div class="card-title">${esc(s.title)}</div>
+      <div class="card-source">${src}</div>
     </div>
     <div class="card-actions">
-      <button class="btn-approve ${approveActive}" onclick="approve('${s.id}')">✅ Approve</button>
-      <button class="btn-reject ${rejectActive}" onclick="reject('${s.id}')">❌ Reject</button>
+      <button class="btn-approve ${aa}" onclick="approve('${s.id}')">✅ Approve</button>
+      <button class="btn-reject ${ra}" onclick="reject('${s.id}')">❌ Reject</button>
       <div class="feedback-area">
-        <input class="feedback-input" id="fb-${s.id}" placeholder="Feedback for AI rewrite..." value="${escHtml(s.feedback || '')}">
+        <input class="feedback-input" id="fb-${s.id}" placeholder="Feedback for AI rewrite..." value="${esc(s.feedback||'')}">
         <button class="btn-send" onclick="sendFeedback('${s.id}')">Send to AI</button>
       </div>
     </div>
   </div>`;
 }
 
-// ── Actions ───────────────────────────────────────────────────────────────────
-
 async function approve(id) {
-  await sb.from('content_queue').update({ status: 'approved', approved_at: new Date().toISOString() }).eq('id', id);
+  await fetch(`${SUPABASE_URL}/rest/v1/content_queue?id=eq.${id}`, {
+    method: 'PATCH', headers: { ...HEADERS, 'Prefer': 'return=minimal' },
+    body: JSON.stringify({ status: 'approved', approved_at: new Date().toISOString() })
+  });
   const s = allStories.find(x => x.id === id);
-  if (s) { s.status = 'approved'; s.approved_at = new Date().toISOString(); }
-  updateStats();
-  renderStories();
+  if (s) s.status = 'approved';
+  updateStats(); renderStories();
 }
 
 async function reject(id) {
-  await sb.from('content_queue').update({ status: 'rejected', rejected_at: new Date().toISOString() }).eq('id', id);
+  await fetch(`${SUPABASE_URL}/rest/v1/content_queue?id=eq.${id}`, {
+    method: 'PATCH', headers: { ...HEADERS, 'Prefer': 'return=minimal' },
+    body: JSON.stringify({ status: 'rejected', rejected_at: new Date().toISOString() })
+  });
   const s = allStories.find(x => x.id === id);
-  if (s) { s.status = 'rejected'; s.rejected_at = new Date().toISOString(); }
-  updateStats();
-  renderStories();
+  if (s) s.status = 'rejected';
+  updateStats(); renderStories();
 }
 
 async function sendFeedback(id) {
   const feedback = document.getElementById(`fb-${id}`).value.trim();
   if (!feedback) return;
-  await sb.from('content_queue').update({ status: 'revision', feedback }).eq('id', id);
+  await fetch(`${SUPABASE_URL}/rest/v1/content_queue?id=eq.${id}`, {
+    method: 'PATCH', headers: { ...HEADERS, 'Prefer': 'return=minimal' },
+    body: JSON.stringify({ status: 'revision', feedback })
+  });
   const s = allStories.find(x => x.id === id);
   if (s) { s.status = 'revision'; s.feedback = feedback; }
-  updateStats();
-  renderStories();
+  updateStats(); renderStories();
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-function escHtml(str) {
+function esc(str) {
   if (!str) return '';
   return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
-
-function isToday(d) { const t = new Date(); return d.toDateString() === t.toDateString(); }
+function isToday(d) { return d.toDateString() === new Date().toDateString(); }
 function isYesterday(d) { const y = new Date(); y.setDate(y.getDate()-1); return d.toDateString() === y.toDateString(); }
-
-function getTimeAgo(d) {
-  const secs = Math.floor((new Date() - d) / 1000);
-  if (secs < 60) return 'just now';
-  if (secs < 3600) return `${Math.floor(secs/60)}m ago`;
-  if (secs < 86400) return `${Math.floor(secs/3600)}h ago`;
-  return `${Math.floor(secs/86400)}d ago`;
+function ago(ts) {
+  const s = Math.floor((Date.now() - new Date(ts)) / 1000);
+  if (s < 60) return 'just now';
+  if (s < 3600) return `${Math.floor(s/60)}m ago`;
+  if (s < 86400) return `${Math.floor(s/3600)}h ago`;
+  return `${Math.floor(s/86400)}d ago`;
 }
+
+loadStories();
 </script>
 </body>
 </html>
