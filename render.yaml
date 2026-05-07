@@ -1,0 +1,14 @@
+services:
+  - type: cron
+    name: ihaveacause-scanner
+    runtime: python
+    schedule: "0 3 * * *"   # Every day at 3:00 AM UTC  (8:30 AM IST)
+    buildCommand: pip install -r scanner/requirements.txt
+    startCommand: python scanner/scanner.py
+    envVars:
+      - key: SUPABASE_URL
+        value: https://alfuvzlmatfkgdrkeqgk.supabase.co
+      - key: SUPABASE_KEY
+        fromGroup: ihaveacause-secrets
+      - key: NEWS_API_KEY
+        fromGroup: ihaveacause-secrets
