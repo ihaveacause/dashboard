@@ -75,7 +75,7 @@ Return ONLY a valid JSON object with these exact keys (no extra text, no markdow
 }}"""
 
     payload = {
-        "model":      "claude-sonnet-4-20250514",
+        "model":      "claude-3-5-haiku-20241022",
         "max_tokens": 4000,
         "messages":   [{"role": "user", "content": prompt}]
     }
