@@ -7,155 +7,92 @@
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
   :root {
-    --bg: #0d0f14;
-    --surface: #161922;
-    --surface2: #1e2230;
-    --border: #2a2f40;
-    --text: #e8eaf0;
-    --muted: #7880a0;
-    --accent: #e8412a;
-    --accent2: #ff6b4a;
-    --green: #2ecc71;
-    --yellow: #f1c40f;
-    --red: #e74c3c;
-    --blue: #3498db;
-    --purple: #9b59b6;
+    --bg: #0d0f14; --surface: #161922; --surface2: #1e2230; --border: #2a2f40;
+    --text: #e8eaf0; --muted: #7880a0; --accent: #e8412a; --accent2: #ff6b4a;
+    --green: #2ecc71; --yellow: #f1c40f; --red: #e74c3c; --blue: #3498db; --purple: #9b59b6;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
 
-  /* TOPBAR */
-  .topbar {
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 14px 28px; border-bottom: 1px solid var(--border);
-    background: var(--surface); position: sticky; top: 0; z-index: 100;
-    flex-wrap: wrap; gap: 10px;
-  }
+  .topbar { display: flex; align-items: center; justify-content: space-between; padding: 14px 28px; border-bottom: 1px solid var(--border); background: var(--surface); position: sticky; top: 0; z-index: 100; flex-wrap: wrap; gap: 10px; }
   .topbar-logo { font-size: 18px; font-weight: 600; }
   .topbar-logo span { color: var(--accent); }
   .topbar-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
   .stats-bar { display: flex; gap: 6px; }
   .stat-pill { padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 500; font-family: 'DM Mono', monospace; }
-  .stat-pill.pending { background: rgba(241,196,15,0.12); color: var(--yellow); }
+  .stat-pill.pending  { background: rgba(241,196,15,0.12); color: var(--yellow); }
   .stat-pill.approved { background: rgba(46,204,113,0.12); color: var(--green); }
-  .stat-pill.rejected { background: rgba(231,76,60,0.12); color: var(--red); }
-  .btn-add-idea {
-    padding: 8px 16px; background: var(--accent); border: none; border-radius: 8px;
-    color: white; font-family: inherit; font-size: 13px; font-weight: 600;
-    cursor: pointer; transition: background 0.2s;
-  }
+  .stat-pill.rejected { background: rgba(231,76,60,0.12);  color: var(--red); }
+  .btn-add-idea { padding: 8px 16px; background: var(--accent); border: none; border-radius: 8px; color: white; font-family: inherit; font-size: 13px; font-weight: 600; cursor: pointer; transition: background 0.2s; }
   .btn-add-idea:hover { background: var(--accent2); }
 
-  /* FILTERS */
-  .filter-bar {
-    background: var(--surface); border-bottom: 1px solid var(--border);
-    padding: 0 28px; position: sticky; top: 53px; z-index: 99;
-  }
+  .filter-bar { background: var(--surface); border-bottom: 1px solid var(--border); padding: 0 28px; position: sticky; top: 53px; z-index: 99; }
   .filter-row { display: flex; gap: 4px; overflow-x: auto; padding: 10px 0; scrollbar-width: none; }
   .filter-row::-webkit-scrollbar { display: none; }
   .filter-divider { width: 1px; background: var(--border); margin: 4px 8px; flex-shrink: 0; }
-  .filter-btn {
-    padding: 6px 14px; border-radius: 7px; border: 1px solid transparent;
-    background: transparent; color: var(--muted); font-family: inherit; font-size: 12px;
-    cursor: pointer; transition: all 0.2s; font-weight: 500; white-space: nowrap; flex-shrink: 0;
-  }
+  .filter-btn { padding: 6px 14px; border-radius: 7px; border: 1px solid transparent; background: transparent; color: var(--muted); font-family: inherit; font-size: 12px; cursor: pointer; transition: all 0.2s; font-weight: 500; white-space: nowrap; flex-shrink: 0; }
   .filter-btn:hover { color: var(--text); border-color: var(--border); }
   .filter-btn.active { background: var(--accent); color: white; border-color: var(--accent); }
-  .filter-btn.active.fmt-yt-long { background: #c0392b; border-color: #c0392b; }
-  .filter-btn.active.fmt-yt-short { background: #e74c3c; border-color: #e74c3c; }
-  .filter-btn.active.fmt-reels { background: var(--purple); border-color: var(--purple); }
-  .filter-btn.active.fmt-meme { background: #e67e22; border-color: #e67e22; }
-  .filter-btn.active.fmt-x-thread { background: #1a1a2e; border-color: #555; }
-  .filter-btn.active.fmt-x-post { background: #1a1a2e; border-color: #555; }
-  .niche-select {
-    margin-left: auto; flex-shrink: 0; padding: 6px 12px; background: var(--surface2);
-    border: 1px solid var(--border); border-radius: 7px; color: var(--text);
-    font-family: inherit; font-size: 12px; cursor: pointer; outline: none;
-  }
+  .niche-select { margin-left: auto; flex-shrink: 0; padding: 6px 12px; background: var(--surface2); border: 1px solid var(--border); border-radius: 7px; color: var(--text); font-family: inherit; font-size: 12px; cursor: pointer; outline: none; }
 
-  /* MAIN */
   .main { padding: 20px 28px; max-width: 1100px; margin: 0 auto; }
   .stories-grid { display: grid; gap: 14px; }
-  .date-label {
-    font-size: 11px; color: var(--muted); padding: 16px 0 6px; font-weight: 500;
-    letter-spacing: 0.6px; text-transform: uppercase; font-family: 'DM Mono', monospace;
-  }
+  .date-label { font-size: 11px; color: var(--muted); padding: 16px 0 6px; font-weight: 500; letter-spacing: 0.6px; text-transform: uppercase; font-family: 'DM Mono', monospace; }
   .date-label:first-child { padding-top: 0; }
 
-  /* STORY CARD */
-  .story-card {
-    background: var(--surface); border: 1px solid var(--border);
-    border-radius: 14px; overflow: hidden; transition: border-color 0.2s;
-  }
+  .story-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; transition: border-color 0.2s; }
   .story-card:hover { border-color: #3a4055; }
-  .story-card.approved { border-left: 3px solid var(--green); }
-  .story-card.rejected { border-left: 3px solid var(--red); opacity: 0.65; }
-  .story-card.revision { border-left: 3px solid var(--yellow); }
+  .story-card.approved   { border-left: 3px solid var(--green); }
+  .story-card.rejected   { border-left: 3px solid var(--red); opacity: 0.65; }
+  .story-card.revision   { border-left: 3px solid var(--yellow); }
   .story-card.my-idea-pending { border-left: 3px solid var(--accent2); }
 
-  .card-header { padding: 16px 18px 12px; cursor: pointer; }
+  .card-header { padding: 16px 18px 12px; }
   .card-meta { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
-  .niche-tag {
-    padding: 2px 8px; border-radius: 20px; font-size: 10px; font-weight: 600;
-    text-transform: uppercase; letter-spacing: 0.5px; font-family: 'DM Mono', monospace;
-  }
-  .niche-politics { background: rgba(52,152,219,0.15); color: #5dade2; }
-  .niche-entertainment { background: rgba(155,89,182,0.15); color: #bb8fce; }
-  .niche-crime { background: rgba(231,76,60,0.15); color: #f1948a; }
-  .niche-sports { background: rgba(46,204,113,0.15); color: #82e0aa; }
-  .niche-business { background: rgba(241,196,15,0.15); color: #f7dc6f; }
-  .niche-viral { background: rgba(232,65,42,0.15); color: var(--accent2); }
-  .niche-general { background: rgba(120,128,160,0.15); color: var(--muted); }
-  .tag-myidea { background: rgba(255,107,74,0.15); color: var(--accent2); }
+  .niche-tag { padding: 2px 8px; border-radius: 20px; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; font-family: 'DM Mono', monospace; }
+  .niche-politics     { background: rgba(52,152,219,0.15); color: #5dade2; }
+  .niche-entertainment{ background: rgba(155,89,182,0.15); color: #bb8fce; }
+  .niche-crime        { background: rgba(231,76,60,0.15);  color: #f1948a; }
+  .niche-sports       { background: rgba(46,204,113,0.15); color: #82e0aa; }
+  .niche-business     { background: rgba(241,196,15,0.15); color: #f7dc6f; }
+  .niche-viral        { background: rgba(232,65,42,0.15);  color: var(--accent2); }
+  .niche-general      { background: rgba(120,128,160,0.15);color: var(--muted); }
+  .tag-myidea         { background: rgba(255,107,74,0.15); color: var(--accent2); }
 
   .viral-score { font-family: 'DM Mono', monospace; font-size: 10px; font-weight: 500; padding: 2px 7px; border-radius: 5px; margin-left: auto; }
   .score-high { background: rgba(46,204,113,0.15); color: var(--green); }
-  .score-mid { background: rgba(241,196,15,0.15); color: var(--yellow); }
-  .score-low { background: rgba(120,128,160,0.1); color: var(--muted); }
+  .score-mid  { background: rgba(241,196,15,0.15); color: var(--yellow); }
+  .score-low  { background: rgba(120,128,160,0.1); color: var(--muted); }
 
-  .card-title { font-size: 14px; font-weight: 600; line-height: 1.5; margin-bottom: 5px; }
-  .card-desc { font-size: 13px; color: var(--muted); line-height: 1.5; margin-bottom: 6px; }
+  .card-title  { font-size: 14px; font-weight: 600; line-height: 1.5; margin-bottom: 5px; }
+  .card-desc   { font-size: 13px; color: var(--muted); line-height: 1.5; margin-bottom: 6px; }
   .card-source { font-size: 11px; color: var(--muted); font-family: 'DM Mono', monospace; }
   .card-source a { color: var(--muted); text-decoration: none; }
   .card-source a:hover { color: var(--text); }
 
-  /* FORMAT BADGES */
   .format-badges { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 8px; }
-  .fmt-badge {
-    padding: 2px 8px; border-radius: 5px; font-size: 10px; font-weight: 600;
-    font-family: 'DM Mono', monospace; letter-spacing: 0.3px;
-  }
-  .fmt-badge.yt-long { background: rgba(192,57,43,0.15); color: #e74c3c; }
-  .fmt-badge.yt-short { background: rgba(231,76,60,0.15); color: #ff6b6b; }
-  .fmt-badge.reels { background: rgba(155,89,182,0.15); color: #bb8fce; }
-  .fmt-badge.meme { background: rgba(230,126,34,0.15); color: #f0a500; }
-  .fmt-badge.x-thread { background: rgba(120,128,160,0.12); color: #aab; }
-  .fmt-badge.x-post { background: rgba(120,128,160,0.12); color: #aab; }
-  .fmt-badge.ready { opacity: 1; }
-  .fmt-badge.pending-script { opacity: 0.4; }
+  .fmt-badge { padding: 2px 8px; border-radius: 5px; font-size: 10px; font-weight: 600; font-family: 'DM Mono', monospace; }
+  .fmt-badge.yt-long  { background: rgba(192,57,43,0.15);  color: #e74c3c; }
+  .fmt-badge.yt-short { background: rgba(231,76,60,0.15);  color: #ff6b6b; }
+  .fmt-badge.reels    { background: rgba(155,89,182,0.15); color: #bb8fce; }
+  .fmt-badge.meme     { background: rgba(230,126,34,0.15); color: #f0a500; }
+  .fmt-badge.x-thread { background: rgba(120,128,160,0.12);color: #aab; }
+  .fmt-badge.x-post   { background: rgba(120,128,160,0.12);color: #aab; }
 
-  /* CARD ACTIONS */
   .card-actions { padding: 12px 18px; border-top: 1px solid var(--border); display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-  .btn-approve, .btn-reject, .btn-send, .btn-scripts {
-    padding: 7px 14px; border-radius: 7px; border: none; font-family: inherit;
-    font-size: 12px; font-weight: 500; cursor: pointer; transition: all 0.2s;
-  }
+  .btn-approve, .btn-reject, .btn-send, .btn-scripts { padding: 7px 14px; border-radius: 7px; border: none; font-family: inherit; font-size: 12px; font-weight: 500; cursor: pointer; transition: all 0.2s; }
   .btn-approve { background: rgba(46,204,113,0.12); color: var(--green); border: 1px solid rgba(46,204,113,0.25); }
   .btn-approve:hover { background: rgba(46,204,113,0.22); }
   .btn-approve.active { background: var(--green); color: #0d0f14; border-color: var(--green); }
-  .btn-reject { background: rgba(231,76,60,0.1); color: var(--red); border: 1px solid rgba(231,76,60,0.2); }
+  .btn-reject  { background: rgba(231,76,60,0.1);  color: var(--red);   border: 1px solid rgba(231,76,60,0.2); }
   .btn-reject:hover { background: rgba(231,76,60,0.18); }
-  .btn-reject.active { background: var(--red); color: white; border-color: var(--red); }
+  .btn-reject.active  { background: var(--red); color: white; border-color: var(--red); }
   .btn-scripts { background: var(--surface2); color: var(--muted); border: 1px solid var(--border); margin-left: auto; }
   .btn-scripts:hover { color: var(--text); border-color: var(--text); }
   .btn-scripts.has-scripts { color: var(--green); border-color: rgba(46,204,113,0.3); }
 
   .feedback-area { width: 100%; display: flex; gap: 8px; margin-top: 4px; }
-  .feedback-input {
-    flex: 1; padding: 7px 11px; background: var(--surface2); border: 1px solid var(--border);
-    border-radius: 7px; color: var(--text); font-family: inherit; font-size: 12px; outline: none;
-    transition: border-color 0.2s;
-  }
+  .feedback-input { flex: 1; padding: 7px 11px; background: var(--surface2); border: 1px solid var(--border); border-radius: 7px; color: var(--text); font-family: inherit; font-size: 12px; outline: none; transition: border-color 0.2s; }
   .feedback-input:focus { border-color: var(--accent); }
   .btn-send { background: rgba(232,65,42,0.12); color: var(--accent2); border: 1px solid rgba(232,65,42,0.25); white-space: nowrap; }
   .btn-send:hover { background: rgba(232,65,42,0.22); }
@@ -163,84 +100,78 @@
   /* SCRIPTS PANEL */
   .scripts-panel { display: none; border-top: 1px solid var(--border); }
   .scripts-panel.open { display: block; }
-  .script-tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); overflow-x: auto; scrollbar-width: none; }
-  .script-tabs::-webkit-scrollbar { display: none; }
-  .script-tab {
-    padding: 10px 16px; font-size: 12px; font-weight: 500; cursor: pointer;
-    color: var(--muted); border-bottom: 2px solid transparent; white-space: nowrap;
-    transition: all 0.2s; font-family: 'DM Mono', monospace;
-  }
-  .script-tab:hover { color: var(--text); }
-  .script-tab.active { color: var(--text); border-bottom-color: var(--accent); }
-  .script-tab.has-content { color: var(--green); }
-  .script-tab.has-content.active { border-bottom-color: var(--green); }
 
-  .script-content { padding: 16px 18px; }
-  .script-empty {
-    text-align: center; padding: 28px; color: var(--muted); font-size: 13px;
-  }
-  .script-empty-icon { font-size: 28px; margin-bottom: 8px; }
-  .script-text {
-    font-size: 13px; line-height: 1.8; color: var(--text);
-    background: var(--surface2); border-radius: 8px; padding: 14px 16px;
-    white-space: pre-wrap; font-family: 'DM Mono', monospace; font-size: 12px;
-    max-height: 300px; overflow-y: auto;
-  }
-  .script-actions { display: flex; gap: 8px; margin-top: 10px; align-items: center; }
-  .script-label { font-size: 11px; color: var(--muted); font-family: 'DM Mono', monospace; margin-right: auto; }
+  /* FORMAT TABS (top level) */
+  .format-tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); overflow-x: auto; scrollbar-width: none; background: var(--surface2); }
+  .format-tabs::-webkit-scrollbar { display: none; }
+  .format-tab { padding: 10px 16px; font-size: 12px; font-weight: 600; cursor: pointer; color: var(--muted); border-bottom: 2px solid transparent; white-space: nowrap; transition: all 0.2s; font-family: 'DM Mono', monospace; flex-shrink: 0; }
+  .format-tab:hover { color: var(--text); }
+  .format-tab.active { color: var(--text); border-bottom-color: var(--accent); background: var(--surface); }
+  .format-tab.has-content { color: var(--green); }
+  .format-tab.has-content.active { border-bottom-color: var(--green); }
 
-  /* FORMAT PICKER (post-script review) */
+  /* LANGUAGE TABS (inside each format) */
+  .lang-tabs { display: flex; border-bottom: 1px solid var(--border); }
+  .lang-tab { padding: 8px 16px; font-size: 11px; font-weight: 500; cursor: pointer; color: var(--muted); border-bottom: 2px solid transparent; transition: all 0.2s; font-family: 'DM Mono', monospace; }
+  .lang-tab:hover { color: var(--text); }
+  .lang-tab.active { color: var(--text); border-bottom-color: var(--blue); }
+  .lang-tab.has-content { color: var(--blue); }
+  .lang-tab.has-content.active { border-bottom-color: var(--blue); }
+
+  .format-panel { display: none; }
+  .format-panel.active { display: block; }
+  .lang-panel { display: none; }
+  .lang-panel.active { display: block; }
+
+  .script-content-area { padding: 16px 18px; }
+  .script-empty { text-align: center; padding: 24px; color: var(--muted); font-size: 13px; }
+  .script-empty-icon { font-size: 24px; margin-bottom: 8px; }
+
+  /* SCRIPT DISPLAY + EDIT */
+  .script-display { position: relative; }
+  .script-text { font-size: 12px; line-height: 1.9; color: var(--text); background: var(--surface2); border-radius: 8px; padding: 14px 16px; white-space: pre-wrap; font-family: 'DM Mono', monospace; max-height: 320px; overflow-y: auto; border: 1px solid var(--border); }
+  .script-edit-area { width: 100%; min-height: 200px; padding: 14px 16px; background: var(--surface2); border: 1px solid var(--accent); border-radius: 8px; color: var(--text); font-family: 'DM Mono', monospace; font-size: 12px; line-height: 1.9; resize: vertical; outline: none; display: none; }
+  .script-toolbar { display: flex; gap: 8px; margin-top: 10px; align-items: center; }
+  .btn-edit-script { padding: 6px 12px; background: transparent; border: 1px solid var(--border); border-radius: 6px; color: var(--muted); font-family: inherit; font-size: 11px; cursor: pointer; transition: all 0.2s; }
+  .btn-edit-script:hover { border-color: var(--text); color: var(--text); }
+  .btn-save-script { padding: 6px 14px; background: var(--green); border: none; border-radius: 6px; color: #0d0f14; font-family: inherit; font-size: 11px; font-weight: 600; cursor: pointer; display: none; }
+  .btn-cancel-edit { padding: 6px 12px; background: transparent; border: 1px solid var(--border); border-radius: 6px; color: var(--muted); font-family: inherit; font-size: 11px; cursor: pointer; display: none; }
+
+  /* FORMAT PICKER */
   .format-picker { padding: 14px 18px; border-top: 1px solid var(--border); background: var(--surface2); }
   .format-picker-title { font-size: 11px; color: var(--muted); font-family: 'DM Mono', monospace; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
-  .format-checkboxes { display: flex; gap: 8px; flex-wrap: wrap; }
+  .format-checkboxes { display: flex; gap: 12px; flex-wrap: wrap; }
   .fmt-check { display: flex; align-items: center; gap: 5px; cursor: pointer; }
   .fmt-check input { accent-color: var(--accent); cursor: pointer; }
   .fmt-check label { font-size: 12px; color: var(--text); cursor: pointer; font-weight: 500; }
-  .btn-save-formats {
-    margin-top: 10px; padding: 7px 16px; background: var(--accent); border: none;
-    border-radius: 7px; color: white; font-family: inherit; font-size: 12px;
-    font-weight: 600; cursor: pointer; transition: background 0.2s;
-  }
-  .btn-save-formats:hover { background: var(--accent2); }
 
   /* LOADING / EMPTY */
   .loading { text-align: center; padding: 80px 20px; color: var(--muted); }
-  .loading-spinner {
-    width: 32px; height: 32px; border: 3px solid var(--border);
-    border-top-color: var(--accent); border-radius: 50%;
-    animation: spin 0.8s linear infinite; margin: 0 auto 14px;
-  }
+  .loading-spinner { width: 32px; height: 32px; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 14px; }
   @keyframes spin { to { transform: rotate(360deg); } }
   .empty { text-align: center; padding: 60px 20px; color: var(--muted); }
   .empty-icon { font-size: 40px; margin-bottom: 12px; }
   .empty h3 { font-size: 16px; color: var(--text); margin-bottom: 6px; }
 
   /* MODAL */
-  .modal-overlay {
-    display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.75);
-    z-index: 200; align-items: center; justify-content: center; padding: 20px;
-  }
+  .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.75); z-index: 200; align-items: center; justify-content: center; padding: 20px; }
   .modal-overlay.open { display: flex; }
   .modal { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 28px; width: 100%; max-width: 500px; }
   .modal h2 { font-size: 17px; font-weight: 600; margin-bottom: 4px; }
   .modal-sub { color: var(--muted); font-size: 13px; margin-bottom: 20px; }
   .form-group { margin-bottom: 14px; }
   .form-label { display: block; font-size: 12px; font-weight: 500; color: var(--muted); margin-bottom: 5px; }
-  .form-input, .form-textarea, .form-select {
-    width: 100%; padding: 10px 13px; background: var(--surface2); border: 1px solid var(--border);
-    border-radius: 9px; color: var(--text); font-family: inherit; font-size: 13px; outline: none; transition: border-color 0.2s;
-  }
+  .form-input, .form-textarea, .form-select { width: 100%; padding: 10px 13px; background: var(--surface2); border: 1px solid var(--border); border-radius: 9px; color: var(--text); font-family: inherit; font-size: 13px; outline: none; transition: border-color 0.2s; }
   .form-input:focus, .form-textarea:focus, .form-select:focus { border-color: var(--accent); }
   .form-textarea { resize: vertical; min-height: 80px; }
   .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   .modal-actions { display: flex; gap: 8px; margin-top: 20px; justify-content: flex-end; }
-  .btn-cancel { padding: 9px 18px; background: transparent; border: 1px solid var(--border); border-radius: 7px; color: var(--muted); font-family: inherit; font-size: 13px; cursor: pointer; transition: all 0.2s; }
+  .btn-cancel { padding: 9px 18px; background: transparent; border: 1px solid var(--border); border-radius: 7px; color: var(--muted); font-family: inherit; font-size: 13px; cursor: pointer; }
   .btn-cancel:hover { border-color: var(--text); color: var(--text); }
-  .btn-submit { padding: 9px 20px; background: var(--accent); border: none; border-radius: 7px; color: white; font-family: inherit; font-size: 13px; font-weight: 600; cursor: pointer; transition: background 0.2s; }
+  .btn-submit { padding: 9px 20px; background: var(--accent); border: none; border-radius: 7px; color: white; font-family: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
   .btn-submit:hover { background: var(--accent2); }
   .btn-submit:disabled { opacity: 0.5; cursor: not-allowed; }
 
-  /* TOAST */
   .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--surface); border: 1px solid var(--border); border-radius: 9px; padding: 10px 18px; font-size: 13px; z-index: 300; opacity: 0; transition: opacity 0.3s; pointer-events: none; white-space: nowrap; }
   .toast.show { opacity: 1; }
   .toast.success { border-color: var(--green); color: var(--green); }
@@ -252,7 +183,7 @@
 <div class="modal-overlay" id="idea-modal" onclick="closeModalOnBg(event)">
   <div class="modal">
     <h2>💡 Add Your Idea</h2>
-    <p class="modal-sub">Describe the video you want — AI generates all scripts in Sprint 3.</p>
+    <p class="modal-sub">Describe the video — AI generates all 12 scripts in Sprint 3.</p>
     <div class="form-group">
       <label class="form-label">Video Title / Idea *</label>
       <input class="form-input" id="idea-title" placeholder="e.g. Why Chennai traffic is getting worse every year">
@@ -294,12 +225,11 @@
 
 <div class="toast" id="toast"></div>
 
-<!-- TOPBAR -->
 <div class="topbar">
   <div class="topbar-logo">I Have a <span>Cause</span></div>
   <div class="topbar-right">
     <div class="stats-bar">
-      <div class="stat-pill pending" id="stat-pending">⏳ 0</div>
+      <div class="stat-pill pending"  id="stat-pending">⏳ 0</div>
       <div class="stat-pill approved" id="stat-approved">✅ 0</div>
       <div class="stat-pill rejected" id="stat-rejected">❌ 0</div>
     </div>
@@ -307,7 +237,6 @@
   </div>
 </div>
 
-<!-- FILTER BAR -->
 <div class="filter-bar">
   <div class="filter-row">
     <button class="filter-btn active" onclick="setFilter('all',this)">All</button>
@@ -317,12 +246,12 @@
     <button class="filter-btn" onclick="setFilter('revision',this)">Revision</button>
     <button class="filter-btn" onclick="setFilter('my-idea',this)">💡 My Ideas</button>
     <div class="filter-divider"></div>
-    <button class="filter-btn fmt-yt-long" onclick="setFormat('yt_long',this)">▶ YT Long</button>
-    <button class="filter-btn fmt-yt-short" onclick="setFormat('yt_short',this)">⚡ YT Short</button>
-    <button class="filter-btn fmt-reels" onclick="setFormat('reels',this)">📱 Reels</button>
-    <button class="filter-btn fmt-meme" onclick="setFormat('meme',this)">😄 Meme</button>
-    <button class="filter-btn fmt-x-thread" onclick="setFormat('x_thread',this)">𝕏 Thread</button>
-    <button class="filter-btn fmt-x-post" onclick="setFormat('x_post',this)">𝕏 Post</button>
+    <button class="filter-btn" onclick="setFormat('yt_long',this)">▶ YT Long</button>
+    <button class="filter-btn" onclick="setFormat('yt_short',this)">⚡ YT Short</button>
+    <button class="filter-btn" onclick="setFormat('reels',this)">📱 Reels</button>
+    <button class="filter-btn" onclick="setFormat('meme',this)">😄 Meme</button>
+    <button class="filter-btn" onclick="setFormat('x_thread',this)">𝕏 Thread</button>
+    <button class="filter-btn" onclick="setFormat('x_post',this)">𝕏 Post</button>
     <select class="niche-select" onchange="setNiche(this.value)">
       <option value="all">All niches</option>
       <option value="politics">Politics</option>
@@ -347,19 +276,23 @@ const SUPABASE_URL = 'https://alfuvzlmatfkgdrkeqgk.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFsZnV2emxtYXRma2dkcmtlcWdrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc5OTkzOTQsImV4cCI6MjA5MzU3NTM5NH0.JtxVTVdjR3vPWooM41xM1MCvJNH7WDnFjzfowjuDiRg';
 const H = { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json' };
 
-let currentFilter = 'all';
-let currentFormat = null;
-let currentNiche = 'all';
-let allStories = [];
+let currentFilter = 'all', currentFormat = null, currentNiche = 'all', allStories = [];
 
-const FORMAT_LABELS = {
-  yt_long:   { label: 'YT Long',  cls: 'yt-long',   scriptKey: 'script_youtube_tamil',   icon: '▶' },
-  yt_short:  { label: 'YT Short', cls: 'yt-short',   scriptKey: 'script_youtube_english', icon: '⚡' },
-  reels:     { label: 'Reels',    cls: 'reels',      scriptKey: 'script_reel_tamil',      icon: '📱' },
-  meme:      { label: 'Meme',     cls: 'meme',       scriptKey: 'meme_caption',           icon: '😄' },
-  x_thread:  { label: 'X Thread', cls: 'x-thread',   scriptKey: 'script_x_thread',        icon: '𝕏' },
-  x_post:    { label: 'X Post',   cls: 'x-post',     scriptKey: 'script_x_post',          icon: '𝕏' },
-};
+// Format definitions — each has Tamil and English script keys
+const FORMATS = [
+  { key: 'yt_long',  label: 'YT Long',  icon: '▶', cls: 'yt-long',
+    ta: 'script_youtube_tamil',         en: 'script_youtube_english' },
+  { key: 'yt_short', label: 'YT Short', icon: '⚡', cls: 'yt-short',
+    ta: 'script_youtube_short_tamil',   en: 'script_youtube_short_english' },
+  { key: 'reels',    label: 'Reels',    icon: '📱', cls: 'reels',
+    ta: 'script_reel_tamil',            en: 'script_reel_english' },
+  { key: 'meme',     label: 'Meme',     icon: '😄', cls: 'meme',
+    ta: 'script_meme_tamil',            en: 'script_meme_english' },
+  { key: 'x_thread', label: 'X Thread', icon: '𝕏', cls: 'x-thread',
+    ta: 'script_x_thread',              en: 'script_x_thread_english' },
+  { key: 'x_post',   label: 'X Post',   icon: '𝕏', cls: 'x-post',
+    ta: 'script_x_post',                en: 'script_x_post_english' },
+];
 
 // ── Load ──────────────────────────────────────────────────────────────────────
 async function loadStories() {
@@ -370,7 +303,7 @@ async function loadStories() {
     updateStats(); renderStories();
   } catch(e) {
     document.getElementById('stories-container').innerHTML =
-      `<div class="empty"><div class="empty-icon">⚠️</div><h3>Error: ${e.message}</h3></div>`;
+      `<div class="empty"><div class="empty-icon">⚠️</div><h3>${e.message}</h3></div>`;
   }
 }
 
@@ -384,42 +317,39 @@ function updateStats() {
 function setFilter(f, btn) {
   currentFilter = f; currentFormat = null;
   document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
-  renderStories();
+  btn.classList.add('active'); renderStories();
 }
 function setFormat(f, btn) {
-  currentFormat = currentFormat === f ? null : f;
-  currentFilter = 'all';
+  currentFormat = currentFormat === f ? null : f; currentFilter = 'all';
   document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
-  if (currentFormat) btn.classList.add('active');
-  renderStories();
+  if (currentFormat) btn.classList.add('active'); renderStories();
 }
 function setNiche(n) { currentNiche = n; renderStories(); }
 
+function hasScript(s, fmt) { return !!(s[fmt.ta] || s[fmt.en]); }
+
 function getFiltered() {
   return allStories.filter(s => {
-    const myIdea = s.source_name === '💡 My Idea';
+    const myIdea   = s.source_name === '💡 My Idea';
     const statusOk = currentFilter === 'all' || s.status === currentFilter || (currentFilter === 'my-idea' && myIdea);
     const nicheOk  = currentNiche === 'all' || s.niche === currentNiche;
     const fmts     = safeFormats(s.formats);
-    const formatOk = !currentFormat || fmts.includes(currentFormat);
+    const fmt      = FORMATS.find(f => f.key === currentFormat);
+    const formatOk = !currentFormat || (fmt && hasScript(s, fmt));
     return statusOk && nicheOk && formatOk;
   });
 }
 
-function safeFormats(f) {
-  try { return JSON.parse(f || '[]'); } catch { return []; }
-}
+function safeFormats(f) { try { return JSON.parse(f || '[]'); } catch { return []; } }
 
 // ── Render ────────────────────────────────────────────────────────────────────
 function renderStories() {
   const stories = getFiltered();
   const c = document.getElementById('stories-container');
+
   if (!stories.length) {
-    const msg = currentFormat
-      ? `No stories tagged for ${FORMAT_LABELS[currentFormat]?.label} yet. Scripts will appear after Sprint 3.`
-      : currentFilter === 'my-idea' ? 'No ideas yet — hit "+ Add Idea"!'
-      : currentFilter === 'pending' ? 'All caught up! Check back at 8:30 AM IST.'
+    const msg = currentFilter==='my-idea' ? 'No ideas yet — hit "+ Add Idea"!'
+      : currentFilter==='pending' ? 'All caught up! Check back at 8:30 AM IST.'
       : 'Try a different filter.';
     c.innerHTML = `<div class="empty"><div class="empty-icon">📭</div><h3>No stories found</h3><p style="color:var(--muted);font-size:13px;margin-top:6px">${msg}</p></div>`;
     return;
@@ -442,45 +372,35 @@ function renderStories() {
 }
 
 function buildCard(s) {
-  const myIdea = s.source_name === '💡 My Idea';
-  const fmts   = safeFormats(s.formats);
-  const nc     = `niche-${s.niche||'general'}`;
-  const sc     = s.viral_score>=70?'score-high':s.viral_score>=45?'score-mid':'score-low';
-  const cc     = myIdea&&s.status==='pending'?'my-idea-pending':s.status!=='pending'?s.status:'';
-  const aa     = s.status==='approved'?'active':'';
-  const ra     = s.status==='rejected'?'active':'';
-  const src    = s.source_url
+  const myIdea   = s.source_name === '💡 My Idea';
+  const nc       = `niche-${s.niche||'general'}`;
+  const sc       = s.viral_score>=70?'score-high':s.viral_score>=45?'score-mid':'score-low';
+  const cc       = myIdea&&s.status==='pending'?'my-idea-pending':s.status!=='pending'?s.status:'';
+  const aa       = s.status==='approved'?'active':'';
+  const ra       = s.status==='rejected'?'active':'';
+  const src      = s.source_url
     ? `<a href="${s.source_url}" target="_blank">${esc(s.source_name||'Source')}</a> · ${ago(s.created_at)}`
     : `${esc(s.source_name||'Scanner')} · ${ago(s.created_at)}`;
   const descHtml = s.summary&&myIdea ? `<div class="card-desc">${esc(s.summary)}</div>` : '';
   const ideaTag  = myIdea ? `<span class="niche-tag tag-myidea">💡 My Idea</span>` : '';
 
   // format badges
-  const hasAnyScript = Object.values(FORMAT_LABELS).some(f => s[f.scriptKey]);
+  const hasAny = FORMATS.some(f => hasScript(s, f));
   let badgesHtml = '';
-  if (fmts.length > 0 || hasAnyScript) {
+  if (hasAny) {
     badgesHtml = '<div class="format-badges">';
-    Object.entries(FORMAT_LABELS).forEach(([key, f]) => {
-      if (fmts.includes(key) || s[f.scriptKey]) {
-        const ready = s[f.scriptKey] ? 'ready' : 'pending-script';
-        const dot   = s[f.scriptKey] ? ' ✓' : '';
-        badgesHtml += `<span class="fmt-badge ${f.cls} ${ready}">${f.icon} ${f.label}${dot}</span>`;
-      }
+    FORMATS.forEach(f => {
+      if (hasScript(s, f)) badgesHtml += `<span class="fmt-badge ${f.cls}">${f.icon} ${f.label} ✓</span>`;
     });
     badgesHtml += '</div>';
   }
 
-  const hasScripts = hasAnyScript;
-  const scriptsBtnClass = hasScripts ? 'btn-scripts has-scripts' : 'btn-scripts';
-  const scriptsBtnText  = hasScripts ? '📄 View Scripts ▼' : '📄 Scripts (Sprint 3) ▼';
+  const btnCls  = hasAny ? 'btn-scripts has-scripts' : 'btn-scripts';
+  const btnText = hasAny ? '📄 View Scripts ▼' : '📄 Scripts ▼';
 
   return `<div class="story-card ${cc}" id="card-${s.id}">
     <div class="card-header">
-      <div class="card-meta">
-        ${ideaTag}
-        <span class="niche-tag ${nc}">${s.niche||'general'}</span>
-        <span class="viral-score ${sc}">🔥 ${s.viral_score||50}</span>
-      </div>
+      <div class="card-meta">${ideaTag}<span class="niche-tag ${nc}">${s.niche||'general'}</span><span class="viral-score ${sc}">🔥 ${s.viral_score||50}</span></div>
       <div class="card-title">${esc(s.title)}</div>
       ${descHtml}
       <div class="card-source">${src}</div>
@@ -488,8 +408,8 @@ function buildCard(s) {
     </div>
     <div class="card-actions">
       <button class="btn-approve ${aa}" onclick="approve('${s.id}')">✅ Approve</button>
-      <button class="btn-reject ${ra}" onclick="reject('${s.id}')">❌ Reject</button>
-      <button class="${scriptsBtnClass}" onclick="toggleScripts('${s.id}')">${scriptsBtnText}</button>
+      <button class="btn-reject ${ra}"  onclick="reject('${s.id}')">❌ Reject</button>
+      <button class="${btnCls}" onclick="toggleScripts('${s.id}')">${btnText}</button>
       <div class="feedback-area">
         <input class="feedback-input" id="fb-${s.id}" placeholder="Feedback for AI rewrite..." value="${esc(s.feedback||'')}">
         <button class="btn-send" onclick="sendFeedback('${s.id}')">Send to AI</button>
@@ -501,86 +421,164 @@ function buildCard(s) {
 
 function buildScriptsPanel(s) {
   const fmts = safeFormats(s.formats);
-  const tabs = Object.entries(FORMAT_LABELS).map(([key, f]) => {
-    const hasContent = !!s[f.scriptKey];
-    return `<div class="script-tab ${hasContent?'has-content':''}" onclick="switchTab('${s.id}','${key}')" id="tab-${s.id}-${key}">${f.icon} ${f.label}</div>`;
+
+  // Format tabs
+  const formatTabs = FORMATS.map((f,i) => {
+    const has = hasScript(s, f);
+    return `<div class="format-tab ${has?'has-content':''}" id="ftab-${s.id}-${f.key}" onclick="switchFormat('${s.id}','${f.key}')">${f.icon} ${f.label}</div>`;
   }).join('');
 
-  const panels = Object.entries(FORMAT_LABELS).map(([key, f]) => {
-    const content = s[f.scriptKey];
-    const inner = content
-      ? `<div class="script-text">${esc(content)}</div>`
-      : `<div class="script-empty"><div class="script-empty-icon">⏳</div>Will be generated automatically when you approve this story in Sprint 3.</div>`;
-    return `<div class="script-pane" id="pane-${s.id}-${key}" style="display:none">${inner}</div>`;
+  // Format panels (each with Tamil + English lang tabs)
+  const formatPanels = FORMATS.map((f,i) => {
+    const taContent = s[f.ta];
+    const enContent = s[f.en];
+    const hasTa = !!taContent;
+    const hasEn = !!enContent;
+
+    const langTabs = `
+      <div class="lang-tabs">
+        <div class="lang-tab ${hasTa?'has-content':''} active" id="ltab-${s.id}-${f.key}-ta" onclick="switchLang('${s.id}','${f.key}','ta')">🇮🇳 Tamil</div>
+        <div class="lang-tab ${hasEn?'has-content':''}"         id="ltab-${s.id}-${f.key}-en" onclick="switchLang('${s.id}','${f.key}','en')">🇬🇧 English</div>
+      </div>`;
+
+    const taPanel = buildScriptDisplay(s.id, f.key, 'ta', f.ta, taContent);
+    const enPanel = buildScriptDisplay(s.id, f.key, 'en', f.en, enContent);
+
+    return `<div class="format-panel ${i===0?'active':''}" id="fpanel-${s.id}-${f.key}">
+      ${langTabs}
+      <div class="script-content-area">
+        <div class="lang-panel active" id="lpanel-${s.id}-${f.key}-ta">${taPanel}</div>
+        <div class="lang-panel"        id="lpanel-${s.id}-${f.key}-en">${enPanel}</div>
+      </div>
+    </div>`;
   }).join('');
 
-  // format picker (shown on approved cards)
-  const pickerHtml = s.status === 'approved' ? buildFormatPicker(s) : '';
+  // Format picker for approved stories
+  const pickerHtml = s.status === 'approved' ? `
+    <div class="format-picker">
+      <div class="format-picker-title">Select formats to publish</div>
+      <div class="format-checkboxes" id="fmt-picker-${s.id}">
+        ${FORMATS.map(f => `<label class="fmt-check">
+          <input type="checkbox" value="${f.key}" ${fmts.includes(f.key)?'checked':''} onchange="saveFormats('${s.id}')">
+          <label>${f.icon} ${f.label}</label>
+        </label>`).join('')}
+      </div>
+    </div>` : '';
 
   return `<div class="scripts-panel" id="scripts-${s.id}">
-    <div class="script-tabs">${tabs}</div>
-    <div class="script-content">${panels}</div>
+    <div class="format-tabs">${formatTabs}</div>
+    <div id="fpanels-${s.id}">${formatPanels}</div>
     ${pickerHtml}
   </div>`;
 }
 
-function buildFormatPicker(s) {
-  const fmts = safeFormats(s.formats);
-  const checks = Object.entries(FORMAT_LABELS).map(([key, f]) => {
-    const checked = fmts.includes(key) ? 'checked' : '';
-    return `<label class="fmt-check">
-      <input type="checkbox" value="${key}" ${checked} onchange="saveFormats('${s.id}')">
-      <label>${f.icon} ${f.label}</label>
-    </label>`;
-  }).join('');
-  return `<div class="format-picker">
-    <div class="format-picker-title">Select formats to publish for this story</div>
-    <div class="format-checkboxes" id="fmt-picker-${s.id}">${checks}</div>
+function buildScriptDisplay(sid, fkey, lang, dbCol, content) {
+  const uid = `${sid}-${fkey}-${lang}`;
+  if (!content) {
+    return `<div class="script-empty"><div class="script-empty-icon">⏳</div>Script will be generated when you approve this story.</div>`;
+  }
+  return `<div class="script-display" id="display-${uid}">
+    <div class="script-text" id="text-${uid}">${esc(content)}</div>
+    <textarea class="script-edit-area" id="edit-${uid}">${esc(content)}</textarea>
+    <div class="script-toolbar">
+      <button class="btn-edit-script"   id="btn-edit-${uid}"   onclick="startEdit('${uid}')">✏️ Edit</button>
+      <button class="btn-save-script"   id="btn-save-${uid}"   onclick="saveEdit('${sid}','${dbCol}','${uid}')">💾 Save</button>
+      <button class="btn-cancel-edit"   id="btn-cancel-${uid}" onclick="cancelEdit('${uid}')">Cancel</button>
+    </div>
   </div>`;
 }
 
+// ── Script editing ────────────────────────────────────────────────────────────
+function startEdit(uid) {
+  const textEl   = document.getElementById(`text-${uid}`);
+  const editEl   = document.getElementById(`edit-${uid}`);
+  const btnEdit  = document.getElementById(`btn-edit-${uid}`);
+  const btnSave  = document.getElementById(`btn-save-${uid}`);
+  const btnCancel= document.getElementById(`btn-cancel-${uid}`);
+  editEl.value   = textEl.textContent;
+  editEl.style.display  = 'block';
+  textEl.style.display  = 'none';
+  btnEdit.style.display = 'none';
+  btnSave.style.display = 'inline-block';
+  btnCancel.style.display = 'inline-block';
+  editEl.focus();
+}
+
+function cancelEdit(uid) {
+  document.getElementById(`edit-${uid}`).style.display   = 'none';
+  document.getElementById(`text-${uid}`).style.display   = 'block';
+  document.getElementById(`btn-edit-${uid}`).style.display   = 'inline-block';
+  document.getElementById(`btn-save-${uid}`).style.display   = 'none';
+  document.getElementById(`btn-cancel-${uid}`).style.display = 'none';
+}
+
+async function saveEdit(sid, dbCol, uid) {
+  const newText = document.getElementById(`edit-${uid}`).value.trim();
+  if (!newText) return;
+
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/content_queue?id=eq.${sid}`, {
+    method: 'PATCH', headers: { ...H, 'Prefer': 'return=minimal' },
+    body: JSON.stringify({ [dbCol]: newText })
+  });
+
+  if (res.ok) {
+    document.getElementById(`text-${uid}`).textContent = newText;
+    const s = allStories.find(x => x.id === sid);
+    if (s) s[dbCol] = newText;
+    cancelEdit(uid);
+    showToast('✅ Script saved!');
+  } else {
+    showToast('❌ Save failed — try again', false);
+  }
+}
+
+// ── Tab switching ─────────────────────────────────────────────────────────────
 function toggleScripts(id) {
   const panel = document.getElementById(`scripts-${id}`);
   const isOpen = panel.classList.contains('open');
   panel.classList.toggle('open', !isOpen);
-  if (!isOpen) {
-    // open first tab
-    const firstKey = Object.keys(FORMAT_LABELS)[0];
-    switchTab(id, firstKey);
-  }
+  if (!isOpen) { switchFormat(id, FORMATS[0].key); }
 }
 
-function switchTab(id, key) {
-  Object.keys(FORMAT_LABELS).forEach(k => {
-    const tab  = document.getElementById(`tab-${id}-${k}`);
-    const pane = document.getElementById(`pane-${id}-${k}`);
-    if (tab)  tab.classList.toggle('active', k === key);
-    if (pane) pane.style.display = k === key ? 'block' : 'none';
+function switchFormat(sid, fkey) {
+  FORMATS.forEach(f => {
+    const tab   = document.getElementById(`ftab-${sid}-${f.key}`);
+    const panel = document.getElementById(`fpanel-${sid}-${f.key}`);
+    if (tab)   tab.classList.toggle('active', f.key === fkey);
+    if (panel) panel.classList.toggle('active', f.key === fkey);
+  });
+}
+
+function switchLang(sid, fkey, lang) {
+  ['ta','en'].forEach(l => {
+    const tab   = document.getElementById(`ltab-${sid}-${fkey}-${l}`);
+    const panel = document.getElementById(`lpanel-${sid}-${fkey}-${l}`);
+    if (tab)   tab.classList.toggle('active', l === lang);
+    if (panel) panel.classList.toggle('active', l === lang);
   });
 }
 
 // ── Actions ───────────────────────────────────────────────────────────────────
 async function approve(id) {
   await patch(id, { status:'approved', approved_at: new Date().toISOString() });
-  upd(id, { status:'approved' }); updateStats(); renderStories();
+  upd(id, {status:'approved'}); updateStats(); renderStories();
 }
 async function reject(id) {
   await patch(id, { status:'rejected', rejected_at: new Date().toISOString() });
-  upd(id, { status:'rejected' }); updateStats(); renderStories();
+  upd(id, {status:'rejected'}); updateStats(); renderStories();
 }
 async function sendFeedback(id) {
   const feedback = document.getElementById(`fb-${id}`).value.trim();
   if (!feedback) return;
   await patch(id, { status:'revision', feedback });
-  upd(id, { status:'revision', feedback }); updateStats(); renderStories();
+  upd(id, {status:'revision', feedback}); updateStats(); renderStories();
 }
 async function saveFormats(id) {
   const container = document.getElementById(`fmt-picker-${id}`);
-  const checked = [...container.querySelectorAll('input:checked')].map(i=>i.value);
+  const checked   = [...container.querySelectorAll('input:checked')].map(i=>i.value);
   await patch(id, { formats: JSON.stringify(checked) });
   upd(id, { formats: JSON.stringify(checked) });
-  showToast(`✅ Formats saved: ${checked.length} selected`);
-  // re-render to update badges without full reload
+  showToast(`✅ Formats saved!`);
   updateStats(); renderStories();
 }
 
@@ -592,12 +590,8 @@ async function patch(id, data) {
 function upd(id, data) { const s=allStories.find(x=>x.id===id); if(s) Object.assign(s,data); }
 
 // ── Idea Modal ────────────────────────────────────────────────────────────────
-function openModal() { document.getElementById('idea-modal').classList.add('open'); document.getElementById('idea-title').focus(); }
-function closeModal() {
-  document.getElementById('idea-modal').classList.remove('open');
-  document.getElementById('idea-title').value='';
-  document.getElementById('idea-desc').value='';
-}
+function openModal()  { document.getElementById('idea-modal').classList.add('open'); document.getElementById('idea-title').focus(); }
+function closeModal() { document.getElementById('idea-modal').classList.remove('open'); document.getElementById('idea-title').value=''; document.getElementById('idea-desc').value=''; }
 function closeModalOnBg(e) { if(e.target===document.getElementById('idea-modal')) closeModal(); }
 
 async function submitIdea() {
@@ -605,29 +599,18 @@ async function submitIdea() {
   if (!title) { document.getElementById('idea-title').focus(); return; }
   const btn = document.getElementById('submit-btn');
   btn.disabled=true; btn.textContent='Adding...';
-  const payload = {
-    title, summary: document.getElementById('idea-desc').value.trim()||null,
-    niche: document.getElementById('idea-niche').value,
-    source_name: '💡 My Idea', viral_score:75, status:'pending',
-    language:'both', formats:'[]',
-    feedback: document.getElementById('idea-format').value
-  };
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/content_queue`, {
-    method:'POST', headers:{...H,'Prefer':'return=representation'}, body:JSON.stringify(payload)
-  });
+  const payload = { title, summary: document.getElementById('idea-desc').value.trim()||null, niche: document.getElementById('idea-niche').value, source_name:'💡 My Idea', viral_score:75, status:'pending', language:'both', formats:'[]', feedback: document.getElementById('idea-format').value };
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/content_queue`, { method:'POST', headers:{...H,'Prefer':'return=representation'}, body:JSON.stringify(payload) });
   btn.disabled=false; btn.textContent='Add to Queue ➜';
-  if (res.ok) {
-    const [ns] = await res.json();
-    allStories.unshift(ns); closeModal(); updateStats(); renderStories();
-    showToast('✅ Idea added!');
-  } else { showToast('❌ Failed — try again', false); }
+  if (res.ok) { const [ns]=await res.json(); allStories.unshift(ns); closeModal(); updateStats(); renderStories(); showToast('✅ Idea added!'); }
+  else { showToast('❌ Failed — try again', false); }
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function showToast(msg, ok=true) {
   const t=document.getElementById('toast');
   t.textContent=msg; t.className=`toast show${ok?' success':''}`;
-  setTimeout(()=>{ t.className='toast'; },3000);
+  setTimeout(()=>{t.className='toast';},3000);
 }
 function esc(s){return s?s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'):'';}
 function isToday(d){return d.toDateString()===new Date().toDateString();}
