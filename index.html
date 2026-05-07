@@ -869,13 +869,13 @@ function buildContentPreview(s){
       <div class="cp-field"><span class="cp-label">Title</span><div class="cp-value">${esc(ytl.title_tamil||'—')}</div></div>
       <div class="cp-field"><span class="cp-label">Description</span><div class="cp-value">${esc(ytl.description_tamil||'—')}</div></div>
       <div class="cp-field"><span class="cp-label">Thumbnail Text</span><div class="cp-value">${esc(ytl.thumbnail_text_tamil||ytl.thumbnail_text||'—')}</div></div>
-      <div class="cp-field"><span class="cp-label">Chapters</span>${(ytl.chapters_tamil||ytl.chapters||[]).map(c=>`<div class="cp-chapter"><span class="cp-chapter-time">${esc(c.time)}</span><span>${esc(c.title)}</span></div>`).join('')||'<div style="color:var(--muted);font-size:12px">—</div>'}</div>
+      <div class="cp-field"><span class="cp-label">Chapters</span>${safeArr(ytl.chapters_tamil||ytl.chapters).map(c=>`<div class="cp-chapter"><span class="cp-chapter-time">${esc(c.time)}</span><span>${esc(c.title)}</span></div>`).join('')||'<div style="color:var(--muted);font-size:12px">—</div>'}</div>
     </div>
     <div data-lang-panel="en" style="display:none">
       <div class="cp-field"><span class="cp-label">Title</span><div class="cp-value">${esc(ytl.title_english||'—')}</div></div>
       <div class="cp-field"><span class="cp-label">Description</span><div class="cp-value">${esc(ytl.description_english||'—')}</div></div>
       <div class="cp-field"><span class="cp-label">Thumbnail Text</span><div class="cp-value">${esc(ytl.thumbnail_text_english||ytl.thumbnail_text||'—')}</div></div>
-      <div class="cp-field"><span class="cp-label">Chapters</span>${(ytl.chapters_english||ytl.chapters||[]).map(c=>`<div class="cp-chapter"><span class="cp-chapter-time">${esc(c.time)}</span><span>${esc(c.title)}</span></div>`).join('')||'<div style="color:var(--muted);font-size:12px">—</div>'}</div>
+      <div class="cp-field"><span class="cp-label">Chapters</span>${safeArr(ytl.chapters_english||ytl.chapters).map(c=>`<div class="cp-chapter"><span class="cp-chapter-time">${esc(c.time)}</span><span>${esc(c.title)}</span></div>`).join('')||'<div style="color:var(--muted);font-size:12px">—</div>'}</div>
     </div>
     <div class="cp-field"><span class="cp-label">Tags</span><div class="cp-tags">${(ytl.tags||[]).map(t=>`<span class="cp-tag">${esc(t)}</span>`).join('')}</div></div>
   </div>`;
@@ -982,7 +982,8 @@ async function submitIdea(){
 function toast(msg,type='ok'){const t=document.getElementById('toast');t.textContent=msg;t.className=`toast show ${type}`;setTimeout(()=>{t.className='toast';},3500);}
 function esc(s){return s?s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'):'';}
 function safeJson(v){try{return JSON.parse(v||'[]');}catch{return[];}}
-function safeObj(v){try{return typeof v==='object'&&v?v:JSON.parse(v||'{}');}catch{return{};}}
+function safeObj(v){if(!v)return{};if(typeof v==='object'&&!Array.isArray(v))return v;try{return JSON.parse(v);}catch{return{};}}
+function safeArr(v){if(!v)return[];if(Array.isArray(v))return v;if(typeof v==='string'){try{const p=JSON.parse(v);return Array.isArray(p)?p:[];}catch{return[];}}return[];}
 function isToday(d){return d.toDateString()===new Date().toDateString();}
 function isYesterday(d){const y=new Date();y.setDate(y.getDate()-1);return d.toDateString()===y.toDateString();}
 function ago(ts){const s=Math.floor((Date.now()-new Date(ts))/1000);if(s<60)return'just now';if(s<3600)return`${Math.floor(s/60)}m ago`;if(s<86400)return`${Math.floor(s/3600)}h ago`;return`${Math.floor(s/86400)}d ago`;}
