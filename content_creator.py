@@ -288,11 +288,25 @@ def create_meme_image(data):
         draw.rectangle([18,18,W-18,H-18],outline=(*c["accent"],100),width=2)
         for cx,cy in [(42,42),(W-42,42),(42,H-42),(W-42,H-42)]:
             draw.polygon([(cx,cy-16),(cx+16,cy),(cx,cy+16),(cx-16,cy)],fill=c["accent"])
+        TAMIL_FONTS = [
+            "/usr/share/fonts/truetype/lohit-tamil/Lohit-Tamil.ttf",
+            "/usr/share/fonts/truetype/fonts-tamilsupplement/TamilSupplementRegular.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        ]
+        TAMIL_FONTS_REG = [
+            "/usr/share/fonts/truetype/lohit-tamil/Lohit-Tamil.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        ]
+        def load_font(paths, size):
+            for p in paths:
+                try: return ImageFont.truetype(p, size)
+                except: continue
+            return ImageFont.load_default()
         try:
-            fxl=ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",78)
-            fsm=ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",28)
+            fxl = load_font(TAMIL_FONTS, 78)
+            fsm = load_font(TAMIL_FONTS_REG, 28)
         except:
-            fxl=fsm=ImageFont.load_default()
+            fxl = fsm = ImageFont.load_default()
         def draw_wrapped(text,font,color,y0,max_w=900,shadow=None):
             words=text.upper().split(); lines=[]; line=[]
             for w in words:
