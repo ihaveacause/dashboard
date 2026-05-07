@@ -1,19 +1,17 @@
 """
 I Have a Cause — AI Script Generator (Sprint 3)
-Finds approved stories with no scripts and generates
-Tamil + English scripts for all formats using Claude AI
-Uses delimiter-based parsing (reliable for Tamil text)
+Generates 12 scripts per story (Tamil + English for all 6 formats)
+Processes one story at a time to avoid token limits
 """
 
 import os
-import re
 import requests
 from datetime import datetime
 
 # ── Config ────────────────────────────────────────────────────────────────────
-SUPABASE_URL   = os.environ["SUPABASE_URL"]
-SUPABASE_KEY   = os.environ["SUPABASE_KEY"]
-ANTHROPIC_KEY  = os.environ["ANTHROPIC_API_KEY"]
+SUPABASE_URL  = os.environ["SUPABASE_URL"]
+SUPABASE_KEY  = os.environ["SUPABASE_KEY"]
+ANTHROPIC_KEY = os.environ["ANTHROPIC_API_KEY"]
 
 SUPA_HEADERS = {
     "apikey":        SUPABASE_KEY,
@@ -29,17 +27,6 @@ CLAUDE_HEADERS = {
 }
 
 REST_URL = f"{SUPABASE_URL}/rest/v1"
-
-DELIMITERS = [
-    "<<<YOUTUBE_TAMIL>>>",
-    "<<<YOUTUBE_ENGLISH>>>",
-    "<<<REEL_TAMIL>>>",
-    "<<<REEL_ENGLISH>>>",
-    "<<<MEME>>>",
-    "<<<X_THREAD>>>",
-    "<<<X_POST>>>",
-    "<<<END>>>"
-]
 
 # ── Fetch approved stories needing scripts ────────────────────────────────────
 def fetch_pending_scripts():
@@ -59,106 +46,135 @@ def fetch_pending_scripts():
     )
     if resp.status_code == 200:
         return resp.json()
-    print(f"  ❌ Failed to fetch stories: {resp.status_code} {resp.text}")
+    print(f"  ❌ Failed to fetch: {resp.status_code} {resp.text}")
     return []
 
-# ── Call Claude AI ────────────────────────────────────────────────────────────
-def generate_scripts(title, summary, niche, source_name):
-    is_my_idea = source_name == "💡 My Idea"
-    context    = summary or title
-
-    prompt = f"""You are a Tamil YouTube content creator writing scripts for the channel "I Have a Cause" — a Tamil/English news commentary and opinion channel.
-
-Story details:
-Title: {title}
-Summary: {context}
-Niche: {niche}
-Type: {"Creator original idea" if is_my_idea else "News story"}
-
-Write scripts for all 6 formats. Always explain context so viewers who know nothing about this story understand fully.
-For Tamil scripts write in Tamil language. For English write conversational English.
-
-OUTPUT FORMAT — use these exact delimiters, put each script between its markers:
-
-<<<YOUTUBE_TAMIL>>>
-[Full 5-8 minute Tamil YouTube script]
-HOOK: attention-grabbing opening in Tamil
-CONTEXT: explain what happened clearly in Tamil
-YOUR TAKE: your opinion and analysis in Tamil
-CTA: subscribe and share call to action in Tamil
-<<<YOUTUBE_ENGLISH>>>
-[Full 5-8 minute English YouTube script]
-HOOK: attention-grabbing opening
-CONTEXT: explain what happened clearly
-YOUR TAKE: your opinion and analysis
-CTA: subscribe and share call to action
-<<<REEL_TAMIL>>>
-[30-60 second punchy Tamil reel script - short and viral]
-<<<REEL_ENGLISH>>>
-[30-60 second punchy English reel script - short and viral]
-<<<MEME>>>
-MAIN TEXT: [bold punchline]
-SUB TEXT: [short explanation]
-CAPTION: [post description for Instagram/X]
-HASHTAGS: [relevant hashtags]
-<<<X_THREAD>>>
-1/ [first tweet - hook]
-2/ [context tweet]
-3/ [key point]
-4/ [your take]
-5/ [conclusion + YouTube link]
-<<<X_POST>>>
-[single punchy tweet under 280 characters with hashtags]
-<<<END>>>"""
-
+# ── Call Claude for one language block ───────────────────────────────────────
+def call_claude(prompt):
     payload = {
         "model":      "claude-haiku-4-5-20251001",
-        "max_tokens": 4000,
+        "max_tokens": 3000,
         "messages":   [{"role": "user", "content": prompt}]
     }
-
     resp = requests.post(
         "https://api.anthropic.com/v1/messages",
         headers=CLAUDE_HEADERS,
         json=payload,
         timeout=90
     )
-
     if resp.status_code != 200:
-        print(f"  ❌ Claude API error: {resp.status_code} {resp.text[:200]}")
+        print(f"  ❌ Claude error: {resp.status_code} {resp.text[:200]}")
         return None
+    return resp.json()["content"][0]["text"].strip()
 
-    raw = resp.json()["content"][0]["text"].strip()
-    return parse_scripts(raw)
+# ── Parse delimiter response ──────────────────────────────────────────────────
+def extract(raw, start_marker, end_marker):
+    start = raw.find(start_marker)
+    end   = raw.find(end_marker)
+    if start == -1 or end == -1:
+        return None
+    return raw[start + len(start_marker):end].strip() or None
 
-# ── Parse delimiter-based response ───────────────────────────────────────────
-def parse_scripts(raw):
-    keys = [
-        "script_youtube_tamil",
-        "script_youtube_english",
-        "script_reel_tamil",
-        "script_reel_english",
-        "meme_caption",
-        "script_x_thread",
-        "script_x_post",
-    ]
-    end_markers = DELIMITERS[1:] + ["<<<END>>>"]
-    result = {}
+# ── Generate Tamil scripts ────────────────────────────────────────────────────
+def generate_tamil(title, context, niche, is_my_idea):
+    prompt = f"""நீங்கள் "I Have a Cause" YouTube சேனலுக்கான Tamil content creator.
 
-    for i, start_marker in enumerate(DELIMITERS[:-1]):
-        end_marker = end_markers[i]
-        start_idx = raw.find(start_marker)
-        end_idx   = raw.find(end_marker)
+தலைப்பு: {title}
+சுருக்கம்: {context}
+வகை: {niche}
+{"இது creator-இன் சொந்த யோசனை" if is_my_idea else "இது செய்தி கதை"}
 
-        if start_idx == -1 or end_idx == -1:
-            print(f"  ⚠️  Missing section: {start_marker}")
-            result[keys[i]] = None
-            continue
+கீழ்கண்ட 6 formats-க்கு Tamil-ல் scripts எழுதுங்கள்.
+தெளிவான, இயல்பான பேச்சு Tamil பயன்படுத்துங்கள்.
+ஒவ்வொரு script-லும் context விளக்குங்கள் — பார்வையாளர்களுக்கு முன்பே தெரியாது என்று வைத்துக்கொள்ளுங்கள்.
 
-        content = raw[start_idx + len(start_marker):end_idx].strip()
-        result[keys[i]] = content if content else None
+<<<YT_LONG_TA>>>
+[5-8 நிமிட YouTube script]
+HOOK: கவனம் ஈர்க்கும் தொடக்கம்
+CONTEXT: என்ன நடந்தது என்று தெளிவாக விளக்குங்கள்
+YOUR TAKE: உங்கள் கருத்து மற்றும் பகுப்பாய்வு
+CTA: subscribe மற்றும் share செய்யுங்கள்
+<<<YT_SHORT_TA>>>
+[30-60 வினாடி YouTube Short script — கவர்ச்சியான, வேகமான]
+<<<REEL_TA>>>
+[30-60 வினாடி Instagram Reel script — viral-ஆன]
+<<<MEME_TA>>>
+MAIN: [முக்கிய வரி]
+SUB: [விளக்கம்]
+CAPTION: [post விளக்கம்]
+HASHTAGS: [hashtags]
+<<<X_THREAD_TA>>>
+1/ [hook tweet]
+2/ [context]
+3/ [key point]
+4/ [your take]
+5/ [conclusion + YouTube link]
+<<<X_POST_TA>>>
+[280 எழுத்துகளுக்கு குறைவான ஒரு tweet]
+<<<END>>>"""
 
-    return result
+    raw = call_claude(prompt)
+    if not raw:
+        return {}
+
+    return {
+        "script_youtube_tamil":       extract(raw, "<<<YT_LONG_TA>>>",   "<<<YT_SHORT_TA>>>"),
+        "script_youtube_short_tamil": extract(raw, "<<<YT_SHORT_TA>>>",  "<<<REEL_TA>>>"),
+        "script_reel_tamil":          extract(raw, "<<<REEL_TA>>>",       "<<<MEME_TA>>>"),
+        "script_meme_tamil":          extract(raw, "<<<MEME_TA>>>",       "<<<X_THREAD_TA>>>"),
+        "script_x_thread":            extract(raw, "<<<X_THREAD_TA>>>",   "<<<X_POST_TA>>>"),
+        "script_x_post":              extract(raw, "<<<X_POST_TA>>>",     "<<<END>>>"),
+    }
+
+# ── Generate English scripts ──────────────────────────────────────────────────
+def generate_english(title, context, niche, is_my_idea):
+    prompt = f"""You are a content creator for "I Have a Cause" YouTube channel — Tamil/Indian news commentary.
+
+Title: {title}
+Summary: {context}
+Niche: {niche}
+Type: {"Creator's original idea" if is_my_idea else "News story"}
+
+Write scripts in simple conversational English for all 6 formats below.
+Always explain context fully — assume viewers know nothing about this story.
+
+<<<YT_LONG_EN>>>
+[Full 5-8 minute YouTube script]
+HOOK: attention-grabbing opening line
+CONTEXT: clearly explain what happened and background
+YOUR TAKE: your opinion and analysis
+CTA: subscribe and share
+<<<YT_SHORT_EN>>>
+[30-60 second YouTube Short — punchy and fast]
+<<<REEL_EN>>>
+[30-60 second Instagram Reel script — viral and engaging]
+<<<MEME_EN>>>
+MAIN: [bold punchline]
+SUB: [short explanation]
+CAPTION: [post description]
+HASHTAGS: [relevant hashtags]
+<<<X_THREAD_EN>>>
+1/ [hook tweet]
+2/ [context tweet]
+3/ [key point]
+4/ [your take]
+5/ [conclusion + YouTube link]
+<<<X_POST_EN>>>
+[single punchy tweet under 280 characters with hashtags]
+<<<END>>>"""
+
+    raw = call_claude(prompt)
+    if not raw:
+        return {}
+
+    return {
+        "script_youtube_english":       extract(raw, "<<<YT_LONG_EN>>>",   "<<<YT_SHORT_EN>>>"),
+        "script_youtube_short_english": extract(raw, "<<<YT_SHORT_EN>>>",  "<<<REEL_EN>>>"),
+        "script_reel_english":          extract(raw, "<<<REEL_EN>>>",       "<<<MEME_EN>>>"),
+        "script_meme_english":          extract(raw, "<<<MEME_EN>>>",       "<<<X_THREAD_EN>>>"),
+        "script_x_thread_english":      extract(raw, "<<<X_THREAD_EN>>>",   "<<<X_POST_EN>>>"),
+        "script_x_post_english":        extract(raw, "<<<X_POST_EN>>>",     "<<<END>>>"),
+    }
 
 # ── Save scripts to Supabase ──────────────────────────────────────────────────
 def save_scripts(story_id, scripts):
@@ -169,39 +185,50 @@ def save_scripts(story_id, scripts):
 # ── Main ──────────────────────────────────────────────────────────────────────
 def run_generator():
     print("=" * 60)
-    print(f"✍️  Script Generator started — {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"✍️  Script Generator — {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("=" * 60)
 
     stories = fetch_pending_scripts()
-    print(f"  📋 Found {len(stories)} approved stories needing scripts")
+    print(f"  📋 Found {len(stories)} stories needing scripts")
 
     if not stories:
-        print("  ✅ Nothing to do — all approved stories have scripts!")
+        print("  ✅ All caught up — no pending scripts!")
         return
 
     success = failed = 0
 
     for story in stories:
-        sid     = story["id"]
-        title   = story["title"]
-        niche   = story.get("niche", "general")
-        summary = story.get("summary", "")
-        source  = story.get("source_name", "")
+        sid       = story["id"]
+        title     = story["title"]
+        niche     = story.get("niche", "general")
+        summary   = story.get("summary", "")
+        source    = story.get("source_name", "")
+        context   = summary or title
+        is_idea   = source == "💡 My Idea"
 
-        print(f"\n  ✍️  Generating: {title[:60]}")
+        print(f"\n  ✍️  [{niche}] {title[:55]}")
 
-        scripts = generate_scripts(title, summary, niche, source)
+        # Generate Tamil and English separately to avoid token limits
+        print(f"      → Generating Tamil scripts...")
+        tamil_scripts = generate_tamil(title, context, niche, is_idea)
 
-        if scripts:
-            if save_scripts(sid, scripts):
+        print(f"      → Generating English scripts...")
+        english_scripts = generate_english(title, context, niche, is_idea)
+
+        all_scripts = {**tamil_scripts, **english_scripts}
+
+        if any(v for v in all_scripts.values()):
+            if save_scripts(sid, all_scripts):
                 success += 1
-                print(f"  ✅ Scripts saved!")
+                tamil_count   = sum(1 for v in tamil_scripts.values() if v)
+                english_count = sum(1 for v in english_scripts.values() if v)
+                print(f"      ✅ Saved! Tamil: {tamil_count}/6  English: {english_count}/6")
             else:
                 failed += 1
-                print(f"  ❌ Failed to save to Supabase")
+                print(f"      ❌ Failed to save to Supabase")
         else:
             failed += 1
-            print(f"  ❌ Script generation failed")
+            print(f"      ❌ No scripts generated")
 
     print("\n" + "=" * 60)
     print(f"✅ Done — Generated: {success}  |  Failed: {failed}")
