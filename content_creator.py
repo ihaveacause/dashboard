@@ -71,24 +71,33 @@ def fetch_creating_stories():
 # ── Package generators ────────────────────────────────────────────────────────
 def gen_yt_long(s):
     title  = s.get("title","")
-    script = s.get("script_youtube_tamil") or s.get("script_youtube_english") or title
-    result = call_claude(f"""Create a complete YouTube publishing package.
+    script_ta = s.get("script_youtube_tamil") or title
+    script_en = s.get("script_youtube_english") or title
+    result = call_claude(f"""Create a complete YouTube publishing package. Generate TWO versions — Tamil and English.
 
 Title: {title}
-Script: {script[:2000]}
+Tamil Script: {script_ta[:1500]}
+English Script: {script_en[:1500]}
 
 Return ONLY valid JSON (no markdown):
 {{
   "title_tamil": "engaging Tamil title under 60 chars",
   "title_english": "engaging English title under 60 chars",
-  "description_tamil": "Tamil description 150-200 words with keywords",
-  "description_english": "English description 150-200 words with keywords",
+  "description_tamil": "Tamil description 150-200 words with keywords in Tamil",
+  "description_english": "English description 150-200 words with keywords in English",
   "tags": ["tag1","tag2","tag3","tag4","tag5","tag6","tag7","tag8","tag9","tag10"],
-  "thumbnail_text": "5-7 dramatic words for thumbnail",
-  "chapters": [
+  "thumbnail_text_tamil": "5-7 dramatic Tamil words for thumbnail",
+  "thumbnail_text_english": "5-7 dramatic English words for thumbnail",
+  "chapters_tamil": [
+    {{"time":"0:00","title":"தொடக்கம்"}},
+    {{"time":"2:00","title":"Tamil chapter title"}},
+    {{"time":"5:00","title":"Tamil chapter title"}},
+    {{"time":"8:00","title":"முடிவு"}}
+  ],
+  "chapters_english": [
     {{"time":"0:00","title":"Introduction"}},
-    {{"time":"2:00","title":"chapter title"}},
-    {{"time":"5:00","title":"chapter title"}},
+    {{"time":"2:00","title":"English chapter title"}},
+    {{"time":"5:00","title":"English chapter title"}},
     {{"time":"8:00","title":"Conclusion"}}
   ]
 }}""")
