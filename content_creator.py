@@ -66,7 +66,7 @@ def parse_json(text):
 
 # ── Fetch stories ─────────────────────────────────────────────────────────────
 def fetch_creating_stories():
-    return db_get({"status":"eq.creating","select":"*","order":"updated_at.desc","limit":"10"})
+    return db_get({"status":"eq.creating","select":"*","order":"created_at.desc","limit":"10"})
 
 # ── Package generators ────────────────────────────────────────────────────────
 def gen_yt_long(s):
