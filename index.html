@@ -238,6 +238,45 @@
   .btn-fmt-drop{padding:4px 10px;background:transparent;border:1px solid var(--border);border-radius:6px;color:var(--muted);font-family:inherit;font-size:11px;cursor:pointer;}
   .btn-fmt-drop:hover{border-color:var(--red);color:var(--red);}
   @media(max-width:600px){.regen-cols{grid-template-columns:1fr;}}
+
+  /* SPRINT 4 — CREATING / CREATED */
+  .story-card.creating{border-left:3px solid var(--orange);}
+  .story-card.created{border-left:3px solid var(--purple);}
+  .sb-creating{background:rgba(230,126,34,0.15);color:var(--orange);}
+  .sb-created{background:rgba(155,89,182,0.15);color:var(--purple);}
+  .stat.created{background:rgba(155,89,182,0.12);color:var(--purple);}
+
+  /* CONTENT PREVIEW PANEL */
+  .content-preview{display:none;border-top:1px solid var(--border);}
+  .content-preview.open{display:block;}
+  .cp-tabs{display:flex;background:var(--surface2);border-bottom:1px solid var(--border);overflow-x:auto;scrollbar-width:none;}
+  .cp-tabs::-webkit-scrollbar{display:none;}
+  .cp-tab{padding:10px 16px;font-size:12px;font-weight:600;cursor:pointer;color:var(--muted);border-bottom:2px solid transparent;white-space:nowrap;transition:all .2s;font-family:'DM Mono',monospace;flex-shrink:0;}
+  .cp-tab:hover{color:var(--text);}
+  .cp-tab.active{color:var(--purple);border-bottom-color:var(--purple);}
+  .cp-panel{display:none;padding:16px 18px;}
+  .cp-panel.active{display:block;}
+  .cp-field{margin-bottom:14px;}
+  .cp-label{font-size:10px;color:var(--muted);font-family:'DM Mono',monospace;text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px;display:block;}
+  .cp-value{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 13px;font-size:12px;color:var(--text);line-height:1.7;white-space:pre-wrap;}
+  .cp-tags{display:flex;flex-wrap:wrap;gap:5px;}
+  .cp-tag{background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:2px 9px;font-size:10px;color:var(--muted);font-family:'DM Mono',monospace;}
+  .cp-scene{background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:10px 12px;margin-bottom:7px;}
+  .cp-scene-num{font-size:10px;color:var(--muted);font-family:'DM Mono',monospace;font-weight:600;margin-bottom:5px;}
+  .cp-scene-row{display:flex;gap:8px;font-size:11px;color:var(--text);margin-bottom:3px;}
+  .cp-scene-row span:first-child{color:var(--muted);min-width:95px;flex-shrink:0;}
+  .cp-tweet{background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:10px 12px;margin-bottom:7px;font-size:12px;color:var(--text);line-height:1.6;}
+  .cp-tweet-num{font-size:10px;color:var(--muted);font-family:'DM Mono',monospace;font-weight:600;margin-bottom:4px;}
+  .cp-chapter{display:flex;gap:10px;font-size:12px;color:var(--text);margin-bottom:5px;}
+  .cp-chapter-time{color:var(--blue);font-family:'DM Mono',monospace;font-weight:600;min-width:42px;}
+  .cp-meme-img{text-align:center;margin-bottom:14px;}
+  .cp-meme-img img{max-width:100%;border-radius:8px;border:1px solid var(--border);}
+  .cp-lang-toggle{display:flex;gap:4px;margin-bottom:12px;background:var(--surface2);padding:3px;border-radius:7px;width:fit-content;}
+  .cp-lang-btn{padding:4px 12px;border-radius:5px;cursor:pointer;font-size:11px;color:var(--muted);background:transparent;border:none;font-family:inherit;transition:all .15s;}
+  .cp-lang-btn.active{background:var(--surface);color:var(--text);}
+  .cp-approve-bar{padding:12px 18px;border-top:1px solid var(--border);background:rgba(155,89,182,0.04);display:flex;justify-content:flex-end;}
+  .btn-cp-approve{padding:8px 20px;background:var(--purple);border:none;border-radius:8px;color:white;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;transition:background .2s;}
+  .btn-cp-approve:hover{background:#8e44ad;}
 </style>
 </head>
 <body>
@@ -296,6 +335,7 @@
       <div class="stat pending"  id="stat-p">⏳ 0 pending</div>
       <div class="stat scripted" id="stat-s">📄 0 scripted</div>
       <div class="stat ready"    id="stat-r">✅ 0 ready</div>
+      <div class="stat created"  id="stat-c">🌟 0 created</div>
     </div>
     <button class="btn-idea" onclick="openModal()">+ Add Idea</button>
   </div>
@@ -309,6 +349,8 @@
     <button class="filter-btn" onclick="setFilter('approved',this)">🔄 Generating</button>
     <button class="filter-btn" onclick="setFilter('scripted',this)">📄 Scripted</button>
     <button class="filter-btn" onclick="setFilter('ready',this)">✅ Ready</button>
+    <button class="filter-btn" onclick="setFilter('creating',this)">🎬 Creating</button>
+    <button class="filter-btn" onclick="setFilter('created',this)">🌟 Created</button>
     <button class="filter-btn" onclick="setFilter('published',this)">🚀 Published</button>
     <button class="filter-btn" onclick="setFilter('rejected',this)">❌ Rejected</button>
     <button class="filter-btn" onclick="setFilter('my-idea',this)">💡 My Ideas</button>
@@ -353,7 +395,7 @@ const FORMAT_LABELS={yt_long:'▶ YT Long',yt_short:'⚡ YT Short',reels:'📱 R
 // ── Load ──────────────────────────────────────────────────────────────────────
 async function load(){
   try{
-    const r=await fetch(`${SB_URL}/rest/v1/content_queue?select=*&order=created_at.desc&limit=300`,{headers:H});
+    const r=await fetch(`${SB_URL}/rest/v1/content_queue?select=*&order=published_at.desc.nullslast,created_at.desc&limit=1000`,{headers:H});
     if(!r.ok) throw new Error(`HTTP ${r.status}`);
     stories=await r.json();
     updateStats(); render();
@@ -366,6 +408,7 @@ function updateStats(){
   document.getElementById('stat-p').textContent=`⏳ ${stories.filter(s=>s.status==='pending').length} pending`;
   document.getElementById('stat-s').textContent=`📄 ${stories.filter(s=>s.status==='scripted').length} scripted`;
   document.getElementById('stat-r').textContent=`✅ ${stories.filter(s=>s.status==='ready').length} ready`;
+  document.getElementById('stat-c').textContent=`🌟 ${stories.filter(s=>s.status==='created').length} created`;
 }
 
 // ── Filters ───────────────────────────────────────────────────────────────────
@@ -417,8 +460,8 @@ function buildCard(s){
   const sc=s.viral_score>=70?'score-high':s.viral_score>=45?'score-mid':'score-low';
   const statusCls=s.status==='pending'&&isIdea?'my-idea-pending':s.status;
   const sbCls=`sb-${s.status==='approved'?'approved':s.status}`;
-  const sbLabel={pending:'⏳ Pending',approved:'🔄 Generating',scripted:'📄 Scripted',ready:'✅ Ready',published:'🚀 Published',rejected:'❌ Rejected'}[s.status]||s.status;
-  const src=s.source_url?`<a href="${s.source_url}" target="_blank">${esc(s.source_name||'Source')}</a> · ${ago(s.created_at)}`:`${esc(s.source_name||'Scanner')} · ${ago(s.created_at)}`;
+  const sbLabel={pending:'⏳ Pending',approved:'🔄 Generating',scripted:'📄 Scripted',ready:'✅ Ready',creating:'🎬 Creating',created:'🌟 Created',published:'🚀 Published',rejected:'❌ Rejected'}[s.status]||s.status;
+  const src=s.source_url?`<a href="${s.source_url}" target="_blank">${esc(s.source_name||'Source')}</a> · ${pubDate(s.published_at||s.created_at)}`:`${esc(s.source_name||'Scanner')} · ${pubDate(s.published_at||s.created_at)}`;
   const ideaTag=isIdea?`<span class="niche-tag tag-idea">💡 My Idea</span>`:'';
   const summaryHtml=s.summary?`<div class="card-summary">${esc(s.summary)}</div>`:'';
 
@@ -432,6 +475,10 @@ function buildCard(s){
     bodyHtml=buildScriptedActions(s)+buildScriptsPanel(s)+buildRegenPanel(s);
   } else if(s.status==='ready'){
     bodyHtml=buildReadyReview(s);
+  } else if(s.status==='creating'){
+    bodyHtml=buildCreatingBanner();
+  } else if(s.status==='created'){
+    bodyHtml=buildCreatedActions(s)+buildContentPreview(s);
   } else if(s.status==='published'){
     bodyHtml=buildPublishedActions(s);
   }
@@ -747,8 +794,168 @@ async function saveFmts(id){
   upd(id,{formats:JSON.stringify(checked)});
   toast(`✅ Formats saved!`,'ok');
 }
-function createContent(id){
-  toast('🎬 Content creation coming in Sprint 4!','ok');
+async function createContent(id){
+  await patch(id,{status:'creating'});
+  upd(id,{status:'creating'}); updateStats(); render();
+  toast('🎬 Content creation started — check back in ~5 minutes','ok');
+}
+
+// ── Sprint 4: Creating banner ─────────────────────────────────────────────────
+function buildCreatingBanner(){
+  return `<div class="generating-banner"><span class="spin">🎬</span> Creating all 6 content packages — ready in ~5 minutes.</div>`;
+}
+
+// ── Sprint 4: Created card actions ────────────────────────────────────────────
+function buildCreatedActions(s){
+  return `<div class="card-actions">
+    <button class="btn" style="background:rgba(155,89,182,0.15);color:var(--purple);border:1px solid rgba(155,89,182,0.3);" onclick="toggleContent('${s.id}')">👁️ Preview Content ▼</button>
+    <button class="btn btn-publish" onclick="approveForPublish('${s.id}')">🚀 Approve for Sprint 5</button>
+  </div>`;
+}
+
+async function approveForPublish(id){
+  await patch(id,{status:'published'});
+  upd(id,{status:'published'}); updateStats(); render();
+  toast('🚀 Approved for Sprint 5 publishing!','ok');
+}
+
+function toggleContent(id){
+  const p=document.getElementById(`content-${id}`);
+  if(!p) return;
+  p.classList.toggle('open');
+  if(p.classList.contains('open')) switchCpTab(id,'yt_long');
+}
+
+function switchCpTab(sid,tab){
+  ['yt_long','yt_short','reels','meme','x_thread','x_post'].forEach(t=>{
+    document.getElementById(`cptab-${sid}-${t}`)?.classList.toggle('active',t===tab);
+    document.getElementById(`cppanel-${sid}-${t}`)?.classList.toggle('active',t===tab);
+  });
+}
+
+function cpLang(sid,tab,lang){
+  const el=document.getElementById(`cppanel-${sid}-${tab}`);
+  if(!el) return;
+  el.querySelectorAll('.cp-lang-btn').forEach(b=>b.classList.toggle('active',b.dataset.lang===lang));
+  el.querySelectorAll('[data-lang-panel]').forEach(p=>p.style.display=p.dataset.langPanel===lang?'':'none');
+}
+
+// ── Sprint 4: Content preview panel ──────────────────────────────────────────
+function buildContentPreview(s){
+  const ytl = safeObj(s.content_yt_long);
+  const yts = safeObj(s.content_yt_short);
+  const rl  = safeObj(s.content_reels);
+  const mm  = safeObj(s.content_meme);
+  const xt  = safeObj(s.content_x_thread);
+  const xp  = safeObj(s.content_x_post);
+  const sid = s.id;
+
+  const tabBar=`<div class="cp-tabs">
+    <div class="cp-tab active" id="cptab-${sid}-yt_long"  onclick="switchCpTab('${sid}','yt_long')">▶ YT Long</div>
+    <div class="cp-tab"       id="cptab-${sid}-yt_short" onclick="switchCpTab('${sid}','yt_short')">⚡ YT Short</div>
+    <div class="cp-tab"       id="cptab-${sid}-reels"    onclick="switchCpTab('${sid}','reels')">📱 Reels</div>
+    <div class="cp-tab"       id="cptab-${sid}-meme"     onclick="switchCpTab('${sid}','meme')">😄 Meme</div>
+    <div class="cp-tab"       id="cptab-${sid}-x_thread" onclick="switchCpTab('${sid}','x_thread')">𝕏 Thread</div>
+    <div class="cp-tab"       id="cptab-${sid}-x_post"   onclick="switchCpTab('${sid}','x_post')">𝕏 Post</div>
+  </div>`;
+
+  // YT Long panel
+  const ytlPanel=`<div class="cp-panel active" id="cppanel-${sid}-yt_long">
+    <div class="cp-lang-toggle">
+      <button class="cp-lang-btn active" data-lang="ta" onclick="cpLang('${sid}','yt_long','ta')">🇮🇳 Tamil</button>
+      <button class="cp-lang-btn" data-lang="en" onclick="cpLang('${sid}','yt_long','en')">🇬🇧 English</button>
+    </div>
+    <div data-lang-panel="ta">
+      <div class="cp-field"><span class="cp-label">Title</span><div class="cp-value">${esc(ytl.title_tamil||'—')}</div></div>
+      <div class="cp-field"><span class="cp-label">Description</span><div class="cp-value">${esc(ytl.description_tamil||'—')}</div></div>
+      <div class="cp-field"><span class="cp-label">Thumbnail Text</span><div class="cp-value">${esc(ytl.thumbnail_text_tamil||ytl.thumbnail_text||'—')}</div></div>
+      <div class="cp-field"><span class="cp-label">Chapters</span>${safeArr(ytl.chapters_tamil||ytl.chapters).map(c=>`<div class="cp-chapter"><span class="cp-chapter-time">${esc(c.time)}</span><span>${esc(c.title)}</span></div>`).join('')||'<div style="color:var(--muted);font-size:12px">—</div>'}</div>
+    </div>
+    <div data-lang-panel="en" style="display:none">
+      <div class="cp-field"><span class="cp-label">Title</span><div class="cp-value">${esc(ytl.title_english||'—')}</div></div>
+      <div class="cp-field"><span class="cp-label">Description</span><div class="cp-value">${esc(ytl.description_english||'—')}</div></div>
+      <div class="cp-field"><span class="cp-label">Thumbnail Text</span><div class="cp-value">${esc(ytl.thumbnail_text_english||ytl.thumbnail_text||'—')}</div></div>
+      <div class="cp-field"><span class="cp-label">Chapters</span>${safeArr(ytl.chapters_english||ytl.chapters).map(c=>`<div class="cp-chapter"><span class="cp-chapter-time">${esc(c.time)}</span><span>${esc(c.title)}</span></div>`).join('')||'<div style="color:var(--muted);font-size:12px">—</div>'}</div>
+    </div>
+    <div class="cp-field"><span class="cp-label">Tags</span><div class="cp-tags">${(ytl.tags||[]).map(t=>`<span class="cp-tag">${esc(t)}</span>`).join('')}</div></div>
+  </div>`;
+
+  // YT Short panel
+  const ytsPanel=`<div class="cp-panel" id="cppanel-${sid}-yt_short">
+    <div class="cp-lang-toggle">
+      <button class="cp-lang-btn active" data-lang="ta" onclick="cpLang('${sid}','yt_short','ta')">🇮🇳 Tamil</button>
+      <button class="cp-lang-btn" data-lang="en" onclick="cpLang('${sid}','yt_short','en')">🇬🇧 English</button>
+    </div>
+    <div data-lang-panel="ta">
+      <div class="cp-field"><span class="cp-label">Hook</span><div class="cp-value">${esc(yts.hook_tamil||'—')}</div></div>
+      <div class="cp-field"><span class="cp-label">Caption</span><div class="cp-value">${esc(yts.caption_tamil||'—')}</div></div>
+    </div>
+    <div data-lang-panel="en" style="display:none">
+      <div class="cp-field"><span class="cp-label">Hook</span><div class="cp-value">${esc(yts.hook_english||'—')}</div></div>
+      <div class="cp-field"><span class="cp-label">Caption</span><div class="cp-value">${esc(yts.caption_english||'—')}</div></div>
+    </div>
+    <div class="cp-field"><span class="cp-label">Scenes</span>${(yts.scenes||[]).map(sc=>`<div class="cp-scene"><div class="cp-scene-num">Scene ${sc.scene} · ${esc(sc.duration)}</div><div class="cp-scene-row"><span>Text overlay:</span><span>${esc(sc.text_overlay||'')}</span></div><div class="cp-scene-row"><span>Visual:</span><span>${esc(sc.visual||'')}</span></div></div>`).join('')}</div>
+    <div class="cp-field"><span class="cp-label">Hashtags</span><div class="cp-tags">${(yts.hashtags||[]).map(t=>`<span class="cp-tag">${esc(t)}</span>`).join('')}</div></div>
+  </div>`;
+
+  // Reels panel
+  const rlPanel=`<div class="cp-panel" id="cppanel-${sid}-reels">
+    <div class="cp-lang-toggle">
+      <button class="cp-lang-btn active" data-lang="ta" onclick="cpLang('${sid}','reels','ta')">🇮🇳 Tamil</button>
+      <button class="cp-lang-btn" data-lang="en" onclick="cpLang('${sid}','reels','en')">🇬🇧 English</button>
+    </div>
+    <div data-lang-panel="ta">
+      <div class="cp-field"><span class="cp-label">Hook</span><div class="cp-value">${esc(rl.hook_tamil||'—')}</div></div>
+      <div class="cp-field"><span class="cp-label">Caption</span><div class="cp-value">${esc(rl.caption_tamil||'—')}</div></div>
+    </div>
+    <div data-lang-panel="en" style="display:none">
+      <div class="cp-field"><span class="cp-label">Hook</span><div class="cp-value">${esc(rl.hook_english||'—')}</div></div>
+      <div class="cp-field"><span class="cp-label">Caption</span><div class="cp-value">${esc(rl.caption_english||'—')}</div></div>
+    </div>
+    <div class="cp-field"><span class="cp-label">Scenes</span>${(rl.scenes||[]).map(sc=>`<div class="cp-scene"><div class="cp-scene-num">Scene ${sc.scene} · ${esc(sc.duration)}</div><div class="cp-scene-row"><span>Narration:</span><span>${esc(sc.narration||'')}</span></div><div class="cp-scene-row"><span>Text overlay:</span><span>${esc(sc.text_overlay||'')}</span></div><div class="cp-scene-row"><span>Visual:</span><span>${esc(sc.visual_direction||'')}</span></div></div>`).join('')}</div>
+    <div class="cp-field"><span class="cp-label">Audio Mood</span><div class="cp-value">${esc(rl.audio_mood||'—')}</div></div>
+    <div class="cp-field"><span class="cp-label">Hashtags</span><div class="cp-tags">${(rl.hashtags||[]).map(t=>`<span class="cp-tag">${esc(t)}</span>`).join('')}</div></div>
+  </div>`;
+
+  // Meme panel
+  const mmPanel=`<div class="cp-panel" id="cppanel-${sid}-meme">
+    ${mm.image_base64?`<div class="cp-meme-img"><img src="data:image/png;base64,${mm.image_base64}" alt="Meme"/></div>`:''}
+    <div class="cp-field"><span class="cp-label">Top Text (Tamil)</span><div class="cp-value">${esc(mm.top_text||'—')}</div></div>
+    <div class="cp-field"><span class="cp-label">Bottom Text (Tamil)</span><div class="cp-value">${esc(mm.bottom_text||'—')}</div></div>
+    <div class="cp-field"><span class="cp-label">Top Text (English)</span><div class="cp-value">${esc(mm.top_text_english||'—')}</div></div>
+    <div class="cp-field"><span class="cp-label">Bottom Text (English)</span><div class="cp-value">${esc(mm.bottom_text_english||'—')}</div></div>
+    <div class="cp-field"><span class="cp-label">Viral Caption</span><div class="cp-value">${esc(mm.viral_caption||'—')}</div></div>
+  </div>`;
+
+  // X Thread panel
+  const xtPanel=`<div class="cp-panel" id="cppanel-${sid}-x_thread">
+    <div class="cp-lang-toggle">
+      <button class="cp-lang-btn active" data-lang="ta" onclick="cpLang('${sid}','x_thread','ta')">🇮🇳 Tamil</button>
+      <button class="cp-lang-btn" data-lang="en" onclick="cpLang('${sid}','x_thread','en')">🇬🇧 English</button>
+    </div>
+    <div data-lang-panel="ta">${(xt.thread_tamil||[]).map(t=>`<div class="cp-tweet"><div class="cp-tweet-num">Tweet ${t.tweet}</div>${esc(t.text||'')}</div>`).join('')||'<div style="color:var(--muted);font-size:12px">No thread generated</div>'}</div>
+    <div data-lang-panel="en" style="display:none">${(xt.thread_english||[]).map(t=>`<div class="cp-tweet"><div class="cp-tweet-num">Tweet ${t.tweet}</div>${esc(t.text||'')}</div>`).join('')||'<div style="color:var(--muted);font-size:12px">No thread generated</div>'}</div>
+    <div class="cp-field" style="margin-top:10px"><span class="cp-label">Hashtags</span><div class="cp-tags">${(xt.hashtags||[]).map(t=>`<span class="cp-tag">${esc(t)}</span>`).join('')}</div></div>
+  </div>`;
+
+  // X Post panel
+  const xpPanel=`<div class="cp-panel" id="cppanel-${sid}-x_post">
+    <div class="cp-lang-toggle">
+      <button class="cp-lang-btn active" data-lang="ta" onclick="cpLang('${sid}','x_post','ta')">🇮🇳 Tamil</button>
+      <button class="cp-lang-btn" data-lang="en" onclick="cpLang('${sid}','x_post','en')">🇬🇧 English</button>
+    </div>
+    <div data-lang-panel="ta"><div class="cp-field"><span class="cp-label">Post</span><div class="cp-value">${esc(xp.post_tamil||'—')}</div></div></div>
+    <div data-lang-panel="en" style="display:none"><div class="cp-field"><span class="cp-label">Post</span><div class="cp-value">${esc(xp.post_english||'—')}</div></div></div>
+    <div class="cp-field"><span class="cp-label">Hashtags</span><div class="cp-tags">${(xp.hashtags||[]).map(t=>`<span class="cp-tag">${esc(t)}</span>`).join('')}</div></div>
+  </div>`;
+
+  return `<div class="content-preview" id="content-${sid}">
+    ${tabBar}
+    ${ytlPanel}${ytsPanel}${rlPanel}${mmPanel}${xtPanel}${xpPanel}
+    <div class="cp-approve-bar">
+      <button class="btn-cp-approve" onclick="approveForPublish('${sid}')">🚀 Approve for Sprint 5 Publishing</button>
+    </div>
+  </div>`;
 }
 async function patch(id,data){
   return fetch(`${SB_URL}/rest/v1/content_queue?id=eq.${id}`,{method:'PATCH',headers:{...H,'Prefer':'return=minimal'},body:JSON.stringify(data)});
@@ -775,9 +982,23 @@ async function submitIdea(){
 function toast(msg,type='ok'){const t=document.getElementById('toast');t.textContent=msg;t.className=`toast show ${type}`;setTimeout(()=>{t.className='toast';},3500);}
 function esc(s){return s?s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'):'';}
 function safeJson(v){try{return JSON.parse(v||'[]');}catch{return[];}}
+function safeObj(v){if(!v)return{};if(typeof v==='object'&&!Array.isArray(v))return v;try{return JSON.parse(v);}catch{return{};}}
+function safeArr(v){if(!v)return[];if(Array.isArray(v))return v;if(typeof v==='string'){try{const p=JSON.parse(v);return Array.isArray(p)?p:[];}catch{return[];}}return[];}
 function isToday(d){return d.toDateString()===new Date().toDateString();}
 function isYesterday(d){const y=new Date();y.setDate(y.getDate()-1);return d.toDateString()===y.toDateString();}
 function ago(ts){const s=Math.floor((Date.now()-new Date(ts))/1000);if(s<60)return'just now';if(s<3600)return`${Math.floor(s/60)}m ago`;if(s<86400)return`${Math.floor(s/3600)}h ago`;return`${Math.floor(s/86400)}d ago`;}
+function pubDate(ts){
+  if(!ts) return '';
+  const d = new Date(ts);
+  const now = new Date();
+  const time = d.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',hour12:true});
+  const isToday = d.toDateString()===now.toDateString();
+  const yesterday = new Date(); yesterday.setDate(now.getDate()-1);
+  const isYesterday = d.toDateString()===yesterday.toDateString();
+  if(isToday)    return `🕐 Today ${time}`;
+  if(isYesterday) return `🕐 Yesterday ${time}`;
+  return `🕐 ${d.toLocaleDateString('en-IN',{day:'numeric',month:'short'})} ${time}`;
+}
 
 load();
 </script>
