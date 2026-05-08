@@ -47,7 +47,7 @@ def fetch_regeneration_requests():
     params = {
         "regenerate_requested": "eq.true",
         "select":               "*",
-        "order":                "updated_at.desc",
+        "order":                "created_at.desc",
         "limit":                "10"
     }
     return db_get("content_queue", params)
