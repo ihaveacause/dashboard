@@ -8,6 +8,7 @@ I Have a Cause — News Scanner Bot (Final)
 
 import os
 import json
+import re
 import xml.etree.ElementTree as ET
 import requests
 from datetime import datetime, timezone, timedelta
@@ -48,6 +49,20 @@ NICHE_KEYWORDS = {
 
 VIRALITY_BOOSTERS = ["breaking","exclusive","arrest","viral","shocking","massive","historic","record","exposed","leaked","ban","death","scam","crisis","resign","fired","win","victory","controversy","outrage","protest"]
 
+# ── HTML stripper ─────────────────────────────────────────────────────────────
+def strip_html(text):
+    """Remove all HTML tags and decode common entities"""
+    if not text:
+        return ""
+    # Remove HTML tags
+    clean = re.sub(r'<[^>]+>', '', text)
+    # Decode common HTML entities
+    clean = clean.replace('&amp;', '&').replace('&lt;', '<').replace('&gt;', '>') \
+                 .replace('&quot;', '"').replace('&#39;', "'").replace('&nbsp;', ' ')
+    # Collapse whitespace
+    clean = re.sub(r'\s+', ' ', clean).strip()
+    return clean
+
 # ── Format recommendation engine ──────────────────────────────────────────────
 def recommend_formats(niche, viral_score, title):
     title_lower = title.lower()
@@ -56,42 +71,34 @@ def recommend_formats(niche, viral_score, title):
     breaking_words = ["breaking","arrest","resign","dies","death","ban","crisis","exposed","leaked","scam","exclusive"]
     is_breaking = viral_score >= 70 or any(w in title_lower for w in breaking_words)
 
-    # YT Long — for all substantive stories
     if viral_score >= 45:
         recs.append("yt_long")
 
-    # Breaking news — X first for speed
     if is_breaking:
         recs.append("x_post")
         recs.append("x_thread")
 
-    # Visual niches — Reels + Meme
     if niche in ["viral", "entertainment"]:
         recs.append("reels")
         recs.append("meme")
         recs.append("yt_short")
 
-    # Sports — short + x
     if niche == "sports":
         recs.append("yt_short")
         recs.append("x_post")
 
-    # Analysis niches — depth first
     if niche in ["politics", "crime", "business"]:
         recs.append("yt_short")
         recs.append("x_thread")
 
-    # Very viral — all formats
     if viral_score >= 80:
         for f in ["yt_long","yt_short","reels","meme","x_thread","x_post"]:
             if f not in recs:
                 recs.append(f)
 
-    # Always at least YT Short
     if "yt_short" not in recs:
         recs.append("yt_short")
 
-    # Deduplicate preserving order
     seen, result = set(), []
     for f in recs:
         if f not in seen:
@@ -130,14 +137,10 @@ def db_insert(table, row):
     return resp.status_code in (200, 201)
 
 def db_delete_old_pending():
-    """Permanently delete pending stories older than 48 hours"""
     cutoff = (datetime.now(timezone.utc) - timedelta(hours=48)).isoformat()
     url    = f"{REST_URL}/content_queue"
-    params = {
-        "status":     "eq.pending",
-        "created_at": f"lt.{cutoff}"
-    }
-    resp = requests.delete(url, headers=HEADERS, params=params, timeout=10)
+    params = {"status": "eq.pending", "created_at": f"lt.{cutoff}"}
+    resp   = requests.delete(url, headers=HEADERS, params=params, timeout=10)
     if resp.status_code in (200, 204):
         return True
     print(f"  ⚠️  Delete old pending failed: {resp.status_code} {resp.text[:100]}")
@@ -145,7 +148,6 @@ def db_delete_old_pending():
 
 # ── Parse pub date ────────────────────────────────────────────────────────────
 def parse_pub_date(pub_str):
-    """Parse RSS pubDate and return datetime or None"""
     if not pub_str:
         return None
     formats = [
@@ -161,25 +163,24 @@ def parse_pub_date(pub_str):
     return None
 
 def is_within_48_hours(pub_str):
-    """Return True if article is less than 48 hours old"""
     pub_dt = parse_pub_date(pub_str)
     if not pub_dt:
-        return True  # if no date, include it (can't verify)
+        return True
     cutoff = datetime.now(timezone.utc) - timedelta(hours=48)
     return pub_dt >= cutoff
 
 # ── RSS fetch ─────────────────────────────────────────────────────────────────
 def fetch_google_news_rss(feed_url):
     try:
-        headers = {"User-Agent": "Mozilla/5.0 (compatible; IHaveACauseBot/1.0)"}
-        resp    = requests.get(feed_url, headers=headers, timeout=15)
+        headers  = {"User-Agent": "Mozilla/5.0 (compatible; IHaveACauseBot/1.0)"}
+        resp     = requests.get(feed_url, headers=headers, timeout=15)
         resp.raise_for_status()
         root     = ET.fromstring(resp.content)
         articles = []
         for item in root.findall(".//item"):
-            title     = item.findtext("title", "").strip()
+            title     = strip_html(item.findtext("title", "")).strip()
             link      = item.findtext("link", "").strip()
-            desc      = item.findtext("description", "").strip()
+            desc      = strip_html(item.findtext("description", "")).strip()
             pub       = item.findtext("pubDate", "")
             source_el = item.find("source")
             source    = source_el.text if source_el is not None else "Google News"
@@ -209,9 +210,9 @@ def fetch_all_stories():
                 if url and url not in seen_urls and "[Removed]" not in a.get("title",""):
                     seen_urls.add(url)
                     all_stories.append({
-                        "title":       a.get("title",""),
+                        "title":       strip_html(a.get("title","")),
                         "url":         url,
-                        "description": a.get("description",""),
+                        "description": strip_html(a.get("description","")),
                         "publishedAt": a.get("publishedAt",""),
                         "source":      a.get("source",{}).get("name","NewsAPI")
                     })
@@ -225,12 +226,10 @@ def run_scanner():
     print(f"🤖 Scanner started — {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("=" * 60)
 
-    # Step 1 — Delete stale pending stories (> 48 hrs)
     print("\n  🗑️  Deleting pending stories older than 48 hours...")
     db_delete_old_pending()
     print("  ✅ Old pending stories removed")
 
-    # Step 2 — Fetch fresh news
     print("\n  📡 Fetching fresh news...")
     articles      = fetch_all_stories()
     stories_found = len(articles)
@@ -240,16 +239,15 @@ def run_scanner():
 
     print("\n  📝 Processing articles...\n")
     for article in articles:
-        url   = article.get("url","")
-        title = article.get("title","").strip()
-        desc  = article.get("description","") or ""
+        url    = article.get("url","")
+        title  = article.get("title","").strip()
+        desc   = article.get("description","") or ""
         source = article.get("source","Unknown")
         pub_at = article.get("publishedAt")
 
         if not title or not url or len(title) < 10:
             continue
 
-        # Skip articles older than 48 hours
         if not is_within_48_hours(pub_at):
             skipped_old += 1
             continue
@@ -258,15 +256,17 @@ def run_scanner():
         viral_score = score_virality(title, desc)
         rec_formats = recommend_formats(niche, viral_score, title)
 
-        # Check duplicate
         existing = db_select("content_queue", {"source_url": f"eq.{url}", "select": "id"})
         if existing:
             skipped_dup += 1
             continue
 
+        # Clean summary — no HTML
+        clean_summary = desc[:500] if desc else None
+
         row = {
             "title":               title,
-            "summary":             desc[:500] or None,
+            "summary":             clean_summary,
             "source_url":          url,
             "source_name":         source,
             "published_at":        pub_at or None,
