@@ -395,7 +395,7 @@ const FORMAT_LABELS={yt_long:'▶ YT Long',yt_short:'⚡ YT Short',reels:'📱 R
 // ── Load ──────────────────────────────────────────────────────────────────────
 async function load(){
   try{
-    const r=await fetch(`${SB_URL}/rest/v1/content_queue?select=*&order=created_at.desc&limit=300`,{headers:H});
+    const r=await fetch(`${SB_URL}/rest/v1/content_queue?select=*&order=published_at.desc.nullslast,created_at.desc&limit=300`,{headers:H});
     if(!r.ok) throw new Error(`HTTP ${r.status}`);
     stories=await r.json();
     updateStats(); render();
@@ -461,7 +461,7 @@ function buildCard(s){
   const statusCls=s.status==='pending'&&isIdea?'my-idea-pending':s.status;
   const sbCls=`sb-${s.status==='approved'?'approved':s.status}`;
   const sbLabel={pending:'⏳ Pending',approved:'🔄 Generating',scripted:'📄 Scripted',ready:'✅ Ready',creating:'🎬 Creating',created:'🌟 Created',published:'🚀 Published',rejected:'❌ Rejected'}[s.status]||s.status;
-  const src=s.source_url?`<a href="${s.source_url}" target="_blank">${esc(s.source_name||'Source')}</a> · ${ago(s.created_at)}`:`${esc(s.source_name||'Scanner')} · ${ago(s.created_at)}`;
+  const src=s.source_url?`<a href="${s.source_url}" target="_blank">${esc(s.source_name||'Source')}</a> · ${pubDate(s.published_at||s.created_at)}`:`${esc(s.source_name||'Scanner')} · ${pubDate(s.published_at||s.created_at)}`;
   const ideaTag=isIdea?`<span class="niche-tag tag-idea">💡 My Idea</span>`:'';
   const summaryHtml=s.summary?`<div class="card-summary">${esc(s.summary)}</div>`:'';
 
@@ -987,6 +987,18 @@ function safeArr(v){if(!v)return[];if(Array.isArray(v))return v;if(typeof v==='s
 function isToday(d){return d.toDateString()===new Date().toDateString();}
 function isYesterday(d){const y=new Date();y.setDate(y.getDate()-1);return d.toDateString()===y.toDateString();}
 function ago(ts){const s=Math.floor((Date.now()-new Date(ts))/1000);if(s<60)return'just now';if(s<3600)return`${Math.floor(s/60)}m ago`;if(s<86400)return`${Math.floor(s/3600)}h ago`;return`${Math.floor(s/86400)}d ago`;}
+function pubDate(ts){
+  if(!ts) return '';
+  const d = new Date(ts);
+  const now = new Date();
+  const time = d.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',hour12:true});
+  const isToday = d.toDateString()===now.toDateString();
+  const yesterday = new Date(); yesterday.setDate(now.getDate()-1);
+  const isYesterday = d.toDateString()===yesterday.toDateString();
+  if(isToday)    return `🕐 Today ${time}`;
+  if(isYesterday) return `🕐 Yesterday ${time}`;
+  return `🕐 ${d.toLocaleDateString('en-IN',{day:'numeric',month:'short'})} ${time}`;
+}
 
 load();
 </script>
