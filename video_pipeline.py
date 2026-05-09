@@ -67,29 +67,50 @@ def db_patch(sid, data):
 
 # ── edge-tts ──────────────────────────────────────────────────────────────────
 async def generate_tts(text, language, audio_out: Path, subs_out: Path):
-    """Generate MP3 + word-level VTT subtitles via edge-tts."""
+    """Generate MP3 via edge-tts. Subtitles generated from text timing (no SubMaker)."""
     import edge_tts
-    voice     = VOICES[language]
+    voice       = VOICES[language]
     communicate = edge_tts.Communicate(text, voice)
-    submaker  = edge_tts.SubMaker()
 
     with open(audio_out, "wb") as af:
         async for chunk in communicate.stream():
             if chunk["type"] == "audio":
                 af.write(chunk["data"])
-            elif chunk["type"] == "WordBoundary":
-                submaker.create_sub(
-                    (chunk["offset"], chunk["duration"]),
-                    chunk["text"],
-                )
-
-    vtt = submaker.generate_subs()
-    with open(subs_out, "w", encoding="utf-8") as sf:
-        sf.write(vtt)
 
     size_kb = audio_out.stat().st_size // 1024
-    print(f"    ✅ TTS: {audio_out.name} ({size_kb} KB), {len(vtt.splitlines())} sub lines")
+    print(f"    ✅ TTS audio: {audio_out.name} ({size_kb} KB)")
+
+    # Generate subtitles from text timing — no SubMaker API needed
+    vtt = _text_to_vtt(text)
+    with open(subs_out, "w", encoding="utf-8") as sf:
+        sf.write(vtt)
+    print(f"    ✅ Subtitles: {len(vtt.splitlines())} lines")
     return vtt
+
+def _text_to_vtt(text, words_per_group=4, words_per_sec=2.8):
+    """Convert script text to VTT using estimated speaking rate (2.8 words/sec)."""
+    words   = re.sub(r'\s+', ' ', text).strip().split()
+    entries = []
+    elapsed = 0.0
+
+    for i in range(0, len(words), words_per_group):
+        chunk = words[i : i + words_per_group]
+        if not chunk:
+            continue
+        dur   = len(chunk) / words_per_sec
+        start = elapsed
+        end   = elapsed + dur
+        entries.append(f"{_vtt_ts(start)} --> {_vtt_ts(end)}\n{' '.join(chunk)}")
+        elapsed = end
+
+    return "WEBVTT\n\n" + "\n\n".join(entries)
+
+def _vtt_ts(secs):
+    """Format float seconds → HH:MM:SS.mmm"""
+    h  = int(secs // 3600)
+    m  = int((secs % 3600) // 60)
+    s  = secs % 60
+    return f"{h:02d}:{m:02d}:{s:06.3f}"
 
 def parse_vtt_to_frames(vtt: str, fps=30, hook_frames=90, words_per_group=3):
     """Convert word-level VTT (100ns ticks) to frame-stamped subtitle groups."""
@@ -361,14 +382,23 @@ def render_video(language):
 
 # ── Supabase Storage ──────────────────────────────────────────────────────────
 def ensure_bucket():
+    """Create videos bucket if it doesn't exist. Non-blocking — create manually if this fails."""
     r = requests.post(
         f"{SB_URL}/storage/v1/bucket",
         headers={**SB_HDR, "Content-Type": "application/json"},
         json={"name": "videos", "public": True},
         timeout=10,
     )
-    ok = r.status_code in [200, 201, 409]   # 409 = already exists
-    print(f"  {'✅' if ok else '⚠️ '} Storage bucket 'videos' {'ready' if ok else r.text[:80]}")
+    if r.status_code in [200, 201]:
+        print("  ✅ Storage bucket 'videos' created")
+    elif r.status_code == 409:
+        print("  ✅ Storage bucket 'videos' already exists")
+    else:
+        # RLS may block bucket creation via anon key — user must create manually
+        print(f"  ⚠️  Could not auto-create bucket (status {r.status_code}).")
+        print("     If this is the first run, create a PUBLIC bucket named 'videos'")
+        print("     in Supabase → Storage → New Bucket → name: videos, public: ✅")
+        print("     Pipeline will still attempt uploads — bucket may already exist.")
 
 def upload_video(file_path: Path, storage_path: str):
     """Upload MP4 to Supabase Storage; return public URL or None."""
