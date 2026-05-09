@@ -395,10 +395,18 @@ const FORMAT_LABELS={yt_long:'▶ YT Long',yt_short:'⚡ YT Short',reels:'📱 R
 // ── Load ──────────────────────────────────────────────────────────────────────
 async function load(){
   try{
-    const isRej=filter==='rejected';
-    const url=isRej
-      ?`${SB_URL}/rest/v1/content_queue?select=*&status=eq.rejected&order=created_at.desc&limit=200`
-      :`${SB_URL}/rest/v1/content_queue?select=*&status=neq.rejected&order=published_at.desc.nullslast,created_at.desc&limit=1000`;
+    let url;
+    if(filter==='rejected'){
+      url=`${SB_URL}/rest/v1/content_queue?select=*&status=eq.rejected&order=created_at.desc&limit=200`;
+    } else if(filter==='created'){
+      url=`${SB_URL}/rest/v1/content_queue?select=*&status=eq.created&order=created_at.desc&limit=100`;
+    } else if(filter==='my-idea'){
+      url=`${SB_URL}/rest/v1/content_queue?select=*&source_name=eq.💡 My Idea&order=created_at.desc&limit=100`;
+    } else if(filter==='published'){
+      url=`${SB_URL}/rest/v1/content_queue?select=*&status=eq.published&order=created_at.desc&limit=100`;
+    } else {
+      url=`${SB_URL}/rest/v1/content_queue?select=*&status=neq.rejected&order=published_at.desc.nullslast,created_at.desc&limit=1000`;
+    }
     const r=await fetch(url,{headers:H});
     if(!r.ok) throw new Error(`HTTP ${r.status}`);
     stories=await r.json();
@@ -409,19 +417,27 @@ async function load(){
 }
 
 function updateStats(){
-  document.getElementById('stat-p').textContent=`⏳ ${stories.filter(s=>s.status==='pending').length} pending`;
-  document.getElementById('stat-s').textContent=`📄 ${stories.filter(s=>s.status==='scripted').length} scripted`;
-  document.getElementById('stat-r').textContent=`✅ ${stories.filter(s=>s.status==='ready').length} ready`;
-  document.getElementById('stat-c').textContent=`🌟 ${stories.filter(s=>s.status==='created').length} created`;
+  // Always fetch fresh counts from a separate call
+  fetch(`${SB_URL}/rest/v1/content_queue?select=status`,{headers:H})
+  .then(r=>r.json()).then(rows=>{
+    document.getElementById('stat-p').textContent=`⏳ ${rows.filter(s=>s.status==='pending').length} pending`;
+    document.getElementById('stat-s').textContent=`📄 ${rows.filter(s=>s.status==='scripted').length} scripted`;
+    document.getElementById('stat-r').textContent=`✅ ${rows.filter(s=>s.status==='ready').length} ready`;
+    document.getElementById('stat-c').textContent=`🌟 ${rows.filter(s=>s.status==='created').length} created`;
+  }).catch(()=>{
+    document.getElementById('stat-p').textContent=`⏳ ${stories.filter(s=>s.status==='pending').length} pending`;
+    document.getElementById('stat-s').textContent=`📄 ${stories.filter(s=>s.status==='scripted').length} scripted`;
+    document.getElementById('stat-r').textContent=`✅ ${stories.filter(s=>s.status==='ready').length} ready`;
+    document.getElementById('stat-c').textContent=`🌟 ${stories.filter(s=>s.status==='created').length} created`;
+  });
 }
 
 // ── Filters ───────────────────────────────────────────────────────────────────
 function setFilter(f,btn){
-  const wasRej=filter==='rejected';
   filter=f;
   document.querySelectorAll('.filter-btn').forEach(b=>b.classList.remove('active'));
   btn.classList.add('active');
-  if(f==='rejected'||wasRej){load();}else{render();}
+  load();
 }
 function setNiche(n){niche=n;render();}
 
