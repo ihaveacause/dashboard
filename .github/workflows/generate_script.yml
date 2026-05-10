@@ -23,7 +23,7 @@ jobs:
           python-version: '3.11'
 
       - name: Install dependencies
-        run: pip install requests google-generativeai
+        run: pip install requests google-genai
 
       - name: Generate script
         env:
