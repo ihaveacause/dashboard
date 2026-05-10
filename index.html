@@ -781,6 +781,7 @@ const SB_KEY = 'sb_publishable_W6dVLZyqGI60qF6nDchJWg_kv2ZFfhn';
 const EDGE_FN       = `${SB_URL}/functions/v1/trigger-script-gen`;
 const EDGE_IMG_FN   = `${SB_URL}/functions/v1/trigger-image-gen`;
 const EDGE_VIDEO_FN = `${SB_URL}/functions/v1/trigger-video-gen`;
+const EDGE_SVG_FN   = `${SB_URL}/functions/v1/trigger-svg-gen`;
 
 const H = {
   'apikey': SB_KEY,
@@ -1465,16 +1466,24 @@ async function submitInfographicRegen(epNum) {
     showToast('Infographic preference saved ✓', 'info');
   }
 
-  // Re-trigger image pipeline to regenerate infographic
-  await patchTable('tamil_episodes', epNum, {
-    regenerate_note: `Regenerate infographic: ${note}`,
-    infographic_svg: null,
-    status: 'script_approved'
-  });
-
-  showToast('Queuing infographic regeneration...', 'info');
-  closeModal();
-  await generateImages(epNum);
+  // Trigger SVG-ONLY regeneration — images stay untouched
+  try {
+    const r = await fetch(EDGE_SVG_FN, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SB_KEY}` },
+      body: JSON.stringify({ episode_number: epNum, regen_note: note })
+    });
+    const data = await r.json();
+    if (data.success) {
+      showToast('SVG regenerating — images untouched ✓', 'success');
+      closeModal();
+      setTimeout(load, 2000);
+    } else {
+      throw new Error(data.error || 'Unknown error');
+    }
+  } catch(e) {
+    showToast(`Error: ${e.message}`, 'error');
+  }
 }
 
 // ── Single Image Regenerate ──────────────────────────────────
