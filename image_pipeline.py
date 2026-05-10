@@ -100,6 +100,20 @@ def fetch_preferences():
     prefs = [r["preference"] for r in rows if r["category"] == "image"]
     return "\n".join(f"- {p}" for p in prefs) if prefs else ""
 
+# ── Retry helper ────────────────────────────────────────────
+def call_gemini_with_retry(fn, max_retries=4, wait=30):
+    import time
+    for attempt in range(max_retries):
+        try:
+            return fn()
+        except Exception as e:
+            if attempt < max_retries - 1:
+                print(f"   ⚠️  Attempt {attempt+1} failed: {str(e)[:80]}")
+                print(f"   ⏳ Waiting {wait}s before retry...")
+                time.sleep(wait)
+            else:
+                raise
+
 # ── Step 1: Scene descriptions ──────────────────────────────
 def generate_scene_descriptions(episode, prefs):
     print(f"\n🎨 Step 1: Generating scene descriptions...")
@@ -130,11 +144,14 @@ Generate EXACTLY 5 scene prompts for Imagen 3. Return ONLY valid JSON:
   ]
 }}"""
 
-    response = gemini_client.models.generate_content(
-        model="gemini-2.5-flash", contents=prompt
-    )
-    raw = response.text.strip().replace("```json","").replace("```","").strip()
-    data = json.loads(raw)
+    def _call():
+        response = gemini_client.models.generate_content(
+            model="gemini-2.5-flash", contents=prompt
+        )
+        raw = response.text.strip().replace("```json","").replace("```","").strip()
+        return json.loads(raw)
+
+    data = call_gemini_with_retry(_call)
     print(f"   ✅ {len(data['scenes'])} scene descriptions generated")
     return data["scenes"]
 
@@ -192,7 +209,10 @@ def generate_images(scenes):
     for scene in scenes:
         print(f"   Scene {scene['id']}: {scene['label']}...")
         try:
-            image_bytes = generate_image_vertex(scene["prompt"], scene["id"])
+            image_bytes = call_gemini_with_retry(
+                lambda p=scene["prompt"], i=scene["id"]: generate_image_vertex(p, i),
+                max_retries=3, wait=20
+            )
             if not image_bytes:
                 continue
 
@@ -234,9 +254,12 @@ DESIGN:
 
 Return ONLY the SVG code starting with <svg and ending with </svg>."""
 
-    response = gemini_client.models.generate_content(
-        model="gemini-2.5-flash", contents=prompt
-    )
+    def _call_svg():
+        return gemini_client.models.generate_content(
+            model="gemini-2.5-flash", contents=prompt
+        )
+
+    response = call_gemini_with_retry(_call_svg)
     svg = response.text.strip()
     if "```svg" in svg:
         svg = svg.split("```svg")[1].split("```")[0].strip()
