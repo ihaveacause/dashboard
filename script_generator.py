@@ -14,7 +14,7 @@ Flow:
 
 import os
 import requests
-import google.generativeai as genai
+from google import genai
 from datetime import datetime
 
 # ── Config ────────────────────────────────────────────────────
@@ -23,8 +23,8 @@ SUPABASE_KEY   = os.environ["SUPABASE_KEY"]
 GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
 EPISODE_NUMBER = int(os.environ["EPISODE_NUMBER"])
 
-genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel("gemini-1.5-flash")
+client = genai.Client(api_key=GEMINI_API_KEY)
+
 
 SB_HEADERS = {
     "apikey":        SUPABASE_KEY,
@@ -110,7 +110,7 @@ Perform comprehensive research and provide:
 
 Research deeply and thoroughly. This will be used to write a 12-20 minute YouTube video script."""
 
-    response = model.generate_content(prompt)
+    response = client.models.generate_content(model="gemini-2.0-flash", contents=prompt)
     research = response.text
     print(f"   ✅ Research complete ({len(research)} chars)")
     return research
@@ -163,7 +163,7 @@ CONCLUSION & CTA ({episode['target_duration_min']-1}:00-{episode['target_duratio
 Script இயல்பான பேச்சு வழக்கில் இருக்கட்டும். YouTuber பேசுவது போல் எழுதுங்கள்.
 குறைந்தது 1500 words எழுதுங்கள் — detailed and rich."""
 
-    response = model.generate_content(prompt)
+    response = client.models.generate_content(model="gemini-2.0-flash", contents=prompt)
     script = response.text
     print(f"   ✅ Tamil script complete ({len(script)} chars)")
     return script
@@ -219,7 +219,7 @@ CONCLUSION & CTA ({episode['target_duration_min']-1}:00-{episode['target_duratio
 Write in natural spoken English — as if you're speaking to camera.
 Minimum 1500 words — rich, layered, and profound."""
 
-    response = model.generate_content(prompt)
+    response = client.models.generate_content(model="gemini-2.0-flash", contents=prompt)
     script = response.text
     print(f"   ✅ English script complete ({len(script)} chars)")
     return script
