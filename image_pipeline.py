@@ -167,7 +167,7 @@ def generate_images(scenes, episode_number):
             )
 
             response = client.models.generate_images(
-                model="imagen-3.0-generate-002",
+                model="imagen-3.0-generate-001",
                 prompt=full_prompt,
                 config=types.GenerateImagesConfig(
                     number_of_images=1,
