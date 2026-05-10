@@ -1,509 +1,383 @@
 """
-I Have a Cause — Video Pipeline (Sprint 5)
-==========================================
-Flow:
-  Supabase: status='published_ready'
-      ↓
-  prepare()   → edge-tts audio + subtitles
-              → Pexels video clips (transcoded to 1080×1920)
-              → background music via ffmpeg
-              → writes video_renderer/public/ assets
-              → writes data_{lang}.json
-      ↓
-  render()    → node render.mjs data.json output.mp4  (×2 languages)
-      ↓
-  upload()    → Supabase Storage bucket 'videos'
-              → stores public URLs back to content_queue
-              → status → 'video_ready'
+I Have a Cause — Video Pipeline (Vertex AI Neural2 + FFmpeg)
+=============================================================
+Uses Vertex AI Neural2 Tamil voice for natural narration.
+FFmpeg assembles images with smooth pan + crossfade.
 """
 
-import os, json, asyncio, requests, subprocess, re, shutil
+import os
+import json
+import asyncio
+import base64
+import requests
+import subprocess
+import tempfile
+import shutil
 from pathlib import Path
+from datetime import datetime
+from google.oauth2 import service_account
+import google.auth.transport.requests
 
-# ── Config ────────────────────────────────────────────────────────────────────
-SB_URL      = os.environ["SUPABASE_URL"]
-SB_KEY      = os.environ["SUPABASE_KEY"]
-PEXELS_KEY  = os.environ["PEXELS_API_KEY"]
+# ── Config ─────────────────────────────────────────────────
+SUPABASE_URL   = os.environ["SUPABASE_URL"]
+SUPABASE_KEY   = os.environ["SUPABASE_KEY"]
+EPISODE_NUMBER = int(os.environ["EPISODE_NUMBER"])
+GCP_CREDS_JSON = os.environ["GOOGLE_APPLICATION_CREDENTIALS_JSON"]
 
-SB_HDR = {
-    "apikey"       : SB_KEY,
-    "Authorization": f"Bearer {SB_KEY}",
-    "Content-Type" : "application/json",
-    "Prefer"       : "return=minimal",
+PROJECT_ID = "gen-lang-client-0078128013"
+LOCATION   = "us-central1"
+
+SB_HEADERS = {
+    "apikey":        SUPABASE_KEY,
+    "Authorization": f"Bearer {SUPABASE_KEY}",
+    "Content-Type":  "application/json",
+    "Prefer":        "return=minimal"
 }
-PEXELS_HDR = {"Authorization": PEXELS_KEY}
+REST     = f"{SUPABASE_URL}/rest/v1"
+WORK_DIR = Path(tempfile.mkdtemp(prefix="ihac_video_"))
 
-BASE_DIR   = Path(__file__).parent
-PUBLIC_DIR = BASE_DIR / "video_renderer" / "public"
-OUTPUT_DIR = BASE_DIR / "output"
-RENDER_DIR = BASE_DIR / "video_renderer"
+# ── Vertex AI auth ──────────────────────────────────────────
+creds_info  = json.loads(GCP_CREDS_JSON)
+credentials = service_account.Credentials.from_service_account_info(
+    creds_info,
+    scopes=["https://www.googleapis.com/auth/cloud-platform"]
+)
 
-PUBLIC_DIR.mkdir(parents=True, exist_ok=True)
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+def get_token():
+    auth_req = google.auth.transport.requests.Request()
+    credentials.refresh(auth_req)
+    return credentials.token
 
-VOICES = {
-    "tamil"  : "ta-IN-ValluvarNeural",
-    "english": "en-IN-NeerjaNeural",
-}
-
-# ── Supabase helpers ──────────────────────────────────────────────────────────
-def db_get(params):
+# ── Supabase helpers ────────────────────────────────────────
+def db_get(table, params):
     r = requests.get(
-        f"{SB_URL}/rest/v1/content_queue",
-        headers={**SB_HDR, "Prefer": "return=representation"},
-        params=params, timeout=15,
+        f"{REST}/{table}",
+        headers={**SB_HEADERS, "Prefer": "return=representation"},
+        params=params, timeout=15
     )
     return r.json() if r.status_code == 200 else []
 
-def db_patch(sid, data):
+def db_patch(table, n, data):
     r = requests.patch(
-        f"{SB_URL}/rest/v1/content_queue?id=eq.{sid}",
-        headers=SB_HDR, json=data, timeout=15,
+        f"{REST}/{table}?episode_number=eq.{n}",
+        headers=SB_HEADERS, json=data, timeout=15
     )
-    ok = r.status_code < 300
-    if not ok:
-        print(f"  ⚠️  db_patch failed {r.status_code}: {r.text[:120]}")
-    return ok
+    return r.status_code in (200, 204)
 
-# ── edge-tts ──────────────────────────────────────────────────────────────────
-async def generate_tts(text, language, audio_out: Path, subs_out: Path):
-    """Generate MP3 via edge-tts. Subtitles generated from text timing (no SubMaker)."""
-    import edge_tts
-    voice       = VOICES[language]
-    communicate = edge_tts.Communicate(text, voice)
-
-    with open(audio_out, "wb") as af:
-        async for chunk in communicate.stream():
-            if chunk["type"] == "audio":
-                af.write(chunk["data"])
-
-    size_kb = audio_out.stat().st_size // 1024
-    print(f"    ✅ TTS audio: {audio_out.name} ({size_kb} KB)")
-
-    # Generate subtitles from text timing — no SubMaker API needed
-    vtt = _text_to_vtt(text)
-    with open(subs_out, "w", encoding="utf-8") as sf:
-        sf.write(vtt)
-    print(f"    ✅ Subtitles: {len(vtt.splitlines())} lines")
-    return vtt
-
-def _text_to_vtt(text, words_per_group=4, words_per_sec=2.8):
-    """Convert script text to VTT using estimated speaking rate (2.8 words/sec)."""
-    words   = re.sub(r'\s+', ' ', text).strip().split()
-    entries = []
-    elapsed = 0.0
-
-    for i in range(0, len(words), words_per_group):
-        chunk = words[i : i + words_per_group]
-        if not chunk:
-            continue
-        dur   = len(chunk) / words_per_sec
-        start = elapsed
-        end   = elapsed + dur
-        entries.append(f"{_vtt_ts(start)} --> {_vtt_ts(end)}\n{' '.join(chunk)}")
-        elapsed = end
-
-    return "WEBVTT\n\n" + "\n\n".join(entries)
-
-def _vtt_ts(secs):
-    """Format float seconds → HH:MM:SS.mmm"""
-    h  = int(secs // 3600)
-    m  = int((secs % 3600) // 60)
-    s  = secs % 60
-    return f"{h:02d}:{m:02d}:{s:06.3f}"
-
-def parse_vtt_to_frames(vtt: str, fps=30, hook_frames=90, words_per_group=3):
-    """Convert word-level VTT (100ns ticks) to frame-stamped subtitle groups."""
-    entries = []
-    lines   = vtt.splitlines()
-    i = 0
-    while i < len(lines):
-        if "-->" in lines[i]:
-            parts = lines[i].split(" --> ")
-            t0 = _vtt_secs(parts[0].strip())
-            t1 = _vtt_secs(parts[1].strip())
-            word = lines[i + 1].strip() if i + 1 < len(lines) else ""
-            entries.append({"t0": t0, "t1": t1, "word": word})
-            i += 2
-        else:
-            i += 1
-
-    # Group into short phrases
-    groups = []
-    for j in range(0, len(entries), words_per_group):
-        chunk = [e for e in entries[j:j + words_per_group] if e["word"]]
-        if not chunk:
-            continue
-        text  = " ".join(e["word"] for e in chunk)
-        start = int(chunk[0]["t0"]  * fps) + hook_frames
-        end   = int(chunk[-1]["t1"] * fps) + hook_frames + 6
-        groups.append({"start": start, "end": end, "text": text})
-
-    return groups
-
-def _vtt_secs(ts: str) -> float:
-    """Parse VTT timestamp (HH:MM:SS.mmm or MM:SS.mmm) to seconds."""
-    ts = ts.replace(",", ".")
-    parts = ts.split(":")
-    if len(parts) == 3:
-        h, m, s = parts
-        return int(h) * 3600 + int(m) * 60 + float(s)
-    elif len(parts) == 2:
-        m, s = parts
-        return int(m) * 60 + float(s)
-    return float(ts)
-
-# ── Pexels video ──────────────────────────────────────────────────────────────
-def pexels_search(query: str):
-    """Return a download URL for the best-fit Pexels video clip."""
-    try:
-        r = requests.get(
-            "https://api.pexels.com/videos/search",
-            headers=PEXELS_HDR,
-            params={"query": query, "per_page": 6, "orientation": "portrait"},
-            timeout=12,
-        )
-        if r.status_code != 200:
-            # Fall back to landscape
-            r = requests.get(
-                "https://api.pexels.com/videos/search",
-                headers=PEXELS_HDR,
-                params={"query": query, "per_page": 6},
-                timeout=12,
-            )
-        videos = r.json().get("videos", []) if r.status_code == 200 else []
-        for vid in videos:
-            for f in vid.get("video_files", []):
-                if f.get("quality") in ["hd", "sd"] and f.get("link"):
-                    return f["link"]
-        if videos:
-            files = videos[0].get("video_files", [])
-            if files:
-                return files[0]["link"]
-    except Exception as e:
-        print(f"    ⚠️  Pexels search '{query}': {e}")
+def upload_video(path, storage_path):
+    mb = Path(path).stat().st_size / 1024 / 1024
+    print(f"   Uploading {mb:.1f} MB...")
+    with open(path, "rb") as f:
+        data = f.read()
+    r = requests.post(
+        f"{SUPABASE_URL}/storage/v1/object/episode-videos/{storage_path}",
+        headers={
+            "apikey":        SUPABASE_KEY,
+            "Authorization": f"Bearer {SUPABASE_KEY}",
+            "Content-Type":  "video/mp4",
+            "x-upsert":      "true"
+        },
+        data=data, timeout=600
+    )
+    if r.status_code in (200, 201):
+        return f"{SUPABASE_URL}/storage/v1/object/public/episode-videos/{storage_path}"
+    print(f"   ❌ Upload failed {r.status_code}: {r.text[:200]}")
     return None
 
-def download(url: str, dest: Path, label=""):
-    """Download a URL to dest. Returns True on success."""
-    try:
-        r = requests.get(url, stream=True, timeout=45)
+def fetch_episode():
+    rows = db_get("tamil_episodes", {
+        "episode_number": f"eq.{EPISODE_NUMBER}", "select": "*"
+    })
+    return rows[0] if rows else None
+
+# ── Download images ─────────────────────────────────────────
+def download_images(image_urls_json):
+    print(f"\n📥 Downloading images...")
+    imgs = json.loads(image_urls_json) if isinstance(image_urls_json, str) else image_urls_json
+    paths = []
+    for img in sorted(imgs, key=lambda x: x.get('id', 0)):
+        p = WORK_DIR / f"scene_{img['id']:02d}.jpg"
+        try:
+            r = requests.get(img["url"], timeout=60)
+            if r.status_code == 200:
+                p.write_bytes(r.content)
+                paths.append(str(p))
+                print(f"   ✅ Scene {img['id']}: {img.get('label','')}")
+        except Exception as e:
+            print(f"   ❌ Scene {img['id']}: {e}")
+    return paths
+
+# ── Generate Tamil voice via Vertex Neural2 ─────────────────
+def generate_voice_neural2(script_text, output_path):
+    print(f"\n🎙  Generating Tamil voice with Vertex Neural2...")
+
+    # Clean script for TTS
+    clean_lines = []
+    for line in script_text.split('\n'):
+        line = line.strip()
+        if not line or line.startswith('#'):
+            continue
+        if ':' in line[:15] and len(line) > 20:
+            content = line.split(':', 1)[1].strip()
+            if content:
+                clean_lines.append(content)
+        else:
+            clean_lines.append(line)
+
+    full_text = ' '.join(clean_lines)
+
+    # Chunk into 4500 byte pieces (Neural2 limit)
+    chunks = []
+    words  = full_text.split()
+    current, current_len = [], 0
+    for word in words:
+        current_len += len(word.encode('utf-8')) + 1
+        current.append(word)
+        if current_len >= 4000:
+            chunks.append(' '.join(current))
+            current, current_len = [], 0
+    if current:
+        chunks.append(' '.join(current))
+
+    print(f"   Script → {len(chunks)} chunks")
+
+    token = get_token()
+    url   = "https://texttospeech.googleapis.com/v1/text:synthesize"
+    chunk_files = []
+
+    for i, chunk in enumerate(chunks):
+        payload = {
+            "input": {"text": chunk},
+            "voice": {
+                "languageCode": "ta-IN",
+                "name": "ta-IN-Neural2-A",  # Natural Tamil Neural2 voice
+                "ssmlGender": "MALE"
+            },
+            "audioConfig": {
+                "audioEncoding": "MP3",
+                "speakingRate": 0.95,  # Slightly slower for philosophy
+                "pitch": -1.0          # Slightly deeper, more authoritative
+            }
+        }
+        r = requests.post(
+            url,
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json"
+            },
+            json=payload, timeout=60
+        )
         if r.status_code == 200:
-            with open(dest, "wb") as f:
-                for chunk in r.iter_content(65536):
-                    f.write(chunk)
-            print(f"    ✅ Downloaded {label}: {dest.name} ({dest.stat().st_size // 1024} KB)")
-            return True
-    except Exception as e:
-        print(f"    ❌ Download failed {label}: {e}")
-    return False
+            audio_bytes = base64.b64decode(r.json()["audioContent"])
+            chunk_path  = WORK_DIR / f"chunk_{i:03d}.mp3"
+            chunk_path.write_bytes(audio_bytes)
+            chunk_files.append(str(chunk_path))
+            print(f"   ✅ Chunk {i+1}/{len(chunks)}")
+        else:
+            print(f"   ⚠️  Chunk {i+1} failed: {r.text[:200]}")
 
-def transcode_portrait(src: Path, dst: Path):
-    """Transcode any video to 1080×1920 H264, max 30 sec, no audio."""
-    cmd = [
-        "ffmpeg", "-y", "-i", str(src),
-        "-vf", "scale=1080:1920:force_original_aspect_ratio=increase,"
-               "crop=1080:1920",
-        "-c:v", "libx264", "-preset", "fast", "-crf", "24",
-        "-an", "-t", "30",
-        str(dst),
-    ]
-    result = subprocess.run(cmd, capture_output=True, timeout=180)
-    if result.returncode == 0:
-        print(f"    ✅ Transcoded: {dst.name}")
-        return True
-    print(f"    ❌ Transcode error: {result.stderr.decode()[:180]}")
-    return False
-
-def make_placeholder(dest: Path, scene_idx: int):
-    """Create a solid-colour MP4 when Pexels fails."""
-    colours = ["0d0f14", "1a0a0a", "0a1a0a", "0a0a1a"]
-    c = colours[scene_idx % len(colours)]
-    cmd = [
-        "ffmpeg", "-y",
-        "-f", "lavfi", "-i", f"color=color=#{c}:size=1080x1920:duration=20:rate=30",
-        "-c:v", "libx264", "-preset", "fast", "-an",
-        str(dest),
-    ]
-    subprocess.run(cmd, capture_output=True, timeout=30)
-    print(f"    ⚠️  Placeholder created for scene {scene_idx + 1}")
-
-def generate_ambient_music(dest: Path, niche: str, duration=75):
-    """Generate subtle ambient audio with ffmpeg (no external download needed)."""
-    freq = 55  if niche in ["crime","politics","tamil_politics","indian_politics"] else \
-           110 if niche in ["sports","business"] else 65
-    cmd = [
-        "ffmpeg", "-y",
-        "-f", "lavfi",
-        "-i", f"sine=frequency={freq}:duration={duration}",
-        "-af", "volume=0.06",
-        "-ar", "44100", "-ac", "2",
-        str(dest),
-    ]
-    result = subprocess.run(cmd, capture_output=True, timeout=30)
-    if result.returncode == 0:
-        print(f"    ✅ Ambient music generated ({niche})")
-    else:
-        print(f"    ⚠️  Music generation failed, proceeding without music")
-
-# ── Story data helpers ────────────────────────────────────────────────────────
-def get_script(story, language):
-    """Return the short-form narration script, cleaned up."""
-    col = "script_youtube_short_tamil" if language == "tamil" \
-          else "script_youtube_short_english"
-    text = story.get(col) or story.get("title", "")
-    # Strip stage directions / brackets
-    text = re.sub(r"\[.*?\]", "", text, flags=re.DOTALL)
-    text = re.sub(r"\(.*?\)", "", text, flags=re.DOTALL)
-    return text.strip()[:2200]
-
-def get_scene_queries(story):
-    """Extract 4 English visual search queries from content_yt_short."""
-    raw = story.get("content_yt_short") or {}
-    if isinstance(raw, str):
-        try:
-            raw = json.loads(raw)
-        except Exception:
-            raw = {}
-
-    niche   = story.get("niche", "india news")
-    queries = []
-    for sc in (raw.get("scenes") or [])[:4]:
-        visual = (sc.get("visual") or sc.get("visual_direction") or "").strip()
-        if visual:
-            queries.append(visual[:60])
-
-    defaults = [
-        f"{niche} india news",
-        "parliament india government",
-        "india people city crowd",
-        "india news broadcast media",
-    ]
-    while len(queries) < 4:
-        queries.append(defaults[len(queries)])
-    return queries[:4]
-
-def get_hook_text(story, language):
-    """Return hook text for the opening 3 seconds."""
-    raw = story.get("content_yt_short") or {}
-    if isinstance(raw, str):
-        try:
-            raw = json.loads(raw)
-        except Exception:
-            raw = {}
-    key  = "hook_tamil" if language == "tamil" else "hook_english"
-    hook = (raw.get(key) or story.get("title") or "")[:100]
-    return hook
-
-# ── Per-language preparation ──────────────────────────────────────────────────
-async def prepare_language(story, language, scene_queries):
-    """Generate TTS, download Pexels clips, write data JSON → public/."""
-    print(f"\n  ── {language.upper()} ──────────────────────────────────────")
-
-    # 1. TTS
-    script = get_script(story, language)
-    if not script:
-        print(f"    ❌ No script for {language}, skipping")
+    if not chunk_files:
         return False
 
-    audio_out = PUBLIC_DIR / f"{language}_audio.mp3"
-    subs_out  = PUBLIC_DIR / f"{language}_subs.vtt"
-    vtt = await generate_tts(script, language, audio_out, subs_out)
-    subtitles = parse_vtt_to_frames(vtt)
+    # Concatenate chunks
+    if len(chunk_files) == 1:
+        shutil.copy(chunk_files[0], str(output_path))
+    else:
+        concat = WORK_DIR / "audio_list.txt"
+        concat.write_text("\n".join(f"file '{p}'" for p in chunk_files))
+        subprocess.run([
+            "ffmpeg", "-y", "-f", "concat", "-safe", "0",
+            "-i", str(concat), "-c", "copy", str(output_path)
+        ], capture_output=True)
 
-    # 2. Pexels video clips
-    scene_entries = []
-    for i, query in enumerate(scene_queries):
-        raw_path  = PUBLIC_DIR / f"scene{i+1}_raw.mp4"
-        done_path = PUBLIC_DIR / f"scene{i+1}.mp4"
-
-        print(f"    🎬 Scene {i+1}: '{query}'")
-        url = pexels_search(query)
-        if url and download(url, raw_path, f"scene{i+1}"):
-            if not transcode_portrait(raw_path, done_path):
-                shutil.move(str(raw_path), str(done_path))  # use raw if transcode fails
-        else:
-            make_placeholder(done_path, i)
-
-        if raw_path.exists():
-            raw_path.unlink()
-
-        scene_entries.append({"videoFile": f"scene{i+1}.mp4", "textOverlay": query})
-
-    # 3. Background music (generated once, shared between languages)
-    music_path = PUBLIC_DIR / "music.mp3"
-    if not music_path.exists():
-        generate_ambient_music(music_path, story.get("niche", "general"))
-
-    # 4. Write data JSON for Remotion
-    data = {
-        "storyId"    : story["id"],
-        "storyTitle" : story.get("title", ""),
-        "language"   : language,
-        "hookText"   : get_hook_text(story, language),
-        "audioFile"  : f"{language}_audio.mp3",
-        "musicFile"  : "music.mp3" if music_path.exists() else None,
-        "subtitles"  : subtitles,
-        "scenes"     : scene_entries,
-        "niche"      : story.get("niche", "general"),
-        "channelName": "I Have a Cause",
-    }
-
-    data_file = PUBLIC_DIR / f"data_{language}.json"
-    data_file.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"    ✅ Data JSON: {data_file.name}")
+    print(f"   ✅ Voice ready")
     return True
 
-# ── Render ────────────────────────────────────────────────────────────────────
-def render_video(language):
-    """Call Remotion render script. Returns Path to rendered MP4 or None."""
-    data_file  = PUBLIC_DIR / f"data_{language}.json"
-    output_mp4 = OUTPUT_DIR / f"video_short_{language}.mp4"
-    script     = RENDER_DIR / "render.mjs"
+# ── Get audio duration ──────────────────────────────────────
+def get_duration(path):
+    r = subprocess.run([
+        "ffprobe", "-v", "error",
+        "-show_entries", "format=duration",
+        "-of", "default=noprint_wrappers=1:nokey=1",
+        str(path)
+    ], capture_output=True, text=True)
+    try:
+        return float(r.stdout.strip())
+    except:
+        return 600.0
 
-    if not data_file.exists():
-        print(f"  ❌ Data file missing for {language}")
-        return None
+# ── Assemble video ──────────────────────────────────────────
+def assemble_video(image_paths, audio_path, output_path):
+    print(f"\n🎬 Assembling video...")
 
-    print(f"\n  🖥️  Rendering {language.upper()} video (this takes ~10–20 min)...")
-    result = subprocess.run(
-        ["node", str(script), str(data_file), str(output_mp4)],
-        cwd=str(RENDER_DIR),
-        timeout=1800,   # 30 min hard limit
-    )
+    audio_dur = get_duration(audio_path)
+    num       = len(image_paths)
+    dur_each  = audio_dur / num
+    W, H, FPS = 1280, 720, 24
 
-    if result.returncode == 0 and output_mp4.exists():
-        size_mb = output_mp4.stat().st_size / (1024 * 1024)
-        print(f"  ✅ Rendered: {output_mp4.name} ({size_mb:.1f} MB)")
-        return output_mp4
-    else:
-        print(f"  ❌ Render failed for {language} (exit {result.returncode})")
-        return None
+    print(f"   Audio: {audio_dur:.1f}s | {num} images × {dur_each:.1f}s")
+    print(f"   Output: {W}×{H} @ {FPS}fps")
 
-# ── Supabase Storage ──────────────────────────────────────────────────────────
-def ensure_bucket():
-    """Create videos bucket if it doesn't exist. Non-blocking — create manually if this fails."""
-    r = requests.post(
-        f"{SB_URL}/storage/v1/bucket",
-        headers={**SB_HDR, "Content-Type": "application/json"},
-        json={"name": "videos", "public": True},
-        timeout=10,
-    )
-    if r.status_code in [200, 201]:
-        print("  ✅ Storage bucket 'videos' created")
-    elif r.status_code == 409:
-        print("  ✅ Storage bucket 'videos' already exists")
-    else:
-        # RLS may block bucket creation via anon key — user must create manually
-        print(f"  ⚠️  Could not auto-create bucket (status {r.status_code}).")
-        print("     If this is the first run, create a PUBLIC bucket named 'videos'")
-        print("     in Supabase → Storage → New Bucket → name: videos, public: ✅")
-        print("     Pipeline will still attempt uploads — bucket may already exist.")
+    # Pan directions alternate per clip
+    pan_dirs = [
+        (0, 0, 1, 1),    # top-left → bottom-right
+        (1, 1, 0, 0),    # bottom-right → top-left
+        (0, 1, 1, 0),    # bottom-left → top-right
+        (1, 0, 0, 1),    # top-right → bottom-left
+        (0.5, 0, 0.5, 1) # top-center → bottom-center
+    ]
 
-def upload_video(file_path: Path, storage_path: str):
-    """Upload MP4 to Supabase Storage; return public URL or None."""
-    data = file_path.read_bytes()
-    r = requests.post(
-        f"{SB_URL}/storage/v1/object/videos/{storage_path}",
-        headers={
-            "apikey"       : SB_KEY,
-            "Authorization": f"Bearer {SB_KEY}",
-            "Content-Type" : "video/mp4",
-            "x-upsert"     : "true",
-        },
-        data=data,
-        timeout=600,    # 10 min for large uploads
-    )
-    if r.status_code in [200, 201]:
-        url = f"{SB_URL}/storage/v1/object/public/videos/{storage_path}"
-        print(f"  ✅ Uploaded: {storage_path}")
-        return url
-    print(f"  ❌ Upload failed {r.status_code}: {r.text[:160]}")
-    return None
+    zoom    = 1.06
+    big_w   = int(W * zoom)
+    big_h   = int(H * zoom)
+    pad_x   = big_w - W
+    pad_y   = big_h - H
+    clip_paths = []
 
-# ── Main ──────────────────────────────────────────────────────────────────────
+    for i, img in enumerate(image_paths):
+        out    = WORK_DIR / f"clip_{i:02d}.mp4"
+        frames = int(dur_each * FPS)
+        xs, ys, xe, ye = pan_dirs[i % len(pan_dirs)]
+        x0, y0 = int(xs * pad_x), int(ys * pad_y)
+        x1, y1 = int(xe * pad_x), int(ye * pad_y)
+
+        # Simple crop pan — fast to render
+        vf = (
+            f"scale={big_w}:{big_h},"
+            f"crop={W}:{H}:"
+            f"'({x0}+({x1}-{x0})*n/{frames})':"
+            f"'({y0}+({y1}-{y0})*n/{frames})'"
+        )
+
+        cmd = [
+            "ffmpeg", "-y",
+            "-loop", "1", "-i", str(img),
+            "-vf", vf,
+            "-t", str(dur_each),
+            "-r", str(FPS),
+            "-c:v", "libx264",
+            "-preset", "veryfast",
+            "-crf", "26",
+            "-pix_fmt", "yuv420p",
+            str(out)
+        ]
+        r = subprocess.run(cmd, capture_output=True, text=True)
+        if r.returncode == 0:
+            clip_paths.append(str(out))
+            print(f"   ✅ Clip {i+1}/{num}")
+        else:
+            # Static fallback
+            cmd2 = [
+                "ffmpeg", "-y", "-loop", "1", "-i", str(img),
+                "-vf", f"scale={W}:{H}",
+                "-t", str(dur_each), "-r", str(FPS),
+                "-c:v", "libx264", "-preset", "veryfast",
+                "-crf", "26", "-pix_fmt", "yuv420p", str(out)
+            ]
+            r2 = subprocess.run(cmd2, capture_output=True)
+            if r2.returncode == 0:
+                clip_paths.append(str(out))
+                print(f"   ✅ Clip {i+1}/{num} (static fallback)")
+
+    if not clip_paths:
+        return False
+
+    # Concatenate
+    print(f"\n   🔗 Concatenating {len(clip_paths)} clips...")
+    concat = WORK_DIR / "clips.txt"
+    concat.write_text("\n".join(f"file '{p}'" for p in clip_paths))
+
+    raw = WORK_DIR / "raw.mp4"
+    subprocess.run([
+        "ffmpeg", "-y", "-f", "concat", "-safe", "0",
+        "-i", str(concat), "-c", "copy", str(raw)
+    ], capture_output=True)
+
+    # Add audio
+    print(f"   🎵 Adding Neural2 narration...")
+    r = subprocess.run([
+        "ffmpeg", "-y",
+        "-i", str(raw),
+        "-i", str(audio_path),
+        "-c:v", "copy",
+        "-c:a", "aac", "-b:a", "192k",
+        "-shortest",
+        "-movflags", "+faststart",
+        str(output_path)
+    ], capture_output=True, text=True)
+
+    if r.returncode == 0:
+        mb = Path(output_path).stat().st_size / 1024 / 1024
+        print(f"   ✅ Final video: {mb:.1f} MB")
+        return True
+
+    print(f"   ❌ Assembly failed: {r.stderr[-300:]}")
+    return False
+
+# ── Main ────────────────────────────────────────────────────
 def main():
-    print("=" * 62)
-    print("🎬  I Have a Cause — Video Pipeline  (Sprint 5)")
-    print("=" * 62)
+    print("=" * 60)
+    print(f"🎬 Video Pipeline (Vertex AI) — Episode {EPISODE_NUMBER}")
+    print(f"   {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print("=" * 60)
 
-    stories = db_get({
-        "status": "eq.published_ready",
-        "select": "*",
-        "order" : "created_at.asc",
-        "limit" : "1",
-    })
-
-    if not stories:
-        print("✅  No stories in 'published_ready'. Nothing to render.\n")
+    episode = fetch_episode()
+    if not episode:
+        print(f"❌ Episode {EPISODE_NUMBER} not found")
         return
 
-    ensure_bucket()
+    print(f"\n📖 {episode['title_english']}")
 
-    for story in stories:
-        sid   = story["id"]
-        title = story.get("title", "")[:55]
-        niche = story.get("niche", "general")
-        print(f"\n📰  Processing: {title}")
+    if not episode.get("image_urls"):
+        print("❌ No approved images — run image pipeline first")
+        return
 
-        db_patch(sid, {"video_render_status": "rendering"})
+    db_patch("tamil_episodes", EPISODE_NUMBER, {"status": "rendering_video"})
 
-        try:
-            queries = get_scene_queries(story)
-            print(f"  🔍 Scene queries: {queries}")
+    try:
+        image_paths = download_images(episode["image_urls"])
+        if not image_paths:
+            db_patch("tamil_episodes", EPISODE_NUMBER, {"status": "images_approved"})
+            return
 
-            ok_ta = asyncio.run(prepare_language(story, "tamil",   queries))
-            ok_en = asyncio.run(prepare_language(story, "english", queries))
+        script     = episode.get("script_tamil") or episode.get("title_tamil", "")
+        audio_path = WORK_DIR / "narration.mp3"
+        ok_voice   = generate_voice_neural2(script, audio_path)
 
-            if not ok_ta and not ok_en:
-                db_patch(sid, {"video_render_status": "failed"})
-                print("  ❌ Both language preps failed. Skipping.")
-                continue
+        if not ok_voice or not audio_path.exists():
+            print("❌ Voice generation failed")
+            db_patch("tamil_episodes", EPISODE_NUMBER, {"status": "images_approved"})
+            return
 
-            ta_mp4 = render_video("tamil")   if ok_ta else None
-            en_mp4 = render_video("english") if ok_en else None
+        video_path = WORK_DIR / f"ep{EPISODE_NUMBER:03d}_tamil.mp4"
+        ok_video   = assemble_video(image_paths, audio_path, video_path)
 
-            updates = {"video_render_status": "uploading"}
-            ta_url, en_url = None, None
+        if not ok_video:
+            db_patch("tamil_episodes", EPISODE_NUMBER, {"status": "images_approved"})
+            return
 
-            if ta_mp4:
-                ta_url = upload_video(ta_mp4, f"{sid}/video_short_tamil.mp4")
-                if ta_url:
-                    updates["video_short_tamil"] = ta_url
+        print(f"\n☁️  Uploading to Supabase Storage...")
+        storage_path = f"ep{EPISODE_NUMBER:03d}/ep{EPISODE_NUMBER:03d}_tamil.mp4"
+        video_url    = upload_video(str(video_path), storage_path)
 
-            if en_mp4:
-                en_url = upload_video(en_mp4, f"{sid}/video_short_english.mp4")
-                if en_url:
-                    updates["video_short_english"] = en_url
+        if video_url:
+            db_patch("tamil_episodes", EPISODE_NUMBER, {
+                "video_url": video_url,
+                "status":    "video_ready",
+            })
+            print(f"\n{'='*60}")
+            print(f"✅ Episode {EPISODE_NUMBER} — Video ready for review!")
+            print(f"{'='*60}")
+        else:
+            db_patch("tamil_episodes", EPISODE_NUMBER, {"status": "images_approved"})
 
-            # Only mark video_ready if at least one upload succeeded.
-            # If both fail, keep published_ready so pipeline auto-retries.
-            if ta_url or en_url:
-                updates["status"] = "video_ready"
-                updates["video_render_status"] = "complete"
-                print(f"\n\u2705  Done: {title}")
-                print(f"   Tamil  : {ta_url or chr(8212)+chr(8212)}")
-                print(f"   English: {en_url or chr(8212)+chr(8212)}")
-            else:
-                updates["status"] = "published_ready"
-                updates["video_render_status"] = "upload_failed"
-                print(f"\n\u26a0\ufe0f  Render OK but uploads failed — auto-retrying next run.")
-                print("   Fix Supabase Storage policy and workflow will retry.")
-
-            db_patch(sid, updates)
-            print(f"\n✅  Done: {title}")
-            print(f"   Tamil  : {updates.get('video_short_tamil',  '—failed—')}")
-            print(f"   English: {updates.get('video_short_english','—failed—')}")
-
-        except Exception as exc:
-            import traceback
-            print(f"  ❌ Exception: {exc}")
-            traceback.print_exc()
-            db_patch(sid, {"video_render_status": "failed"})
-
-    print("\n" + "=" * 62)
-    print("✅  Video Pipeline finished")
-    print("=" * 62)
+    except Exception as e:
+        import traceback
+        print(f"\n❌ Error: {e}")
+        traceback.print_exc()
+        db_patch("tamil_episodes", EPISODE_NUMBER, {"status": "images_approved"})
+    finally:
+        shutil.rmtree(str(WORK_DIR), ignore_errors=True)
 
 if __name__ == "__main__":
     main()
