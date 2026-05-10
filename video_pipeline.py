@@ -463,17 +463,32 @@ def main():
             ta_mp4 = render_video("tamil")   if ok_ta else None
             en_mp4 = render_video("english") if ok_en else None
 
-            updates = {"video_render_status": "complete", "status": "video_ready"}
+            updates = {"video_render_status": "uploading"}
+            ta_url, en_url = None, None
 
             if ta_mp4:
-                url = upload_video(ta_mp4, f"{sid}/video_short_tamil.mp4")
-                if url:
-                    updates["video_short_tamil"] = url
+                ta_url = upload_video(ta_mp4, f"{sid}/video_short_tamil.mp4")
+                if ta_url:
+                    updates["video_short_tamil"] = ta_url
 
             if en_mp4:
-                url = upload_video(en_mp4, f"{sid}/video_short_english.mp4")
-                if url:
-                    updates["video_short_english"] = url
+                en_url = upload_video(en_mp4, f"{sid}/video_short_english.mp4")
+                if en_url:
+                    updates["video_short_english"] = en_url
+
+            # Only mark video_ready if at least one upload succeeded.
+            # If both fail, keep published_ready so pipeline auto-retries.
+            if ta_url or en_url:
+                updates["status"] = "video_ready"
+                updates["video_render_status"] = "complete"
+                print(f"\n\u2705  Done: {title}")
+                print(f"   Tamil  : {ta_url or chr(8212)+chr(8212)}")
+                print(f"   English: {en_url or chr(8212)+chr(8212)}")
+            else:
+                updates["status"] = "published_ready"
+                updates["video_render_status"] = "upload_failed"
+                print(f"\n\u26a0\ufe0f  Render OK but uploads failed — auto-retrying next run.")
+                print("   Fix Supabase Storage policy and workflow will retry.")
 
             db_patch(sid, updates)
             print(f"\n✅  Done: {title}")
