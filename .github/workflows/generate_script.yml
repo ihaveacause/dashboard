@@ -22,13 +22,20 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-script-${{ hashFiles('**/generate_script.yml') }}
+          restore-keys: ${{ runner.os }}-pip-script-
+
       - name: Install dependencies
         run: pip install requests google-genai
 
       - name: Generate script
         env:
-          SUPABASE_URL:  ${{ secrets.SUPABASE_URL }}
-          SUPABASE_KEY:  ${{ secrets.SUPABASE_KEY }}
+          SUPABASE_URL:   ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY:   ${{ secrets.SUPABASE_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           EPISODE_NUMBER: ${{ inputs.episode_number }}
         run: python script_generator.py
