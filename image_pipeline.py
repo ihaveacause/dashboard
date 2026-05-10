@@ -216,6 +216,9 @@ def generate_images(scenes):
             if not image_bytes:
                 continue
 
+            import time
+            time.sleep(5)  # Avoid Vertex AI rate limiting between images
+
             storage_path = f"ep{EPISODE_NUMBER:03d}/scene_{scene['id']}.jpg"
             url = upload_to_storage("episode-images", storage_path, image_bytes)
 
