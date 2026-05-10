@@ -1329,12 +1329,41 @@ function openImagesModal(n) {
   `).join('');
 
   const svgHtml = svgData ? `
-    <div style="margin-bottom:20px;">
-      <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted);margin-bottom:8px;">
-        SVG Infographic — 4 States of Consciousness
+    <div style="margin-bottom:24px;background:var(--surface2);border:1px solid var(--border2);border-radius:12px;overflow:hidden;">
+      <div style="padding:10px 14px;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--border);">
+        <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted);">Infographic</span>
+        <span style="font-size:12px;font-weight:600;color:var(--text);">4 States of Consciousness — SVG Diagram</span>
+        <button onclick="regenInfographic(${n})"
+          style="margin-left:auto;padding:4px 12px;border-radius:6px;border:1px solid var(--border2);
+          background:var(--surface);color:var(--muted2);font-size:11px;cursor:pointer;">
+          ↺ Regenerate
+        </button>
       </div>
-      <div style="background:var(--surface2);border:1px solid var(--border2);border-radius:10px;padding:16px;overflow:hidden;">
-        ${svgData.svg || '<p style="color:var(--muted);font-size:12px;">SVG not available</p>'}
+      ${svgData.url
+        ? `<img src="${svgData.url}" style="width:100%;display:block;" loading="lazy"
+             onerror="this.style.display='none';this.nextElementSibling.style.display='block'"/>
+           <div style="display:none;padding:20px;text-align:center;color:var(--muted);font-size:12px;">
+             SVG preview unavailable — <a href="${svgData.url}" target="_blank" style="color:var(--blue);">Open in new tab</a>
+           </div>`
+        : `<div style="padding:20px;text-align:center;color:var(--muted);font-size:12px;">SVG not yet uploaded</div>`
+      }
+      <div id="regen-infographic-panel" style="display:none;padding:12px;border-top:1px solid var(--border);">
+        <textarea id="regen-infographic-txt" placeholder="Describe changes... e.g. brighter colours, add Tamil labels, more glow effects"
+          style="width:100%;background:var(--surface);border:1px solid var(--border2);border-radius:8px;
+          color:var(--text);font-family:inherit;font-size:12px;padding:8px;resize:vertical;min-height:60px;outline:none;"></textarea>
+        <div style="display:flex;gap:8px;margin-top:8px;align-items:center;">
+          <button onclick="submitInfographicRegen(${n})"
+            style="padding:6px 14px;border-radius:6px;background:var(--accent);border:none;color:white;font-size:12px;cursor:pointer;">
+            ⚡ Regenerate Infographic
+          </button>
+          <button onclick="document.getElementById('regen-infographic-panel').style.display='none'"
+            style="padding:6px 14px;border-radius:6px;background:var(--surface2);border:1px solid var(--border2);color:var(--muted2);font-size:12px;cursor:pointer;">
+            Cancel
+          </button>
+          <label style="margin-left:auto;font-size:11px;color:var(--muted2);display:flex;align-items:center;gap:5px;">
+            <input type="checkbox" id="save-pref-infographic" style="accent-color:var(--accent);"> Save as preference?
+          </label>
+        </div>
       </div>
     </div>
   ` : '';
@@ -1411,6 +1440,42 @@ document.addEventListener('keydown', e => {
     modalEp = null;
   }
 });
+
+// ── Infographic Regenerate ───────────────────────────────────
+function regenInfographic(epNum) {
+  const panel = document.getElementById('regen-infographic-panel');
+  if (panel) panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+}
+
+async function submitInfographicRegen(epNum) {
+  const note = document.getElementById('regen-infographic-txt')?.value.trim();
+  if (!note) { showToast('Please describe what to change', 'error'); return; }
+
+  const savePref = document.getElementById('save-pref-infographic')?.checked;
+  if (savePref) {
+    await fetch(`${SB_URL}/rest/v1/channel_preferences`, {
+      method: 'POST', headers: H,
+      body: JSON.stringify({
+        category: 'infographic',
+        preference: note,
+        episode_number: epNum,
+        is_active: true
+      })
+    });
+    showToast('Infographic preference saved ✓', 'info');
+  }
+
+  // Re-trigger image pipeline to regenerate infographic
+  await patchTable('tamil_episodes', epNum, {
+    regenerate_note: `Regenerate infographic: ${note}`,
+    infographic_svg: null,
+    status: 'script_approved'
+  });
+
+  showToast('Queuing infographic regeneration...', 'info');
+  closeModal();
+  await generateImages(epNum);
+}
 
 // ── Single Image Regenerate ──────────────────────────────────
 function regenSingleImage(epNum, sceneId, label) {
