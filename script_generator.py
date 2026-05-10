@@ -1,407 +1,345 @@
 """
-I Have a Cause — AI Script Generator (Final)
-- Runs every 30 minutes via GitHub Actions
-- Mode 1: Generate all 12 scripts for newly approved stories
-- Mode 2: Regenerate all 11 formats from edited YT Long (when regenerate_requested = true)
-- Saves each field individually (failproof)
-- Updates status: approved → scripted
+I Have a Cause — Script Generator (New Architecture)
+=====================================================
+Triggered by GitHub Actions with EPISODE_NUMBER input.
+Flow:
+  1. Fetch episode details from tamil_episodes
+  2. Fetch active channel_preferences
+  3. Gemini Deep Research → rich knowledge base
+  4. Gemini → detailed Tamil script
+  5. Gemini → natural English script (same research, fresh voice)
+  6. Save both to tamil_episodes + english_episodes
+  7. Update status → script_ready in both tables
 """
 
 import os
 import requests
+import google.generativeai as genai
 from datetime import datetime
 
-# ── Config ────────────────────────────────────────────────────────────────────
-SUPABASE_URL  = os.environ["SUPABASE_URL"]
-SUPABASE_KEY  = os.environ["SUPABASE_KEY"]
-ANTHROPIC_KEY = os.environ["ANTHROPIC_API_KEY"]
+# ── Config ────────────────────────────────────────────────────
+SUPABASE_URL   = os.environ["SUPABASE_URL"]
+SUPABASE_KEY   = os.environ["SUPABASE_KEY"]
+GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
+EPISODE_NUMBER = int(os.environ["EPISODE_NUMBER"])
 
-SUPA_HEADERS = {
+genai.configure(api_key=GEMINI_API_KEY)
+model = genai.GenerativeModel("gemini-1.5-flash")
+
+SB_HEADERS = {
     "apikey":        SUPABASE_KEY,
     "Authorization": f"Bearer {SUPABASE_KEY}",
     "Content-Type":  "application/json",
     "Prefer":        "return=minimal"
 }
 
-CLAUDE_HEADERS = {
-    "x-api-key":         ANTHROPIC_KEY,
-    "anthropic-version": "2023-06-01",
-    "content-type":      "application/json"
-}
+REST = f"{SUPABASE_URL}/rest/v1"
 
-REST_URL = f"{SUPABASE_URL}/rest/v1"
-
-# ── Fetch stories needing fresh scripts ───────────────────────────────────────
-def fetch_new_approvals():
-    params = {
-        "status":               "eq.approved",
-        "script_youtube_tamil": "is.null",
-        "select":               "*",
-        "order":                "approved_at.desc",
-        "limit":                "20"
-    }
-    return db_get("content_queue", params)
-
-# ── Fetch stories needing regeneration ───────────────────────────────────────
-def fetch_regeneration_requests():
-    params = {
-        "regenerate_requested": "eq.true",
-        "select":               "*",
-        "order":                "created_at.desc",
-        "limit":                "10"
-    }
-    return db_get("content_queue", params)
-
-# ── Supabase helpers ──────────────────────────────────────────────────────────
+# ── Supabase helpers ──────────────────────────────────────────
 def db_get(table, params):
-    resp = requests.get(
-        f"{REST_URL}/{table}",
-        headers={**SUPA_HEADERS, "Prefer": "return=representation"},
-        params=params,
-        timeout=15
+    r = requests.get(
+        f"{REST}/{table}",
+        headers={**SB_HEADERS, "Prefer": "return=representation"},
+        params=params, timeout=15
     )
-    if resp.status_code == 200:
-        return resp.json()
-    print(f"  ❌ Fetch error {resp.status_code}: {resp.text[:200]}")
-    return []
+    return r.json() if r.status_code == 200 else []
 
-def save_field(story_id, field_name, content):
-    """Save a single field — returns True on success"""
-    if not content:
-        return True  # nothing to save, skip
-    resp = requests.patch(
-        f"{REST_URL}/content_queue?id=eq.{story_id}",
-        headers=SUPA_HEADERS,
-        json={field_name: content},
-        timeout=15
+def db_patch(table, match_col, match_val, data):
+    r = requests.patch(
+        f"{REST}/{table}?{match_col}=eq.{match_val}",
+        headers=SB_HEADERS,
+        json=data, timeout=15
     )
-    if resp.status_code in (200, 204):
-        return True
-    print(f"      ❌ [{field_name}] save failed — {resp.status_code}: {resp.text[:150]}")
-    return False
+    return r.status_code in (200, 204)
 
-def update_status(story_id, status, extra=None):
-    data = {"status": status}
-    if extra:
-        data.update(extra)
-    resp = requests.patch(
-        f"{REST_URL}/content_queue?id=eq.{story_id}",
-        headers=SUPA_HEADERS,
-        json=data,
-        timeout=15
+# ── Fetch episode ─────────────────────────────────────────────
+def fetch_episode():
+    rows = db_get("tamil_episodes", {
+        "episode_number": f"eq.{EPISODE_NUMBER}",
+        "select": "*"
+    })
+    return rows[0] if rows else None
+
+# ── Fetch channel preferences ─────────────────────────────────
+def fetch_preferences():
+    rows = db_get("channel_preferences", {
+        "is_active": "eq.true",
+        "select": "category,preference",
+        "order": "created_at.asc"
+    })
+    if not rows:
+        return ""
+    prefs_by_cat = {}
+    for row in rows:
+        cat = row["category"]
+        if cat not in prefs_by_cat:
+            prefs_by_cat[cat] = []
+        prefs_by_cat[cat].append(row["preference"])
+    lines = []
+    for cat, prefs in prefs_by_cat.items():
+        lines.append(f"{cat.upper()} PREFERENCES:")
+        for p in prefs:
+            lines.append(f"  - {p}")
+    return "\n".join(lines)
+
+# ── Step 1: Deep Research ─────────────────────────────────────
+def deep_research(episode):
+    print(f"\n🔍 Step 1: Deep Research for Episode {EPISODE_NUMBER}")
+    prompt = f"""You are a deep research assistant for a Tamil philosophy YouTube channel called "I Have a Cause."
+
+Research this episode topic thoroughly:
+
+Episode: {episode['episode_number']} — {episode['title_english']}
+Tamil Title: {episode['title_tamil']}
+Module: {episode['module']}
+Pillar: {episode['pillar']}
+Bridge/Angle: {episode['bridge']}
+Key Sources: {episode['research_source']}
+Target Duration: {episode['target_duration_min']} minutes
+
+Perform comprehensive research and provide:
+
+1. CORE PHILOSOPHY: The main philosophical concept explained deeply (3-4 paragraphs)
+2. KEY SOURCES: Specific quotes, verses, slokas or passages from the research sources listed above
+3. MODERN CONNECTIONS: How this ancient wisdom connects to modern science, psychology, or daily life
+4. TAMIL CONTEXT: Specific Tamil poets, saints, or literature that relate (Thiruvalluvar, Vallalar, Avvaiyar, Sangam literature etc.)
+5. HOOK IDEAS: 3 powerful opening hooks that would stop a Tamil viewer from scrolling
+6. KEY INSIGHTS: 5-7 profound insights from this episode topic
+7. STORY/ANALOGY: A compelling story or analogy that makes this concept tangible
+8. SOCIAL CONNECTION: How this philosophy applies to social reform and compassion (the channel's mission)
+
+Research deeply and thoroughly. This will be used to write a 12-20 minute YouTube video script."""
+
+    response = model.generate_content(prompt)
+    research = response.text
+    print(f"   ✅ Research complete ({len(research)} chars)")
+    return research
+
+# ── Step 2: Tamil Script ──────────────────────────────────────
+def generate_tamil_script(episode, research, preferences):
+    print(f"\n✍️  Step 2: Tamil Script")
+    pref_block = f"\n\nCHANNEL PREFERENCES (apply these always):\n{preferences}" if preferences else ""
+    
+    prompt = f"""நீங்கள் "I Have a Cause" YouTube சேனலுக்கான expert Tamil script writer.
+
+இந்த சேனலின் குணாதிசயங்கள்:
+- அமைதியான, அறிவார்ந்த, இரக்கமுள்ள குரல்
+- தத்துவம் மற்றும் நவீன அறிவியலை இணைக்கும்
+- சமூக சீர்திருத்தத்தை ஆதரிக்கும்
+- Tamil diaspora மற்றும் Tamil Nadu பார்வையாளர்கள்
+- எளிய Tamil பேச்சு வழக்கு — கடினமான சொற்கள் தவிர்க்கவும்{pref_block}
+
+EPISODE விவரங்கள்:
+எண்: {episode['episode_number']}
+தலைப்பு: {episode['title_tamil']}
+English Title: {episode['title_english']}
+Module: {episode['module']}
+Bridge/Angle: {episode['bridge']}
+Sources: {episode['research_source']}
+Target Duration: {episode['target_duration_min']} நிமிடங்கள்
+
+RESEARCH (இதை base-ஆக வைத்து script எழுதுங்கள்):
+{research}
+
+இப்போது ஒரு detailed, engaging Tamil YouTube script எழுதுங்கள்:
+
+கட்டாயம் இந்த structure follow செய்யவும்:
+
+HOOK (0:00-0:30):
+[பார்வையாளரை 30 வினாடியில் கட்டிப் போடும் தொடக்கம் — ஒரு கேள்வி, ஒரு உண்மை, அல்லது ஒரு அதிர்ச்சியான statement]
+
+INTRODUCTION (0:30-2:00):
+[Episode-ஐ introduce செய்யுங்கள் — இன்று என்ன கற்றுக்கொள்வோம்]
+
+MAIN CONTENT (2:00-{episode['target_duration_min']-2}:00):
+[Core philosophy, examples, stories, modern connections — detailed sections]
+
+SOCIAL CONNECTION ({episode['target_duration_min']-2}:00-{episode['target_duration_min']-1}:00):
+[இந்த தத்துவம் சமூக மாற்றத்துடன் எப்படி தொடர்புடையது]
+
+CONCLUSION & CTA ({episode['target_duration_min']-1}:00-{episode['target_duration_min']}:00):
+[Summary + Subscribe + Next episode preview]
+
+Script இயல்பான பேச்சு வழக்கில் இருக்கட்டும். YouTuber பேசுவது போல் எழுதுங்கள்.
+குறைந்தது 1500 words எழுதுங்கள் — detailed and rich."""
+
+    response = model.generate_content(prompt)
+    script = response.text
+    print(f"   ✅ Tamil script complete ({len(script)} chars)")
+    return script
+
+# ── Step 3: English Script ────────────────────────────────────
+def generate_english_script(episode, research, preferences):
+    print(f"\n✍️  Step 3: English Script")
+    
+    # Build English-specific preferences
+    eng_prefs = ""
+    if preferences:
+        eng_prefs = f"\n\nCHANNEL PREFERENCES (apply these always):\n{preferences}"
+    
+    prompt = f"""You are an expert English script writer for "I Have a Cause" — a Tamil philosophy YouTube channel.
+
+Channel voice characteristics:
+- Calm, intellectual, compassionate tone
+- Bridges ancient Vedic wisdom with modern science
+- Champions social reform and animal consciousness
+- Audience: Tamil diaspora (UK, USA, Canada, Singapore, Malaysia) + global seekers
+- Language: Clear, eloquent English — not academic jargon, not dumbed down
+- Think: Alan Watts meets Sadhguru in English{eng_prefs}
+
+EPISODE DETAILS:
+Number: {episode['episode_number']}
+Title: {episode['title_english']}
+Tamil Title: {episode['title_tamil']}
+Module: {episode['module']}
+Bridge/Angle: {episode['bridge']}
+Sources: {episode['research_source']}
+Target Duration: {episode['target_duration_min']} minutes
+
+RESEARCH (use this as your foundation — same content, fresh English voice):
+{research}
+
+Write a detailed, engaging English YouTube script using this EXACT structure:
+
+HOOK (0:00-0:30):
+[A powerful opening that stops the viewer — a question, a paradox, or a stunning fact]
+
+INTRODUCTION (0:30-2:00):
+[Set up the episode — what will they discover today]
+
+MAIN CONTENT (2:00-{episode['target_duration_min']-2}:00):
+[Core philosophy unpacked with examples, analogies, science, and stories]
+
+SOCIAL CONNECTION ({episode['target_duration_min']-2}:00-{episode['target_duration_min']-1}:00):
+[How this philosophy drives social reform and compassion]
+
+CONCLUSION & CTA ({episode['target_duration_min']-1}:00-{episode['target_duration_min']}:00):
+[Powerful summary + Subscribe + Next episode teaser]
+
+Write in natural spoken English — as if you're speaking to camera.
+Minimum 1500 words — rich, layered, and profound."""
+
+    response = model.generate_content(prompt)
+    script = response.text
+    print(f"   ✅ English script complete ({len(script)} chars)")
+    return script
+
+# ── Save scripts ──────────────────────────────────────────────
+def save_scripts(tamil_script, english_script):
+    print(f"\n💾 Saving to Supabase...")
+    now = datetime.utcnow().isoformat()
+
+    # Save Tamil script
+    ok_ta = db_patch("tamil_episodes", "episode_number", EPISODE_NUMBER, {
+        "script_tamil": tamil_script,
+        "status": "script_ready",
+    })
+    print(f"   Tamil episodes: {'✅' if ok_ta else '❌'}")
+
+    # Save English script
+    ok_en = db_patch("english_episodes", "episode_number", EPISODE_NUMBER, {
+        "script_english": english_script,
+        "status": "script_ready",
+    })
+    print(f"   English episodes: {'✅' if ok_en else '❌'}")
+
+    return ok_ta and ok_en
+
+# ── Save preferences from regenerate note ────────────────────
+def save_preference_if_noted(episode):
+    note = episode.get("regenerate_note", "")
+    if not note:
+        return
+    # Detect category from note keywords
+    note_lower = note.lower()
+    if any(w in note_lower for w in ["image", "visual", "photo", "picture", "colour", "color"]):
+        category = "image"
+    elif any(w in note_lower for w in ["voice", "audio", "tone", "speed", "pace"]):
+        category = "voice"
+    elif any(w in note_lower for w in ["infographic", "svg", "diagram", "chart"]):
+        category = "infographic"
+    else:
+        category = "script"
+
+    requests.post(
+        f"{REST}/channel_preferences",
+        headers=SB_HEADERS,
+        json={
+            "category": category,
+            "preference": note,
+            "episode_number": EPISODE_NUMBER,
+            "is_active": True
+        },
+        timeout=10
     )
-    return resp.status_code in (200, 204)
+    print(f"   💡 Preference saved: [{category}] {note[:60]}")
 
-# ── Claude API call ───────────────────────────────────────────────────────────
-def call_claude(prompt):
-    payload = {
-        "model":      "claude-haiku-4-5-20251001",
-        "max_tokens": 3000,
-        "messages":   [{"role": "user", "content": prompt}]
-    }
-    resp = requests.post(
-        "https://api.anthropic.com/v1/messages",
-        headers=CLAUDE_HEADERS,
-        json=payload,
-        timeout=90
-    )
-    if resp.status_code != 200:
-        print(f"  ❌ Claude error {resp.status_code}: {resp.text[:200]}")
-        return None
-    return resp.json()["content"][0]["text"].strip()
+# ── Main ──────────────────────────────────────────────────────
+def main():
+    print("=" * 60)
+    print(f"🎬 Script Generator — Episode {EPISODE_NUMBER}")
+    print(f"   {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print("=" * 60)
 
-# ── Delimiter extractor ───────────────────────────────────────────────────────
-def extract(raw, start, end):
-    s = raw.find(start)
-    e = raw.find(end)
-    if s == -1 or e == -1 or e <= s:
-        return None
-    content = raw[s + len(start):e].strip()
-    return content if content else None
+    # Fetch episode
+    episode = fetch_episode()
+    if not episode:
+        print(f"❌ Episode {EPISODE_NUMBER} not found in tamil_episodes")
+        return
 
-# ── MODE 1: Generate Tamil scripts from news story ────────────────────────────
-def generate_tamil_fresh(title, context, niche, is_idea):
-    prompt = f"""நீங்கள் "I Have a Cause" YouTube சேனலுக்கான Tamil content creator.
+    print(f"\n📖 Episode: {episode['title_english']}")
+    print(f"   Module: {episode['module']}")
+    print(f"   Bridge: {episode['bridge']}")
 
-தலைப்பு: {title}
-சுருக்கம்: {context}
-வகை: {niche}
-{"இது creator சொந்த யோசனை" if is_idea else "இது செய்தி கதை"}
+    # Check if regeneration (has a note)
+    if episode.get("regenerate_note"):
+        print(f"   🔄 Regeneration requested: {episode['regenerate_note']}")
+        save_preference_if_noted(episode)
 
-தெளிவான இயல்பான பேச்சு Tamil-ல் 6 formats எழுதுங்கள்.
-ஒவ்வொரு scriptலும் context விளக்குங்கள் — பார்வையாளர்களுக்கு முன்பே தெரியாது என்று வைத்துக்கொள்ளுங்கள்.
-கீழ்கண்ட delimiters அப்படியே பயன்படுத்துங்கள்:
+    # Mark as generating
+    db_patch("tamil_episodes", "episode_number", EPISODE_NUMBER,
+             {"status": "generating"})
+    db_patch("english_episodes", "episode_number", EPISODE_NUMBER,
+             {"status": "generating"})
 
-<<<YT_LONG_TA>>>
-HOOK: [கவனம் ஈர்க்கும் தொடக்கம்]
-CONTEXT: [என்ன நடந்தது என்று தெளிவாக விளக்கு]
-YOUR TAKE: [உங்கள் கருத்து மற்றும் பகுப்பாய்வு]
-CTA: [subscribe மற்றும் share]
-<<<YT_SHORT_TA>>>
-[30-60 வினாடி YouTube Short — வேகமான கவர்ச்சியான]
-<<<REEL_TA>>>
-[30-60 வினாடி Instagram Reel — viral ஆன]
-<<<MEME_TA>>>
-MAIN: [முக்கிய வரி]
-SUB: [விளக்கம்]
-CAPTION: [post விளக்கம்]
-HASHTAGS: [hashtags]
-<<<X_THREAD_TA>>>
-1/ [hook]
-2/ [context]
-3/ [key point]
-4/ [your take]
-5/ [YouTube link]
-<<<X_POST_TA>>>
-[280 எழுத்துக்கு குறைவான tweet]
-<<<END>>>"""
+    # Fetch preferences
+    preferences = fetch_preferences()
+    if preferences:
+        print(f"\n📋 Channel preferences loaded")
 
-    raw = call_claude(prompt)
-    if not raw:
-        return {}
-    return {
-        "script_youtube_tamil":       extract(raw, "<<<YT_LONG_TA>>>",  "<<<YT_SHORT_TA>>>"),
-        "script_youtube_short_tamil": extract(raw, "<<<YT_SHORT_TA>>>", "<<<REEL_TA>>>"),
-        "script_reel_tamil":          extract(raw, "<<<REEL_TA>>>",      "<<<MEME_TA>>>"),
-        "script_meme_tamil":          extract(raw, "<<<MEME_TA>>>",      "<<<X_THREAD_TA>>>"),
-        "script_x_thread":            extract(raw, "<<<X_THREAD_TA>>>",  "<<<X_POST_TA>>>"),
-        "script_x_post":              extract(raw, "<<<X_POST_TA>>>",    "<<<END>>>"),
-    }
+    try:
+        # Step 1: Deep Research
+        research = deep_research(episode)
 
-# ── MODE 1: Generate English scripts from news story ─────────────────────────
-def generate_english_fresh(title, context, niche, is_idea):
-    prompt = f"""You are a content creator for "I Have a Cause" — Tamil/Indian news commentary channel.
+        # Step 2: Tamil Script
+        tamil_script = generate_tamil_script(episode, research, preferences)
 
-Title: {title}
-Summary: {context}
-Niche: {niche}
-Type: {"Creator's original idea" if is_idea else "News story"}
+        # Step 3: English Script
+        english_script = generate_english_script(episode, research, preferences)
 
-Write in simple conversational English. Always explain context — assume viewers know nothing about this story.
-Use these exact delimiters:
+        # Save both
+        success = save_scripts(tamil_script, english_script)
 
-<<<YT_LONG_EN>>>
-HOOK: [attention-grabbing opening]
-CONTEXT: [clearly explain what happened]
-YOUR TAKE: [your opinion and analysis]
-CTA: [subscribe and share]
-<<<YT_SHORT_EN>>>
-[30-60 second YouTube Short — punchy and fast]
-<<<REEL_EN>>>
-[30-60 second Instagram Reel — viral and engaging]
-<<<MEME_EN>>>
-MAIN: [bold punchline]
-SUB: [short explanation]
-CAPTION: [post description]
-HASHTAGS: [relevant hashtags]
-<<<X_THREAD_EN>>>
-1/ [hook tweet]
-2/ [context tweet]
-3/ [key point]
-4/ [your take]
-5/ [conclusion + YouTube link]
-<<<X_POST_EN>>>
-[single punchy tweet under 280 characters with hashtags]
-<<<END>>>"""
-
-    raw = call_claude(prompt)
-    if not raw:
-        return {}
-    return {
-        "script_youtube_english":       extract(raw, "<<<YT_LONG_EN>>>",  "<<<YT_SHORT_EN>>>"),
-        "script_youtube_short_english": extract(raw, "<<<YT_SHORT_EN>>>", "<<<REEL_EN>>>"),
-        "script_reel_english":          extract(raw, "<<<REEL_EN>>>",      "<<<MEME_EN>>>"),
-        "script_meme_english":          extract(raw, "<<<MEME_EN>>>",      "<<<X_THREAD_EN>>>"),
-        "script_x_thread_english":      extract(raw, "<<<X_THREAD_EN>>>",  "<<<X_POST_EN>>>"),
-        "script_x_post_english":        extract(raw, "<<<X_POST_EN>>>",    "<<<END>>>"),
-    }
-
-# ── MODE 2: Regenerate Tamil formats from edited YT Long ──────────────────────
-def regenerate_tamil_from_yt_long(yt_long_tamil, title, niche):
-    prompt = f"""நீங்கள் "I Have a Cause" YouTube சேனலுக்கான Tamil content creator.
-
-கீழே உள்ளது approved YouTube Long script. இதை மட்டும் base-ஆக வைத்து மற்ற 5 formats எழுதுங்கள்.
-tone, message, core content எல்லாம் இந்த YT Long scriptஐ follow செய்யவேண்டும்.
-
-APPROVED YOUTUBE LONG SCRIPT:
-{yt_long_tamil}
-
-தலைப்பு: {title} | வகை: {niche}
-
-<<<YT_SHORT_TA>>>
-[YT Long-ஐ base-ஆக வைத்து 30-60 வினாடி YouTube Short]
-<<<REEL_TA>>>
-[YT Long-ஐ base-ஆக வைத்து 30-60 வினாடி Reel]
-<<<MEME_TA>>>
-MAIN: [YT Long message-இன் punchline]
-SUB: [விளக்கம்]
-CAPTION: [post விளக்கம்]
-HASHTAGS: [hashtags]
-<<<X_THREAD_TA>>>
-1/ [hook from YT Long]
-2/ [context]
-3/ [key point]
-4/ [your take]
-5/ [YouTube link]
-<<<X_POST_TA>>>
-[280 எழுத்துக்கு குறைவான tweet]
-<<<END>>>"""
-
-    raw = call_claude(prompt)
-    if not raw:
-        return {}
-    return {
-        "script_youtube_short_tamil": extract(raw, "<<<YT_SHORT_TA>>>", "<<<REEL_TA>>>"),
-        "script_reel_tamil":          extract(raw, "<<<REEL_TA>>>",      "<<<MEME_TA>>>"),
-        "script_meme_tamil":          extract(raw, "<<<MEME_TA>>>",      "<<<X_THREAD_TA>>>"),
-        "script_x_thread":            extract(raw, "<<<X_THREAD_TA>>>",  "<<<X_POST_TA>>>"),
-        "script_x_post":              extract(raw, "<<<X_POST_TA>>>",    "<<<END>>>"),
-    }
-
-# ── MODE 2: Regenerate English formats from edited YT Long ────────────────────
-def regenerate_english_from_yt_long(yt_long_english, title, niche):
-    prompt = f"""You are a content creator for "I Have a Cause" — Tamil/Indian news channel.
-
-Below is the approved YouTube Long script. Use ONLY this as the base for the other 5 formats.
-Keep the same tone, message and core content as the YT Long.
-
-APPROVED YOUTUBE LONG SCRIPT:
-{yt_long_english}
-
-Title: {title} | Niche: {niche}
-
-<<<YT_SHORT_EN>>>
-[30-60 second Short based on the YT Long above]
-<<<REEL_EN>>>
-[30-60 second Reel based on the YT Long above]
-<<<MEME_EN>>>
-MAIN: [punchline from YT Long message]
-SUB: [short explanation]
-CAPTION: [post description]
-HASHTAGS: [relevant hashtags]
-<<<X_THREAD_EN>>>
-1/ [hook from YT Long]
-2/ [context tweet]
-3/ [key point]
-4/ [your take]
-5/ [conclusion + YouTube link]
-<<<X_POST_EN>>>
-[single punchy tweet under 280 characters with hashtags]
-<<<END>>>"""
-
-    raw = call_claude(prompt)
-    if not raw:
-        return {}
-    return {
-        "script_youtube_short_english": extract(raw, "<<<YT_SHORT_EN>>>", "<<<REEL_EN>>>"),
-        "script_reel_english":          extract(raw, "<<<REEL_EN>>>",      "<<<MEME_EN>>>"),
-        "script_meme_english":          extract(raw, "<<<MEME_EN>>>",      "<<<X_THREAD_EN>>>"),
-        "script_x_thread_english":      extract(raw, "<<<X_THREAD_EN>>>",  "<<<X_POST_EN>>>"),
-        "script_x_post_english":        extract(raw, "<<<X_POST_EN>>>",    "<<<END>>>"),
-    }
-
-# ── Save all fields from a dict ───────────────────────────────────────────────
-def save_all_fields(story_id, scripts):
-    saved = failed = 0
-    for field, content in scripts.items():
-        if save_field(story_id, field, content):
-            saved += 1
+        if success:
+            print(f"\n{'=' * 60}")
+            print(f"✅ Episode {EPISODE_NUMBER} — Both scripts ready!")
+            print(f"   Open dashboard to review and approve.")
+            print(f"{'=' * 60}")
         else:
-            failed += 1
-    return saved, failed
+            print(f"\n❌ Save failed — check Supabase connection")
+            db_patch("tamil_episodes", "episode_number", EPISODE_NUMBER,
+                     {"status": "pending"})
+            db_patch("english_episodes", "episode_number", EPISODE_NUMBER,
+                     {"status": "pending"})
 
-# ── Process fresh approvals ───────────────────────────────────────────────────
-def process_new_approvals():
-    stories = fetch_new_approvals()
-    if not stories:
-        return 0
-
-    print(f"\n  📋 MODE 1 — {len(stories)} new approvals to process")
-    processed = 0
-
-    for story in stories:
-        sid     = story["id"]
-        title   = story["title"]
-        niche   = story.get("niche", "general")
-        summary = story.get("summary", "")
-        source  = story.get("source_name", "")
-        context = summary or title
-        is_idea = source == "💡 My Idea"
-
-        print(f"\n  ✍️  [{niche}] {title[:55]}")
-
-        print(f"      → Tamil (6 formats)...")
-        tamil = generate_tamil_fresh(title, context, niche, is_idea)
-        s1, f1 = save_all_fields(sid, tamil)
-        print(f"         Saved: {s1}  Failed: {f1}")
-
-        print(f"      → English (6 formats)...")
-        english = generate_english_fresh(title, context, niche, is_idea)
-        s2, f2 = save_all_fields(sid, english)
-        print(f"         Saved: {s2}  Failed: {f2}")
-
-        total_saved = s1 + s2
-        if total_saved > 0:
-            update_status(sid, "scripted")
-            print(f"      ✅ Status → scripted ({total_saved}/12 scripts saved)")
-            processed += 1
-        else:
-            print(f"      ❌ No scripts saved — status unchanged")
-
-    return processed
-
-# ── Process regeneration requests ────────────────────────────────────────────
-def process_regenerations():
-    stories = fetch_regeneration_requests()
-    if not stories:
-        return 0
-
-    print(f"\n  📋 MODE 2 — {len(stories)} regeneration requests")
-    processed = 0
-
-    for story in stories:
-        sid         = story["id"]
-        title       = story["title"]
-        niche       = story.get("niche", "general")
-        yt_long_ta  = story.get("script_youtube_tamil", "")
-        yt_long_en  = story.get("script_youtube_english", "")
-
-        print(f"\n  🔄  Regenerating from YT Long: {title[:55]}")
-
-        if yt_long_ta:
-            print(f"      → Tamil (5 formats from YT Long Tamil)...")
-            tamil = regenerate_tamil_from_yt_long(yt_long_ta, title, niche)
-            s1, f1 = save_all_fields(sid, tamil)
-            print(f"         Saved: {s1}  Failed: {f1}")
-
-        if yt_long_en:
-            print(f"      → English (5 formats from YT Long English)...")
-            english = regenerate_english_from_yt_long(yt_long_en, title, niche)
-            s2, f2 = save_all_fields(sid, english)
-            print(f"         Saved: {s2}  Failed: {f2}")
-
-        # Clear regeneration flag + set back to scripted
-        update_status(sid, "scripted", {"regenerate_requested": False})
-        print(f"      ✅ Regeneration complete")
-        processed += 1
-
-    return processed
-
-# ── Main ──────────────────────────────────────────────────────────────────────
-def run_generator():
-    print("=" * 60)
-    print(f"✍️  Script Generator — {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print("=" * 60)
-
-    p1 = process_new_approvals()
-    p2 = process_regenerations()
-
-    if p1 == 0 and p2 == 0:
-        print("\n  ✅ Nothing to do — all caught up!")
-
-    print("\n" + "=" * 60)
-    print(f"✅ Done — New: {p1}  |  Regenerated: {p2}")
-    print("=" * 60)
+    except Exception as e:
+        print(f"\n❌ Error: {e}")
+        import traceback
+        traceback.print_exc()
+        db_patch("tamil_episodes", "episode_number", EPISODE_NUMBER,
+                 {"status": "pending"})
+        db_patch("english_episodes", "episode_number", EPISODE_NUMBER,
+                 {"status": "pending"})
 
 if __name__ == "__main__":
-    run_generator()
+    main()
