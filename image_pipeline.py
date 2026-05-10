@@ -322,8 +322,7 @@ def main():
         # Only generate SVG if it doesn't already exist
         existing_svg = episode.get("infographic_svg")
         if existing_svg:
-            print(f"
-📊 Step 3: SVG already exists — skipping")
+            print("\n📊 Step 3: SVG already exists — skipping")
             svg      = json.loads(existing_svg).get("svg","") if isinstance(existing_svg, str) else existing_svg.get("svg","")
             svg_url  = json.loads(existing_svg).get("url","") if isinstance(existing_svg, str) else existing_svg.get("url","")
         else:
