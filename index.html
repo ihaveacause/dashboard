@@ -1296,12 +1296,35 @@ function openImagesModal(n) {
   } catch(e) {}
 
   const imgHtml = imageData.map((img, i) => `
-    <div style="margin-bottom:20px;">
-      <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted);margin-bottom:8px;">
-        Scene ${img.id} — ${img.label}
+    <div style="margin-bottom:24px;background:var(--surface2);border:1px solid var(--border2);border-radius:12px;overflow:hidden;">
+      <div style="padding:10px 14px;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--border);">
+        <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted);">Scene ${img.id}</span>
+        <span style="font-size:12px;font-weight:600;color:var(--text);">${img.label}</span>
+        <button onclick="regenSingleImage(${n},${img.id},'${img.label}')"
+          style="margin-left:auto;padding:4px 12px;border-radius:6px;border:1px solid var(--border2);
+          background:var(--surface);color:var(--muted2);font-size:11px;cursor:pointer;">
+          ↺ Regenerate
+        </button>
       </div>
-      <img src="${img.url}" style="width:100%;border-radius:10px;border:1px solid var(--border2);" loading="lazy"/>
-      <div style="font-size:11px;color:var(--muted);margin-top:6px;font-style:italic;">${img.prompt||''}</div>
+      <img src="${img.url}" style="width:100%;display:block;" loading="lazy"/>
+      <div id="regen-note-img-${img.id}" style="display:none;padding:12px;border-top:1px solid var(--border);">
+        <textarea id="regen-txt-img-${img.id}" placeholder="Describe what to change... e.g. more cosmic, less realistic"
+          style="width:100%;background:var(--surface);border:1px solid var(--border2);border-radius:8px;
+          color:var(--text);font-family:inherit;font-size:12px;padding:8px;resize:vertical;min-height:60px;outline:none;"></textarea>
+        <div style="display:flex;gap:8px;margin-top:8px;align-items:center;">
+          <button onclick="submitSingleRegen(${n},${img.id})"
+            style="padding:6px 14px;border-radius:6px;background:var(--accent);border:none;color:white;font-size:12px;cursor:pointer;">
+            ⚡ Regenerate Scene ${img.id}
+          </button>
+          <button onclick="document.getElementById('regen-note-img-${img.id}').style.display='none'"
+            style="padding:6px 14px;border-radius:6px;background:var(--surface2);border:1px solid var(--border2);color:var(--muted2);font-size:12px;cursor:pointer;">
+            Cancel
+          </button>
+          <label style="margin-left:auto;font-size:11px;color:var(--muted2);display:flex;align-items:center;gap:5px;">
+            <input type="checkbox" id="save-pref-img-${img.id}" style="accent-color:var(--accent);"> Save as preference?
+          </label>
+        </div>
+      </div>
     </div>
   `).join('');
 
@@ -1334,7 +1357,7 @@ function openImagesModal(n) {
     quickApprove(n, 'images_approved');
     closeModal();
   };
-  document.getElementById('modal-regen-btn').style.display = 'none';
+  document.getElementById('modal-regen-btn').style.display = 'none'; // per-image regen handled inline
   document.getElementById('modal-status-note').textContent = `status: ${ep.status}`;
   document.getElementById('modal-overlay').classList.add('open');
   document.body.style.overflow = 'hidden';
@@ -1388,6 +1411,41 @@ document.addEventListener('keydown', e => {
     modalEp = null;
   }
 });
+
+// ── Single Image Regenerate ──────────────────────────────────
+function regenSingleImage(epNum, sceneId, label) {
+  const panel = document.getElementById(`regen-note-img-${sceneId}`);
+  if (panel) panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+}
+
+async function submitSingleRegen(epNum, sceneId) {
+  const note = document.getElementById(`regen-txt-img-${sceneId}`)?.value.trim();
+  if (!note) { showToast('Please describe what to change', 'error'); return; }
+
+  const savePref = document.getElementById(`save-pref-img-${sceneId}`)?.checked;
+  if (savePref) {
+    await fetch(`${SB_URL}/rest/v1/channel_preferences`, {
+      method: 'POST', headers: H,
+      body: JSON.stringify({
+        category: 'image',
+        preference: `Scene ${sceneId}: ${note}`,
+        episode_number: epNum,
+        is_active: true
+      })
+    });
+    showToast('Image preference saved ✓', 'info');
+  }
+
+  // Store regen note and re-trigger image generation for this episode
+  await patchTable('tamil_episodes', epNum, {
+    regenerate_note: `Regenerate scene ${sceneId}: ${note}`,
+    status: 'script_approved'
+  });
+
+  showToast(`Queuing Scene ${sceneId} regeneration...`, 'info');
+  closeModal();
+  await generateImages(epNum);
+}
 
 // ── Init ─────────────────────────────────────────────────────
 load();
