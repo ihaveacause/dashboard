@@ -4,692 +4,1259 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>I Have a Cause — Dashboard</title>
-<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&family=Inter:wght@400;500&display=swap" rel="stylesheet">
 <style>
-:root{--bg:#0d0f14;--surface:#161922;--surface2:#1e2230;--border:#2a2f40;--text:#e8eaf0;--muted:#7880a0;--accent:#e8412a;--accent2:#ff6b4a;--green:#2ecc71;--yellow:#f1c40f;--red:#e74c3c;--blue:#3498db;--purple:#9b59b6;--orange:#e67e22;--teal:#1abc9c;}
-*{box-sizing:border-box;margin:0;padding:0;}
-body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;}
-.topbar{display:flex;align-items:center;justify-content:space-between;padding:14px 28px;border-bottom:1px solid var(--border);background:var(--surface);position:sticky;top:0;z-index:100;flex-wrap:wrap;gap:10px;}
-.logo{font-size:18px;font-weight:600;}.logo span{color:var(--accent);}
-.topbar-right{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
-.stats-bar{display:flex;gap:6px;}
-.stat{padding:4px 10px;border-radius:20px;font-size:11px;font-weight:500;font-family:'DM Mono',monospace;}
-.stat.pending{background:rgba(241,196,15,0.12);color:var(--yellow);}
-.stat.scripted{background:rgba(52,152,219,0.12);color:var(--blue);}
-.stat.ready{background:rgba(46,204,113,0.12);color:var(--green);}
-.stat.created{background:rgba(155,89,182,0.12);color:var(--purple);}
-.stat.video-ready{background:rgba(26,188,156,0.15);color:var(--teal);}
-.btn-idea{padding:8px 16px;background:var(--accent);border:none;border-radius:8px;color:white;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;}
-.btn-idea:hover{background:var(--accent2);}
-.filter-bar{background:var(--surface);border-bottom:1px solid var(--border);padding:0 28px;position:sticky;top:53px;z-index:99;}
-.filter-row{display:flex;gap:4px;overflow-x:auto;padding:10px 0;scrollbar-width:none;}
-.filter-row::-webkit-scrollbar{display:none;}
-.filter-btn{padding:6px 14px;border-radius:7px;border:1px solid transparent;background:transparent;color:var(--muted);font-family:inherit;font-size:12px;cursor:pointer;transition:all 0.2s;font-weight:500;white-space:nowrap;flex-shrink:0;}
-.filter-btn:hover{color:var(--text);border-color:var(--border);}
-.filter-btn.active{background:var(--accent);color:white;border-color:var(--accent);}
-.filter-divider{width:1px;background:var(--border);margin:4px 8px;flex-shrink:0;}
-.niche-sel{margin-left:auto;flex-shrink:0;padding:6px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:7px;color:var(--text);font-family:inherit;font-size:12px;cursor:pointer;outline:none;}
-.main{padding:20px 28px;max-width:1100px;margin:0 auto;}
-.date-label{font-size:11px;color:var(--muted);padding:16px 0 6px;font-weight:500;letter-spacing:0.6px;text-transform:uppercase;font-family:'DM Mono',monospace;}
-.date-label:first-child{padding-top:0;}
-.stories-grid{display:grid;gap:14px;}
-.story-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;overflow:hidden;transition:border-color 0.2s;}
-.story-card:hover{border-color:#3a4055;}
-.story-card.pending{border-left:3px solid var(--yellow);}
-.story-card.approved{border-left:3px solid var(--orange);}
-.story-card.scripted{border-left:3px solid var(--blue);}
-.story-card.ready{border-left:3px solid var(--green);}
-.story-card.creating{border-left:3px solid var(--orange);}
-.story-card.created{border-left:3px solid var(--purple);}
-.story-card.published_ready{border-left:3px solid var(--teal);}
-.story-card.video_ready{border-left:3px solid var(--teal);}
-.story-card.published{border-left:3px solid var(--purple);}
-.story-card.rejected{border-left:3px solid var(--red);opacity:0.6;}
-.story-card.my-idea-pending{border-left:3px solid var(--accent2);}
-.card-header{padding:16px 18px 14px;}
-.card-meta{display:flex;align-items:center;gap:6px;margin-bottom:8px;flex-wrap:wrap;}
-.status-badge{padding:2px 8px;border-radius:5px;font-size:10px;font-weight:600;font-family:'DM Mono',monospace;text-transform:uppercase;}
-.sb-pending{background:rgba(241,196,15,0.15);color:var(--yellow);}
-.sb-approved{background:rgba(230,126,34,0.15);color:var(--orange);}
-.sb-scripted{background:rgba(52,152,219,0.15);color:var(--blue);}
-.sb-ready{background:rgba(46,204,113,0.15);color:var(--green);}
-.sb-creating{background:rgba(230,126,34,0.15);color:var(--orange);}
-.sb-created{background:rgba(155,89,182,0.15);color:var(--purple);}
-.sb-published_ready{background:rgba(26,188,156,0.15);color:var(--teal);}
-.sb-video_ready{background:rgba(26,188,156,0.2);color:var(--teal);}
-.sb-published{background:rgba(155,89,182,0.15);color:var(--purple);}
-.sb-rejected{background:rgba(231,76,60,0.15);color:var(--red);}
-.niche-tag{padding:2px 8px;border-radius:20px;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;font-family:'DM Mono',monospace;}
-.niche-politics{background:rgba(52,152,219,0.15);color:#5dade2;}
-.niche-entertainment{background:rgba(155,89,182,0.15);color:#bb8fce;}
-.niche-crime{background:rgba(231,76,60,0.15);color:#f1948a;}
-.niche-sports{background:rgba(46,204,113,0.15);color:#82e0aa;}
-.niche-business{background:rgba(241,196,15,0.15);color:#f7dc6f;}
-.niche-viral{background:rgba(232,65,42,0.15);color:var(--accent2);}
-.niche-general{background:rgba(120,128,160,0.15);color:var(--muted);}
-.tag-idea{background:rgba(255,107,74,0.15);color:var(--accent2);}
-.viral-score{font-family:'DM Mono',monospace;font-size:10px;font-weight:500;padding:2px 7px;border-radius:5px;margin-left:auto;}
-.score-high{background:rgba(46,204,113,0.15);color:var(--green);}
-.score-mid{background:rgba(241,196,15,0.15);color:var(--yellow);}
-.score-low{background:rgba(120,128,160,0.1);color:var(--muted);}
-.card-title{font-size:14px;font-weight:600;line-height:1.5;margin-bottom:6px;}
-.card-summary{font-size:13px;color:var(--muted);line-height:1.6;margin-bottom:8px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;}
-.card-source{font-size:11px;color:var(--muted);font-family:'DM Mono',monospace;}
-.card-source a{color:var(--muted);text-decoration:none;}
-.card-source a:hover{color:var(--text);}
-.rec-formats{display:flex;gap:5px;flex-wrap:wrap;margin-top:10px;}
-.rec-label{font-size:10px;color:var(--muted);font-family:'DM Mono',monospace;margin-right:2px;align-self:center;}
-.rec-badge{padding:2px 8px;border-radius:5px;font-size:10px;font-weight:600;font-family:'DM Mono',monospace;background:var(--surface2);border:1px solid var(--border);color:var(--muted);}
-.script-badges{display:flex;gap:5px;flex-wrap:wrap;margin-top:8px;}
-.sc-badge{padding:2px 8px;border-radius:5px;font-size:10px;font-weight:600;font-family:'DM Mono',monospace;}
-.sc-badge.done{background:rgba(52,152,219,0.15);color:var(--blue);}
-.sc-badge.missing{background:rgba(120,128,160,0.08);color:var(--muted);opacity:0.5;}
-.card-actions{padding:12px 18px;border-top:1px solid var(--border);display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
-.btn{padding:8px 16px;border-radius:8px;font-size:13px;border:none;font-family:inherit;cursor:pointer;transition:all 0.2s;font-weight:500;}
-.btn-sm{padding:6px 12px;border-radius:7px;font-size:12px;border:none;font-family:inherit;cursor:pointer;font-weight:500;}
-.btn-approve{background:rgba(46,204,113,0.12);color:var(--green);border:1px solid rgba(46,204,113,0.25)!important;}
-.btn-approve:hover{background:rgba(46,204,113,0.22);}
-.btn-reject{background:rgba(231,76,60,0.1);color:var(--red);border:1px solid rgba(231,76,60,0.2)!important;}
-.btn-reject:hover{background:rgba(231,76,60,0.2);}
-.btn-scripts{background:var(--surface2);color:var(--muted);border:1px solid var(--border)!important;margin-left:auto;}
-.btn-scripts:hover{color:var(--text);}
-.btn-scripts.has{color:var(--blue);border-color:rgba(52,152,219,0.3)!important;}
-.btn-ready{background:rgba(46,204,113,0.15);color:var(--green);border:1px solid rgba(46,204,113,0.3)!important;}
-.btn-create{background:rgba(155,89,182,0.15);color:var(--purple);border:1px solid rgba(155,89,182,0.3)!important;}
-.btn-teal{background:rgba(26,188,156,0.15);color:var(--teal);border:1px solid rgba(26,188,156,0.3)!important;}
-.btn-teal:hover{background:rgba(26,188,156,0.25);}
-.btn-regenerate{background:rgba(230,126,34,0.12);color:var(--orange);border:1px solid rgba(230,126,34,0.25)!important;}
-.generating-banner{margin:12px 18px;padding:12px 16px;background:rgba(230,126,34,0.08);border:1px solid rgba(230,126,34,0.2);border-radius:8px;font-size:13px;color:var(--orange);display:flex;align-items:center;gap:8px;}
-.spin{animation:spin 1s linear infinite;display:inline-block;}
-@keyframes spin{to{transform:rotate(360deg);}}
-.feedback-row{width:100%;display:flex;gap:8px;margin-top:4px;}
-.feedback-input{flex:1;padding:7px 11px;background:var(--surface2);border:1px solid var(--border);border-radius:7px;color:var(--text);font-family:inherit;font-size:12px;outline:none;}
-.feedback-input:focus{border-color:var(--accent);}
-.btn-send{padding:7px 14px;border-radius:7px;background:rgba(232,65,42,0.12);color:var(--accent2);border:1px solid rgba(232,65,42,0.25);font-family:inherit;font-size:12px;font-weight:500;cursor:pointer;}
-.scripts-panel{display:none;border-top:1px solid var(--border);}
-.scripts-panel.open{display:block;}
-.format-tabs{display:flex;background:var(--surface2);border-bottom:1px solid var(--border);overflow-x:auto;scrollbar-width:none;}
-.format-tabs::-webkit-scrollbar{display:none;}
-.fmt-tab{padding:10px 16px;font-size:12px;font-weight:600;cursor:pointer;color:var(--muted);border-bottom:2px solid transparent;white-space:nowrap;transition:all 0.2s;font-family:'DM Mono',monospace;flex-shrink:0;}
-.fmt-tab.active{color:var(--text);border-bottom-color:var(--blue);background:var(--surface);}
-.fmt-tab.has{color:var(--blue);}
-.lang-tabs{display:flex;border-bottom:1px solid var(--border);}
-.lang-tab{padding:8px 16px;font-size:11px;font-weight:500;cursor:pointer;color:var(--muted);border-bottom:2px solid transparent;transition:all 0.2s;font-family:'DM Mono',monospace;}
-.lang-tab.active{color:var(--text);border-bottom-color:var(--accent);}
-.lang-tab.has{color:var(--accent2);}
-.lang-tab.has.active{border-bottom-color:var(--accent2);}
-.fmt-panel{display:none;}.fmt-panel.active{display:block;}
-.lang-panel{display:none;}.lang-panel.active{display:block;}
-.script-area{padding:16px 18px;}
-.script-empty{text-align:center;padding:24px;color:var(--muted);font-size:13px;}
-.script-text{font-size:12px;line-height:1.9;color:var(--text);background:var(--surface2);border-radius:8px;padding:14px 16px;white-space:pre-wrap;font-family:'DM Mono',monospace;max-height:320px;overflow-y:auto;border:1px solid var(--border);}
-.script-edit-area{width:100%;min-height:200px;padding:14px 16px;background:var(--surface2);border:1px solid var(--accent);border-radius:8px;color:var(--text);font-family:'DM Mono',monospace;font-size:12px;line-height:1.9;resize:vertical;outline:none;display:none;}
-.script-toolbar{display:flex;gap:8px;margin-top:10px;}
-.btn-edit{padding:6px 12px;background:transparent;border:1px solid var(--border);border-radius:6px;color:var(--muted);font-family:inherit;font-size:11px;cursor:pointer;}
-.btn-save-edit{padding:6px 14px;background:var(--blue);border:none;border-radius:6px;color:white;font-family:inherit;font-size:11px;font-weight:600;cursor:pointer;display:none;}
-.btn-cancel-edit{padding:6px 12px;background:transparent;border:1px solid var(--border);border-radius:6px;color:var(--muted);font-family:inherit;font-size:11px;cursor:pointer;display:none;}
-.regen-panel{display:none;padding:16px 18px;border-top:1px solid var(--border);background:rgba(230,126,34,0.04);}
-.regen-panel.open{display:block;}
-.regen-header{font-size:12px;color:var(--orange);font-family:'DM Mono',monospace;font-weight:600;margin-bottom:12px;}
-.regen-actions{display:flex;gap:8px;margin-top:14px;}
-.btn-keep-new{padding:8px 18px;background:var(--green);border:none;border-radius:8px;color:#0d0f14;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;}
-.btn-keep-old{padding:8px 18px;background:transparent;border:1px solid var(--border);border-radius:8px;color:var(--muted);font-family:inherit;font-size:13px;cursor:pointer;}
-.format-picker{padding:14px 18px;border-top:1px solid var(--border);background:var(--surface2);}
-.fp-title{font-size:11px;color:var(--muted);font-family:'DM Mono',monospace;margin-bottom:10px;text-transform:uppercase;letter-spacing:0.5px;}
-.fp-checks{display:flex;gap:12px;flex-wrap:wrap;}
-.fp-check{display:flex;align-items:center;gap:5px;cursor:pointer;}
-.fp-check input{accent-color:var(--accent);cursor:pointer;}
-.fp-check label{font-size:12px;color:var(--text);cursor:pointer;font-weight:500;}
-.review-header{padding:14px 18px;background:rgba(46,204,113,0.06);border-bottom:1px solid rgba(46,204,113,0.15);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;}
-.review-title{font-size:13px;font-weight:600;color:var(--green);}
-.review-sub{font-size:11px;color:var(--muted);margin-top:2px;}
-.review-actions{display:flex;gap:8px;flex-wrap:wrap;}
-.btn-back-scripted{padding:6px 12px;background:transparent;border:1px solid var(--border);border-radius:7px;color:var(--muted);font-family:inherit;font-size:12px;cursor:pointer;}
-.per-fmt-review{padding:12px 18px;border-top:1px solid var(--border);background:var(--surface2);}
-.per-fmt-title{font-size:11px;color:var(--muted);font-family:'DM Mono',monospace;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px;}
-.fmt-review-row{display:flex;align-items:center;gap:8px;margin-bottom:8px;padding:8px 12px;background:var(--surface);border-radius:8px;border:1px solid var(--border);}
-.fmt-review-label{font-size:12px;font-weight:500;flex:1;}
-.fmt-review-status{font-size:10px;font-family:'DM Mono',monospace;padding:2px 8px;border-radius:5px;}
-.frs-ready{background:rgba(46,204,113,0.15);color:var(--green);}
-.frs-missing{background:rgba(120,128,160,0.1);color:var(--muted);}
-.frs-approved{background:rgba(155,89,182,0.2);color:var(--purple);}
-.btn-fmt-approve{padding:4px 10px;background:rgba(46,204,113,0.12);border:1px solid rgba(46,204,113,0.25);border-radius:6px;color:var(--green);font-family:inherit;font-size:11px;font-weight:600;cursor:pointer;}
-.btn-fmt-approve.approved{background:var(--green);color:#0d0f14;border-color:var(--green);}
-.content-preview{display:none;border-top:1px solid var(--border);}
-.content-preview.open{display:block;}
-.cp-tabs{display:flex;background:var(--surface2);border-bottom:1px solid var(--border);overflow-x:auto;scrollbar-width:none;}
-.cp-tabs::-webkit-scrollbar{display:none;}
-.cp-tab{padding:10px 16px;font-size:12px;font-weight:600;cursor:pointer;color:var(--muted);border-bottom:2px solid transparent;white-space:nowrap;transition:all .2s;font-family:'DM Mono',monospace;flex-shrink:0;}
-.cp-tab.active{color:var(--purple);border-bottom-color:var(--purple);}
-.cp-panel{display:none;padding:16px 18px;}.cp-panel.active{display:block;}
-.cp-field{margin-bottom:14px;}
-.cp-label{font-size:10px;color:var(--muted);font-family:'DM Mono',monospace;text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px;display:block;}
-.cp-value{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 13px;font-size:12px;color:var(--text);line-height:1.7;white-space:pre-wrap;}
-.cp-tags{display:flex;flex-wrap:wrap;gap:5px;}
-.cp-tag{background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:2px 9px;font-size:10px;color:var(--muted);font-family:'DM Mono',monospace;}
-.cp-scene{background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:10px 12px;margin-bottom:7px;}
-.cp-scene-num{font-size:10px;color:var(--muted);font-family:'DM Mono',monospace;font-weight:600;margin-bottom:5px;}
-.cp-scene-row{display:flex;gap:8px;font-size:11px;color:var(--text);margin-bottom:3px;}
-.cp-scene-row span:first-child{color:var(--muted);min-width:95px;flex-shrink:0;}
-.cp-tweet{background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:10px 12px;margin-bottom:7px;font-size:12px;color:var(--text);line-height:1.6;}
-.cp-tweet-num{font-size:10px;color:var(--muted);font-family:'DM Mono',monospace;font-weight:600;margin-bottom:4px;}
-.cp-chapter{display:flex;gap:10px;font-size:12px;color:var(--text);margin-bottom:5px;}
-.cp-chapter-time{color:var(--blue);font-family:'DM Mono',monospace;font-weight:600;min-width:42px;}
-.cp-meme-img{text-align:center;margin-bottom:14px;}
-.cp-meme-img img{max-width:100%;border-radius:8px;border:1px solid var(--border);}
-.cp-lang-toggle{display:flex;gap:4px;margin-bottom:12px;background:var(--surface2);padding:3px;border-radius:7px;width:fit-content;}
-.cp-lang-btn{padding:4px 12px;border-radius:5px;cursor:pointer;font-size:11px;color:var(--muted);background:transparent;border:none;font-family:inherit;transition:all .15s;}
-.cp-lang-btn.active{background:var(--surface);color:var(--text);}
-.cp-approve-bar{padding:12px 18px;border-top:1px solid var(--border);background:rgba(26,188,156,0.04);display:flex;justify-content:flex-end;}
-.btn-cp-approve{padding:8px 20px;background:var(--teal);border:none;border-radius:8px;color:#0d0f14;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer;}
-/* SPRINT 5 — VIDEO PREVIEW */
-.video-preview{display:none;border-top:1px solid var(--border);}
-.video-preview.open{display:block;}
-.vp-header{padding:14px 18px;background:rgba(26,188,156,0.06);border-bottom:1px solid rgba(26,188,156,0.15);}
-.vp-title{font-size:13px;font-weight:600;color:var(--teal);}
-.vp-sub{font-size:11px;color:var(--muted);margin-top:2px;}
-.vp-tabs{display:flex;background:var(--surface2);border-bottom:1px solid var(--border);}
-.vp-tab{padding:10px 20px;font-size:12px;font-weight:600;cursor:pointer;color:var(--muted);border-bottom:2px solid transparent;white-space:nowrap;transition:all .2s;font-family:'DM Mono',monospace;}
-.vp-tab.active{color:var(--teal);border-bottom-color:var(--teal);}
-.vp-panel{display:none;padding:20px 18px;text-align:center;}
-.vp-panel.active{display:block;}
-.vp-player{width:100%;max-width:300px;border-radius:12px;border:1px solid var(--border);display:block;margin:0 auto;}
-.vp-meta{margin-top:10px;font-size:11px;color:var(--muted);font-family:'DM Mono',monospace;}
-.vp-dl{display:inline-flex;align-items:center;gap:6px;margin-top:10px;padding:7px 16px;background:rgba(26,188,156,0.12);border:1px solid rgba(26,188,156,0.25);border-radius:7px;color:var(--teal);font-size:12px;font-weight:600;text-decoration:none;}
-.vp-dl:hover{background:rgba(26,188,156,0.22);}
-.vp-no-video{padding:40px 20px;color:var(--muted);font-size:13px;}
-.vp-bar{padding:12px 18px;border-top:1px solid var(--border);background:rgba(26,188,156,0.04);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;}
-.vp-render-info{font-size:11px;color:var(--muted);font-family:'DM Mono',monospace;}
-/* RENDER QUEUE BANNER */
-.rq-banner{margin:12px 18px;padding:14px 18px;background:rgba(26,188,156,0.06);border:1px solid rgba(26,188,156,0.2);border-radius:10px;}
-.rq-title{font-size:13px;font-weight:600;color:var(--teal);display:flex;align-items:center;gap:8px;margin-bottom:6px;}
-.rq-sub{font-size:12px;color:var(--muted);line-height:1.6;}
-.rq-status{display:inline-block;margin-top:8px;padding:3px 10px;background:rgba(26,188,156,0.12);border-radius:20px;font-size:10px;font-family:'DM Mono',monospace;color:var(--teal);}
-/* MODAL */
-.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:200;align-items:center;justify-content:center;padding:20px;}
-.modal-overlay.open{display:flex;}
-.modal{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:28px;width:100%;max-width:500px;}
-.modal h2{font-size:17px;font-weight:600;margin-bottom:4px;}
-.modal-sub{color:var(--muted);font-size:13px;margin-bottom:20px;}
-.form-group{margin-bottom:14px;}
-.form-label{display:block;font-size:12px;font-weight:500;color:var(--muted);margin-bottom:5px;}
-.form-input,.form-textarea,.form-select{width:100%;padding:10px 13px;background:var(--surface2);border:1px solid var(--border);border-radius:9px;color:var(--text);font-family:inherit;font-size:13px;outline:none;}
-.form-input:focus,.form-textarea:focus,.form-select:focus{border-color:var(--accent);}
-.form-textarea{resize:vertical;min-height:80px;}
-.form-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
-.modal-actions{display:flex;gap:8px;margin-top:20px;justify-content:flex-end;}
-.btn-cancel{padding:9px 18px;background:transparent;border:1px solid var(--border);border-radius:7px;color:var(--muted);font-family:inherit;font-size:13px;cursor:pointer;}
-.btn-submit{padding:9px 20px;background:var(--accent);border:none;border-radius:7px;color:white;font-family:inherit;font-size:13px;font-weight:600;cursor:pointer;}
-.btn-submit:disabled{opacity:0.5;cursor:not-allowed;}
-.loading{text-align:center;padding:80px 20px;color:var(--muted);}
-.loading-spinner{width:32px;height:32px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 0.8s linear infinite;margin:0 auto 14px;}
-.empty{text-align:center;padding:60px 20px;color:var(--muted);}
-.empty-icon{font-size:40px;margin-bottom:12px;}
-.empty h3{font-size:16px;color:var(--text);margin-bottom:6px;}
-.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--surface);border:1px solid var(--border);border-radius:9px;padding:10px 18px;font-size:13px;z-index:300;opacity:0;transition:opacity 0.3s;pointer-events:none;white-space:nowrap;}
-.toast.show{opacity:1;}
-.toast.ok{border-color:var(--green);color:var(--green);}
-.toast.err{border-color:var(--red);color:var(--red);}
-@media(max-width:600px){.form-row{grid-template-columns:1fr;}}
+:root {
+  --bg: #080a0f;
+  --surface: #0f1218;
+  --surface2: #161b24;
+  --surface3: #1c2230;
+  --border: #1e2535;
+  --border2: #252d40;
+  --text: #dde3f0;
+  --muted: #5a6480;
+  --muted2: #8892aa;
+  --accent: #e8412a;
+  --accent2: #ff6b4a;
+  --tamil: #f59e0b;
+  --tamil-dim: rgba(245,158,11,0.12);
+  --english: #3b82f6;
+  --english-dim: rgba(59,130,246,0.12);
+  --green: #10b981;
+  --green-dim: rgba(16,185,129,0.12);
+  --purple: #8b5cf6;
+  --purple-dim: rgba(139,92,246,0.12);
+  --teal: #14b8a6;
+  --teal-dim: rgba(20,184,166,0.12);
+  --red: #ef4444;
+  --red-dim: rgba(239,68,68,0.12);
+  --yellow: #f59e0b;
+  --yellow-dim: rgba(245,158,11,0.12);
+  --orange: #f97316;
+  --orange-dim: rgba(249,115,22,0.12);
+  --blue: #3b82f6;
+  --blue-dim: rgba(59,130,246,0.12);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'Inter', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* ── Topbar ── */
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 28px;
+  height: 58px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 200;
+  gap: 16px;
+}
+
+.logo {
+  font-family: 'Syne', sans-serif;
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: -0.3px;
+  white-space: nowrap;
+}
+.logo em { color: var(--accent); font-style: normal; }
+
+/* ── Language Toggle ── */
+.lang-toggle {
+  display: flex;
+  background: var(--surface2);
+  border: 1px solid var(--border2);
+  border-radius: 10px;
+  padding: 3px;
+  gap: 3px;
+}
+.lang-btn {
+  padding: 6px 18px;
+  border-radius: 7px;
+  border: none;
+  background: transparent;
+  color: var(--muted2);
+  font-family: 'Syne', sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.lang-btn.active-ta {
+  background: var(--tamil-dim);
+  color: var(--tamil);
+  border: 1px solid rgba(245,158,11,0.25);
+}
+.lang-btn.active-en {
+  background: var(--english-dim);
+  color: var(--english);
+  border: 1px solid rgba(59,130,246,0.25);
+}
+
+/* ── Stats Bar ── */
+.stats-bar {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.stat-chip {
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+.stat-chip:hover { opacity: 0.8; }
+
+/* ── Generate All Button ── */
+.btn-gen-all {
+  padding: 8px 18px;
+  background: var(--accent);
+  border: none;
+  border-radius: 8px;
+  color: white;
+  font-family: 'Syne', sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+.btn-gen-all:hover { background: var(--accent2); transform: translateY(-1px); }
+.btn-gen-all:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+/* ── Filter Bar ── */
+.filter-bar {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 0 28px;
+  position: sticky;
+  top: 58px;
+  z-index: 199;
+}
+.filter-row {
+  display: flex;
+  gap: 4px;
+  padding: 10px 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+  align-items: center;
+}
+.filter-row::-webkit-scrollbar { display: none; }
+.filter-btn {
+  padding: 5px 14px;
+  border-radius: 7px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  font-family: 'Inter', sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+.filter-btn:hover { color: var(--text); border-color: var(--border2); }
+.filter-btn.active { background: var(--accent); color: white; border-color: var(--accent); }
+.filter-divider { width: 1px; height: 20px; background: var(--border2); margin: 0 8px; flex-shrink: 0; }
+
+.module-sel, .pillar-sel {
+  padding: 5px 12px;
+  background: var(--surface2);
+  border: 1px solid var(--border2);
+  border-radius: 7px;
+  color: var(--text);
+  font-family: 'Inter', sans-serif;
+  font-size: 12px;
+  cursor: pointer;
+  outline: none;
+  margin-left: 4px;
+}
+
+/* ── Main Content ── */
+.main {
+  padding: 24px 28px;
+  max-width: 1120px;
+  margin: 0 auto;
+}
+
+.bucket-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--muted);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  padding: 20px 0 10px;
+}
+.bucket-label:first-child { padding-top: 0; }
+
+.episodes-grid {
+  display: grid;
+  gap: 12px;
+}
+
+/* ── Episode Card ── */
+.ep-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+  transition: border-color 0.2s, transform 0.15s;
+}
+.ep-card:hover { border-color: var(--border2); transform: translateY(-1px); }
+
+.ep-card.st-pending       { border-left: 3px solid var(--muted); }
+.ep-card.st-generating    { border-left: 3px solid var(--orange); }
+.ep-card.st-script_ready  { border-left: 3px solid var(--blue); }
+.ep-card.st-script_approved { border-left: 3px solid var(--yellow); }
+.ep-card.st-images_ready  { border-left: 3px solid var(--purple); }
+.ep-card.st-images_approved { border-left: 3px solid var(--purple); }
+.ep-card.st-infographic_ready { border-left: 3px solid var(--teal); }
+.ep-card.st-infographic_approved { border-left: 3px solid var(--teal); }
+.ep-card.st-video_ready   { border-left: 3px solid var(--green); }
+.ep-card.st-video_approved { border-left: 3px solid var(--green); }
+.ep-card.st-published     { border-left: 3px solid var(--accent); opacity: 0.85; }
+
+.ep-header {
+  padding: 16px 18px 14px;
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.ep-num {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--muted);
+  background: var(--surface2);
+  border: 1px solid var(--border2);
+  border-radius: 6px;
+  padding: 3px 8px;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.ep-body { flex: 1; min-width: 0; }
+
+.ep-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+.module-badge {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  font-weight: 500;
+  padding: 2px 7px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.mod-1 { background: rgba(245,158,11,0.1); color: #f59e0b; }
+.mod-2 { background: rgba(139,92,246,0.1); color: #8b5cf6; }
+.mod-3 { background: rgba(59,130,246,0.1); color: #3b82f6; }
+.mod-4 { background: rgba(239,68,68,0.1); color: #ef4444; }
+.mod-5 { background: rgba(16,185,129,0.1); color: #10b981; }
+.mod-6 { background: rgba(20,184,166,0.1); color: #14b8a6; }
+
+.pillar-badge {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: var(--surface2);
+  color: var(--muted2);
+}
+
+.status-badge {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-left: auto;
+}
+.sb-pending           { background: rgba(90,100,128,0.15); color: var(--muted2); }
+.sb-generating        { background: var(--orange-dim); color: var(--orange); }
+.sb-script_ready      { background: var(--blue-dim); color: var(--blue); }
+.sb-script_approved   { background: var(--yellow-dim); color: var(--yellow); }
+.sb-images_ready      { background: var(--purple-dim); color: var(--purple); }
+.sb-images_approved   { background: var(--purple-dim); color: var(--purple); }
+.sb-infographic_ready { background: var(--teal-dim); color: var(--teal); }
+.sb-infographic_approved { background: var(--teal-dim); color: var(--teal); }
+.sb-video_ready       { background: var(--green-dim); color: var(--green); }
+.sb-video_approved    { background: var(--green-dim); color: var(--green); }
+.sb-published         { background: rgba(232,65,42,0.12); color: var(--accent2); }
+.sb-waiting_for_tamil { background: var(--yellow-dim); color: var(--yellow); }
+
+.ep-title-ta {
+  font-family: 'Syne', sans-serif;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.5;
+  color: var(--text);
+  margin-bottom: 3px;
+}
+.ep-title-en {
+  font-size: 12px;
+  color: var(--muted2);
+  line-height: 1.4;
+  margin-bottom: 6px;
+}
+.ep-bridge {
+  font-size: 11px;
+  color: var(--muted);
+  font-style: italic;
+  line-height: 1.4;
+}
+
+/* ── Card Actions ── */
+.ep-actions {
+  padding: 12px 18px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.btn {
+  padding: 7px 16px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: 'Inter', sans-serif;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.btn:hover { opacity: 0.85; transform: translateY(-1px); }
+.btn:active { transform: translateY(0); }
+
+.btn-generate  { background: var(--accent); color: white; border-color: var(--accent); }
+.btn-review    { background: var(--blue-dim); color: var(--blue); border-color: rgba(59,130,246,0.3); }
+.btn-approve   { background: var(--green-dim); color: var(--green); border-color: rgba(16,185,129,0.3); }
+.btn-regen     { background: var(--surface2); color: var(--muted2); border-color: var(--border2); }
+.btn-preview   { background: var(--teal-dim); color: var(--teal); border-color: rgba(20,184,166,0.3); }
+.btn-youtube   { background: var(--red-dim); color: var(--red); border-color: rgba(239,68,68,0.3); }
+.btn-disabled  { background: var(--surface2); color: var(--muted); border-color: var(--border); cursor: not-allowed; opacity: 0.5; }
+
+.generating-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--orange);
+  font-family: 'JetBrains Mono', monospace;
+}
+.spin { display: inline-block; animation: spin 1.2s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.waiting-banner {
+  font-size: 12px;
+  color: var(--muted2);
+  font-family: 'JetBrains Mono', monospace;
+}
+
+/* ── Full Screen Script Modal ── */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.85);
+  backdrop-filter: blur(4px);
+  z-index: 1000;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.modal-overlay.open { display: flex; }
+
+.modal {
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  border-radius: 18px;
+  width: 100%;
+  max-width: 860px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: modalIn 0.25s ease;
+}
+@keyframes modalIn {
+  from { opacity: 0; transform: translateY(20px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.modal-header {
+  padding: 20px 24px 16px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.modal-ep-info { flex: 1; }
+.modal-ep-num {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+.modal-title {
+  font-family: 'Syne', sans-serif;
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+.modal-subtitle {
+  font-size: 12px;
+  color: var(--muted2);
+  margin-top: 3px;
+}
+.modal-close {
+  background: var(--surface2);
+  border: 1px solid var(--border2);
+  border-radius: 8px;
+  color: var(--muted2);
+  width: 32px;
+  height: 32px;
+  cursor: pointer;
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: all 0.2s;
+}
+.modal-close:hover { color: var(--text); border-color: var(--border); }
+
+.modal-lang-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border);
+  padding: 0 24px;
+}
+.modal-lang-tab {
+  padding: 10px 18px;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: 'Inter', sans-serif;
+  color: var(--muted);
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: none;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: -1px;
+}
+.modal-lang-tab:hover { color: var(--text); }
+.modal-lang-tab.active-ta { color: var(--tamil); border-bottom-color: var(--tamil); }
+.modal-lang-tab.active-en { color: var(--english); border-bottom-color: var(--english); }
+
+.modal-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border2) transparent;
+}
+
+.script-text {
+  font-size: 14px;
+  line-height: 1.8;
+  color: var(--text);
+  white-space: pre-wrap;
+  font-family: 'Inter', sans-serif;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 20px;
+}
+.script-empty {
+  text-align: center;
+  color: var(--muted);
+  font-size: 13px;
+  padding: 40px;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+/* Regenerate section */
+.regen-section {
+  margin-top: 16px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px;
+  display: none;
+}
+.regen-section.open { display: block; }
+.regen-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted2);
+  margin-bottom: 8px;
+  font-family: 'JetBrains Mono', monospace;
+}
+.regen-textarea {
+  width: 100%;
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  border-radius: 8px;
+  color: var(--text);
+  font-family: 'Inter', sans-serif;
+  font-size: 13px;
+  padding: 10px 12px;
+  resize: vertical;
+  min-height: 80px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+.regen-textarea:focus { border-color: var(--accent); }
+.regen-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.save-pref-q {
+  font-size: 12px;
+  color: var(--muted2);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+.save-pref-q input { accent-color: var(--accent); cursor: pointer; }
+
+.modal-footer {
+  padding: 16px 24px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.modal-status-note {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--muted);
+  margin-left: auto;
+}
+
+/* ── Notification Toast ── */
+.toast {
+  position: fixed;
+  bottom: 28px;
+  right: 28px;
+  background: var(--surface2);
+  border: 1px solid var(--border2);
+  border-radius: 10px;
+  padding: 12px 18px;
+  font-size: 13px;
+  font-family: 'JetBrains Mono', monospace;
+  color: var(--text);
+  z-index: 9999;
+  transform: translateY(80px);
+  opacity: 0;
+  transition: all 0.3s;
+  max-width: 340px;
+}
+.toast.show { transform: translateY(0); opacity: 1; }
+.toast.success { border-color: rgba(16,185,129,0.4); color: var(--green); }
+.toast.error   { border-color: rgba(239,68,68,0.4); color: var(--red); }
+.toast.info    { border-color: rgba(59,130,246,0.4); color: var(--blue); }
+
+/* ── Empty State ── */
+.empty-state {
+  text-align: center;
+  padding: 60px 20px;
+  color: var(--muted);
+}
+.empty-state .empty-icon { font-size: 40px; margin-bottom: 12px; }
+.empty-state p { font-size: 14px; font-family: 'JetBrains Mono', monospace; }
+
+/* ── Loading ── */
+.loading-bar {
+  height: 2px;
+  background: linear-gradient(90deg, var(--accent), var(--accent2), var(--accent));
+  background-size: 200% 100%;
+  animation: loadbar 1.2s ease infinite;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 9999;
+  display: none;
+}
+.loading-bar.show { display: block; }
+@keyframes loadbar { 0%{background-position:100% 0} 100%{background-position:-100% 0} }
+
+/* Progress bar for generate all */
+.gen-all-progress {
+  display: none;
+  background: var(--surface2);
+  border: 1px solid var(--border2);
+  border-radius: 10px;
+  padding: 12px 18px;
+  font-size: 12px;
+  font-family: 'JetBrains Mono', monospace;
+  color: var(--muted2);
+  margin: 16px 0 0;
+}
+.gen-all-progress.show { display: block; }
+.gen-progress-bar {
+  height: 4px;
+  background: var(--border);
+  border-radius: 2px;
+  margin-top: 8px;
+  overflow: hidden;
+}
+.gen-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), var(--accent2));
+  border-radius: 2px;
+  transition: width 0.4s ease;
+  width: 0%;
+}
 </style>
 </head>
 <body>
 
-<div class="modal-overlay" id="idea-modal" onclick="if(event.target===this)closeModal()">
-  <div class="modal">
-    <h2>💡 Add Your Idea</h2>
-    <p class="modal-sub">Describe the video — AI generates all 12 scripts when you approve.</p>
-    <div class="form-group"><label class="form-label">Video Title / Idea *</label><input class="form-input" id="idea-title" placeholder="e.g. Why Chennai traffic is getting worse every year"></div>
-    <div class="form-group"><label class="form-label">Details / Context (optional)</label><textarea class="form-textarea" id="idea-desc" placeholder="Key points, angle, background info..."></textarea></div>
-    <div class="form-row">
-      <div class="form-group" style="margin-bottom:0"><label class="form-label">Niche</label><select class="form-select" id="idea-niche"><option value="general">General</option><option value="politics">Politics</option><option value="entertainment">Entertainment</option><option value="crime">Crime</option><option value="sports">Sports</option><option value="business">Business</option><option value="viral">Viral</option></select></div>
-      <div class="form-group" style="margin-bottom:0"><label class="form-label">Primary Format</label><select class="form-select" id="idea-format"><option value="YouTube Long">YouTube Long</option><option value="YouTube Short">YouTube Short</option><option value="Instagram Reel">Instagram Reel</option><option value="Meme">Meme / Post</option><option value="X Thread">X Thread</option></select></div>
-    </div>
-    <div class="modal-actions"><button class="btn-cancel" onclick="closeModal()">Cancel</button><button class="btn-submit" id="submit-btn" onclick="submitIdea()">Add to Queue ➜</button></div>
-  </div>
-</div>
-<div class="toast" id="toast"></div>
+<div class="loading-bar" id="loadbar"></div>
 
+<!-- ── Topbar ── -->
 <div class="topbar">
-  <div class="logo">I Have a <span>Cause</span></div>
-  <div class="topbar-right">
-    <div class="stats-bar">
-      <div class="stat pending"     id="stat-p">⏳ 0 pending</div>
-      <div class="stat scripted"    id="stat-s">📄 0 scripted</div>
-      <div class="stat ready"       id="stat-r">✅ 0 ready</div>
-      <div class="stat created"     id="stat-c">🌟 0 created</div>
-      <div class="stat video-ready" id="stat-v">🎥 0 videos</div>
-    </div>
-    <button class="btn-idea" onclick="openModal()">+ Add Idea</button>
+  <div class="logo">I Have A <em>Cause</em></div>
+
+  <div class="lang-toggle">
+    <button class="lang-btn active-ta" id="btn-ta" onclick="setLang('ta')">🇮🇳 Tamil</button>
+    <button class="lang-btn" id="btn-en" onclick="setLang('en')">🇬🇧 English</button>
   </div>
+
+  <div class="stats-bar" id="stats-bar">
+    <span class="stat-chip" style="background:rgba(90,100,128,0.12);color:var(--muted2);" onclick="setFilter('all')">⏳ — pending</span>
+    <span class="stat-chip" style="background:var(--blue-dim);color:var(--blue);" onclick="setFilter('script_ready')">📄 — script ready</span>
+    <span class="stat-chip" style="background:var(--yellow-dim);color:var(--yellow);" onclick="setFilter('script_approved')">✅ — approved</span>
+    <span class="stat-chip" style="background:var(--green-dim);color:var(--green);" onclick="setFilter('video_ready')">🎥 — video ready</span>
+    <span class="stat-chip" style="background:rgba(232,65,42,0.12);color:var(--accent2);" onclick="setFilter('published')">🚀 — published</span>
+  </div>
+
+  <button class="btn-gen-all" id="btn-gen-all" onclick="generateAll()">⚡ Generate All Pending</button>
 </div>
 
+<!-- ── Filter Bar ── -->
 <div class="filter-bar">
-  <div class="filter-row">
+  <div class="filter-row" id="filter-row">
     <button class="filter-btn active" onclick="setFilter('all',this)">All</button>
-    <button class="filter-btn" onclick="setFilter('pending',this)">⏳ Pending</button>
-    <button class="filter-btn" onclick="setFilter('approved',this)">🔄 Generating</button>
-    <button class="filter-btn" onclick="setFilter('scripted',this)">📄 Scripted</button>
-    <button class="filter-btn" onclick="setFilter('ready',this)">✅ Ready</button>
-    <button class="filter-btn" onclick="setFilter('creating',this)">🎬 Creating</button>
-    <button class="filter-btn" onclick="setFilter('created',this)">🌟 Created</button>
-    <button class="filter-btn" onclick="setFilter('published_ready',this)">⏳ Render Queue</button>
-    <button class="filter-btn" onclick="setFilter('video_ready',this)">🎥 Video Ready</button>
-    <button class="filter-btn" onclick="setFilter('published',this)">🚀 Published</button>
-    <button class="filter-btn" onclick="setFilter('rejected',this)">❌ Rejected</button>
-    <button class="filter-btn" onclick="setFilter('my-idea',this)">💡 My Ideas</button>
+    <button class="filter-btn" onclick="setFilter('pending',this)">Pending</button>
+    <button class="filter-btn" onclick="setFilter('generating',this)">Generating</button>
+    <button class="filter-btn" onclick="setFilter('script_ready',this)">Script Ready</button>
+    <button class="filter-btn" onclick="setFilter('script_approved',this)">Script Approved</button>
+    <button class="filter-btn" onclick="setFilter('images_ready',this)">Images Ready</button>
+    <button class="filter-btn" onclick="setFilter('video_ready',this)">Video Ready</button>
+    <button class="filter-btn" onclick="setFilter('published',this)">Published</button>
     <div class="filter-divider"></div>
-    <select class="niche-sel" onchange="setNiche(this.value)">
-      <option value="all">All categories</option>
-      <option value="tamil_politics">Tamil Politics</option>
-      <option value="tamil_cinema">Tamil Cinema</option>
-      <option value="indian_politics">Indian Politics</option>
-      <option value="indian_cinema">Indian Cinema</option>
-      <option value="geopolitics">Geopolitics</option>
-      <option value="stock_market">Stock Market</option>
-      <option value="viral_global">Viral Global</option>
+    <select class="module-sel" id="module-sel" onchange="render()">
+      <option value="all">All Modules</option>
+      <option value="Module 1: The 4 States">Module 1</option>
+      <option value="Module 2: Advaita Vedanta">Module 2</option>
+      <option value="Module 3: Modern Science">Module 3</option>
+      <option value="Module 4: Social Reform">Module 4</option>
+      <option value="Module 5: Animal Consciousness">Module 5</option>
+      <option value="Module 6: Practical Life">Module 6</option>
+    </select>
+    <select class="pillar-sel" id="pillar-sel" onchange="render()">
+      <option value="all">All Pillars</option>
+      <option value="Wisdom">Wisdom</option>
+      <option value="Social">Social</option>
+      <option value="Compassion">Compassion</option>
+      <option value="Daily">Daily</option>
+      <option value="Wisdom/Compassion">Wisdom/Compassion</option>
     </select>
   </div>
+  <div class="gen-all-progress" id="gen-progress">
+    <span id="gen-progress-text">Queueing episodes...</span>
+    <div class="gen-progress-bar"><div class="gen-progress-fill" id="gen-progress-fill"></div></div>
+  </div>
 </div>
 
-<div class="main"><div id="container"><div class="loading"><div class="loading-spinner"></div><div>Loading...</div></div></div></div>
+<!-- ── Main ── -->
+<div class="main" id="main">
+  <div class="empty-state"><div class="empty-icon">🌀</div><p>Loading episodes...</p></div>
+</div>
 
-<script>
-const SB_URL='https://alfuvzlmatfkgdrkeqgk.supabase.co';
-const SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFsZnV2emxtYXRma2dkcmtlcWdrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc5OTkzOTQsImV4cCI6MjA5MzU3NTM5NH0.JtxVTVdjR3vPWooM41xM1MCvJNH7WDnFjzfowjuDiRg';
-const H={'apikey':SB_KEY,'Authorization':`Bearer ${SB_KEY}`,'Content-Type':'application/json'};
-let filter='all',niche='all',stories=[];
-const FORMATS=[
-  {key:'yt_long',  label:'YT Long',  icon:'▶', ta:'script_youtube_tamil',       en:'script_youtube_english'},
-  {key:'yt_short', label:'YT Short', icon:'⚡', ta:'script_youtube_short_tamil', en:'script_youtube_short_english'},
-  {key:'reels',    label:'Reels',    icon:'📱', ta:'script_reel_tamil',          en:'script_reel_english'},
-  {key:'meme',     label:'Meme',     icon:'😄', ta:'script_meme_tamil',          en:'script_meme_english'},
-  {key:'x_thread', label:'X Thread', icon:'𝕏',  ta:'script_x_thread',            en:'script_x_thread_english'},
-  {key:'x_post',   label:'X Post',   icon:'𝕏',  ta:'script_x_post',              en:'script_x_post_english'},
-];
-const FMT_LABELS={yt_long:'▶ YT Long',yt_short:'⚡ YT Short',reels:'📱 Reels',meme:'😄 Meme',x_thread:'𝕏 Thread',x_post:'𝕏 Post'};
-const STATUS_LABELS={pending:'⏳ Pending',approved:'🔄 Generating',scripted:'📄 Scripted',ready:'✅ Ready',creating:'🎬 Creating',created:'🌟 Created',published_ready:'⏳ Render Queue',video_ready:'🎥 Video Ready',published:'🚀 Published',rejected:'❌ Rejected'};
-
-async function load(){
-  try{
-    let url;
-    if(filter==='rejected')      url=`${SB_URL}/rest/v1/content_queue?select=*&status=eq.rejected&order=created_at.desc&limit=200`;
-    else if(filter==='my-idea')  url=`${SB_URL}/rest/v1/content_queue?select=*&source_name=eq.💡 My Idea&order=created_at.desc&limit=100`;
-    else if(['created','published_ready','video_ready','published'].includes(filter))
-                                 url=`${SB_URL}/rest/v1/content_queue?select=*&status=eq.${filter}&order=created_at.desc&limit=100`;
-    else                         url=`${SB_URL}/rest/v1/content_queue?select=*&status=neq.rejected&order=published_at.desc.nullslast,created_at.desc&limit=1000`;
-    const r=await fetch(url,{headers:H});
-    if(!r.ok) throw new Error(`HTTP ${r.status}`);
-    stories=await r.json();
-    updateStats(); render();
-  }catch(e){
-    document.getElementById('container').innerHTML=`<div class="empty"><div class="empty-icon">⚠️</div><h3>${e.message}</h3></div>`;
-  }
-}
-
-function updateStats(){
-  fetch(`${SB_URL}/rest/v1/content_queue?select=status`,{headers:H}).then(r=>r.json()).then(rows=>{
-    document.getElementById('stat-p').textContent=`⏳ ${rows.filter(s=>s.status==='pending').length} pending`;
-    document.getElementById('stat-s').textContent=`📄 ${rows.filter(s=>s.status==='scripted').length} scripted`;
-    document.getElementById('stat-r').textContent=`✅ ${rows.filter(s=>s.status==='ready').length} ready`;
-    document.getElementById('stat-c').textContent=`🌟 ${rows.filter(s=>s.status==='created').length} created`;
-    document.getElementById('stat-v').textContent=`🎥 ${rows.filter(s=>s.status==='video_ready').length} videos`;
-  }).catch(()=>{});
-}
-
-function setFilter(f,btn){filter=f;document.querySelectorAll('.filter-btn').forEach(b=>b.classList.remove('active'));btn.classList.add('active');load();}
-function setNiche(n){niche=n;render();}
-function getFiltered(){
-  return stories.filter(s=>{
-    const isIdea=s.source_name==='💡 My Idea';
-    const sm=filter==='all'||s.status===filter||(filter==='my-idea'&&isIdea);
-    return sm&&(niche==='all'||s.niche===niche);
-  });
-}
-
-function render(){
-  const list=getFiltered();
-  const c=document.getElementById('container');
-  if(!list.length){
-    const msgs={pending:'No hot news yet — scanner runs at 8:30 AM IST.',published_ready:'No stories in render queue.',video_ready:'No videos ready yet — GitHub Actions renders every 3 hours.'};
-    c.innerHTML=`<div class="empty"><div class="empty-icon">📭</div><h3>Nothing here</h3><p style="color:var(--muted);font-size:13px;margin-top:6px">${msgs[filter]||'Try a different filter.'}</p></div>`;
-    return;
-  }
-  const groups={};
-  list.forEach(s=>{
-    const d=new Date(s.created_at);
-    const l=isToday(d)?'Today':isYesterday(d)?'Yesterday':d.toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric'});
-    (groups[l]=groups[l]||[]).push(s);
-  });
-  let html='';
-  for(const[l,g] of Object.entries(groups)){
-    html+=`<div class="date-label">${l} · ${g.length} stories</div><div class="stories-grid">`;
-    g.forEach(s=>{html+=buildCard(s);});
-    html+='</div>';
-  }
-  c.innerHTML=html;
-}
-
-function buildCard(s){
-  const isIdea=s.source_name==='💡 My Idea';
-  const nc=`niche-${s.niche||'general'}`;
-  const sc=s.viral_score>=70?'score-high':s.viral_score>=45?'score-mid':'score-low';
-  const cls=s.status==='pending'&&isIdea?'my-idea-pending':s.status;
-  const src=s.source_url?`<a href="${s.source_url}" target="_blank">${esc(s.source_name||'Source')}</a> · ${pubDate(s.published_at||s.created_at)}`:`${esc(s.source_name||'Scanner')} · ${pubDate(s.created_at)}`;
-
-  let body='';
-  if(s.status==='pending'||s.status==='rejected') body=pendingActions(s);
-  else if(s.status==='approved')                  body=`<div class="generating-banner"><span class="spin">⚙️</span> Generating scripts — ready in ~30 min.</div>`;
-  else if(s.status==='scripted')                  body=scriptedActions(s)+scriptsPanel(s)+regenPanel(s);
-  else if(s.status==='ready')                     body=readyReview(s);
-  else if(s.status==='creating')                  body=`<div class="generating-banner"><span class="spin">🎬</span> Creating content packages — ready in ~5 min.</div>`;
-  else if(s.status==='created')                   body=createdActions(s)+contentPreview(s);
-  else if(s.status==='published_ready')           body=renderQueueBanner(s);
-  else if(s.status==='video_ready')               body=videoReadyActions(s)+videoPreview(s);
-  else if(s.status==='published')                 body=`<div class="card-actions"><span style="font-size:12px;color:var(--purple);font-family:'DM Mono',monospace">🚀 Published ${ago(s.published_at||s.created_at)}</span></div>`;
-
-  let badges='';
-  if(s.status==='pending'){
-    const recs=safeJson(s.recommended_formats);
-    if(recs.length) badges=`<div class="rec-formats"><span class="rec-label">Rec:</span>${recs.map(f=>`<span class="rec-badge">${FMT_LABELS[f]||f}</span>`).join('')}</div>`;
-  } else if(['scripted','ready'].includes(s.status)&&FORMATS.some(f=>s[f.ta]||s[f.en])){
-    badges=`<div class="script-badges">${FORMATS.map(f=>{const d=s[f.ta]||s[f.en];return`<span class="sc-badge ${d?'done':'missing'}">${f.icon} ${f.label}${d?' ✓':''}</span>`;}).join('')}</div>`;
-  }
-
-  return `<div class="story-card ${cls}" id="card-${s.id}">
-    <div class="card-header">
-      <div class="card-meta">
-        <span class="status-badge sb-${s.status}">${STATUS_LABELS[s.status]||s.status}</span>
-        ${isIdea?'<span class="niche-tag tag-idea">💡 My Idea</span>':''}
-        <span class="niche-tag ${nc}">${s.niche||'general'}</span>
-        <span class="viral-score ${sc}">🔥 ${s.viral_score||50}</span>
+<!-- ── Script Review Modal ── -->
+<div class="modal-overlay" id="modal-overlay" onclick="closeModal(event)">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-ep-info">
+        <div class="modal-ep-num" id="modal-ep-num">Episode —</div>
+        <div class="modal-title" id="modal-title">—</div>
+        <div class="modal-subtitle" id="modal-subtitle">—</div>
       </div>
-      <div class="card-title">${esc(s.title)}</div>
-      ${s.summary?`<div class="card-summary">${esc(s.summary)}</div>`:''}
-      <div class="card-source">${src}</div>
-      ${badges}
+      <button class="modal-close" onclick="closeModal()">✕</button>
     </div>
-    ${body}
-  </div>`;
-}
 
-/* ── Card body builders ──────────────────────────────────────────────────── */
-function pendingActions(s){
-  return `<div class="card-actions">
-    <button class="btn btn-approve" onclick="approve('${s.id}')">✅ Approve</button>
-    <button class="btn btn-reject"  onclick="reject('${s.id}')">❌ Reject</button>
-    <div class="feedback-row">
-      <input class="feedback-input" id="fb-${s.id}" placeholder="Optional note..." value="${esc(s.feedback||'')}">
-      <button class="btn-send" onclick="sendFeedback('${s.id}')">Send to AI</button>
+    <div class="modal-lang-tabs" id="modal-lang-tabs">
+      <button class="modal-lang-tab active-ta" id="mtab-ta" onclick="switchModalLang('ta')">🇮🇳 Tamil Script</button>
+      <button class="modal-lang-tab" id="mtab-en" onclick="switchModalLang('en')">🇬🇧 English Script</button>
     </div>
-  </div>`;
-}
 
-function scriptedActions(s){
-  const has=FORMATS.some(f=>s[f.ta]||s[f.en]);
-  return `<div class="card-actions">
-    <button class="btn btn-ready"    onclick="markReady('${s.id}')">✅ Mark as Ready</button>
-    <button class="btn btn-reject"   onclick="reject('${s.id}')">❌ Reject</button>
-    <button class="btn btn-scripts ${has?'has':''}" onclick="toggleScripts('${s.id}')">📄 Review Scripts ▼</button>
-    <button class="btn btn-regenerate" onclick="toggleRegen('${s.id}')">🔄 Regenerate All</button>
-  </div>`;
-}
+    <div class="modal-body">
+      <div id="modal-script-ta">
+        <div class="script-text" id="script-content-ta"></div>
+        <div class="regen-section" id="regen-ta">
+          <div class="regen-label">REGENERATION NOTE — TAMIL</div>
+          <textarea class="regen-textarea" id="regen-note-ta" placeholder="e.g. Make the hook more emotional, reference Thiruvalluvar in the opening..."></textarea>
+          <div class="regen-actions">
+            <button class="btn btn-generate" onclick="submitRegen('ta')">⚡ Regenerate Tamil</button>
+            <button class="btn btn-regen" onclick="toggleRegen('ta')">Cancel</button>
+            <label class="save-pref-q">
+              <input type="checkbox" id="save-pref-ta"> Save as permanent preference?
+            </label>
+          </div>
+        </div>
+      </div>
 
-function readyReview(s){
-  const fmtTabs=FORMATS.map((f,i)=>`<div class="fmt-tab ${s[f.ta]||s[f.en]?'has':''} ${i===0?'active':''}" id="ftab-${s.id}-${f.key}" onclick="switchFmt('${s.id}','${f.key}')">${f.icon} ${f.label}</div>`).join('');
-  const fmtPanels=FORMATS.map((f,i)=>`<div class="fmt-panel ${i===0?'active':''}" id="fpanel-${s.id}-${f.key}">
-    <div class="lang-tabs">
-      <div class="lang-tab ${s[f.ta]?'has':''} active" id="ltab-${s.id}-${f.key}-ta" onclick="switchLang('${s.id}','${f.key}','ta')">🇮🇳 Tamil</div>
-      <div class="lang-tab ${s[f.en]?'has':''}"        id="ltab-${s.id}-${f.key}-en" onclick="switchLang('${s.id}','${f.key}','en')">🇬🇧 English</div>
+      <div id="modal-script-en" style="display:none;">
+        <div class="script-text" id="script-content-en"></div>
+        <div class="regen-section" id="regen-en">
+          <div class="regen-label">REGENERATION NOTE — ENGLISH</div>
+          <textarea class="regen-textarea" id="regen-note-en" placeholder="e.g. More conversational tone, stronger opening hook..."></textarea>
+          <div class="regen-actions">
+            <button class="btn btn-generate" onclick="submitRegen('en')">⚡ Regenerate English</button>
+            <button class="btn btn-regen" onclick="toggleRegen('en')">Cancel</button>
+            <label class="save-pref-q">
+              <input type="checkbox" id="save-pref-en"> Save as permanent preference?
+            </label>
+          </div>
+        </div>
+      </div>
     </div>
-    <div class="script-area">
-      <div class="lang-panel active" id="lpanel-${s.id}-${f.key}-ta">${scriptDisplay(s.id,f.key,'ta',f.ta,s[f.ta])}</div>
-      <div class="lang-panel"        id="lpanel-${s.id}-${f.key}-en">${scriptDisplay(s.id,f.key,'en',f.en,s[f.en])}</div>
-    </div>
-  </div>`).join('');
-  const approved=safeJson(s.formats);
-  const fmtRows=FORMATS.map(f=>{
-    const has=!!(s[f.ta]||s[f.en]);
-    const isApp=approved.includes(f.key);
-    const badge=isApp?'<span class="fmt-review-status frs-approved">✅ Approved</span>':has?'<span class="fmt-review-status frs-ready">📄 Ready</span>':'<span class="fmt-review-status frs-missing">⏳ No script</span>';
-    const btn=has?`<button class="btn-fmt-approve ${isApp?'approved':''}" id="fapprove-${s.id}-${f.key}" onclick="toggleFmtApprove('${s.id}','${f.key}')">${isApp?'✅':'Approve'}</button>`:'';
-    return `<div class="fmt-review-row"><span class="fmt-review-label">${f.icon} ${f.label}</span>${badge}${btn}</div>`;
-  }).join('');
-  return `<div class="review-header">
-    <div><div class="review-title">📋 Content Review</div><div class="review-sub">Review scripts → approve formats → create content.</div></div>
-    <div class="review-actions">
-      <button class="btn-back-scripted" onclick="backToScripted('${s.id}')">← Back</button>
-      <button class="btn btn-create" onclick="createContent('${s.id}')">🎬 Create Content</button>
+
+    <div class="modal-footer">
+      <button class="btn btn-approve" id="modal-approve-btn" onclick="approveScript()">✓ Approve Script</button>
+      <button class="btn btn-regen" id="modal-regen-btn" onclick="openRegen()">↺ Regenerate</button>
+      <span class="modal-status-note" id="modal-status-note"></span>
     </div>
   </div>
-  <div class="per-fmt-review"><div class="per-fmt-title">Format approvals</div>${fmtRows}</div>
-  <div style="border-top:1px solid var(--border)"><div class="format-tabs">${fmtTabs}</div><div id="fpanels-${s.id}">${fmtPanels}</div></div>`;
+</div>
+
+<!-- ── Toast ── -->
+<div class="toast" id="toast"></div>
+
+<script>
+// ── Config ──────────────────────────────────────────────────
+const SB_URL = 'https://alfuvzlmatfkgdrkeqgk.supabase.co';
+const SB_KEY = 'sb_publishable_W6dVLZyqGI60qF6nDchJWg_kv2ZFfhn';
+const EDGE_FN = `${SB_URL}/functions/v1/trigger-script-gen`;
+
+const H = {
+  'apikey': SB_KEY,
+  'Authorization': `Bearer ${SB_KEY}`,
+  'Content-Type': 'application/json'
+};
+
+// ── State ────────────────────────────────────────────────────
+let lang        = 'ta';   // 'ta' | 'en'
+let filter      = 'all';
+let episodes    = [];
+let modalEp     = null;
+let modalLang   = 'ta';
+
+const TABLE = () => lang === 'ta' ? 'tamil_episodes' : 'english_episodes';
+
+// ── Status config ────────────────────────────────────────────
+const STATUS_LABELS = {
+  pending:              'Pending',
+  generating:           'Generating',
+  script_ready:         'Script Ready',
+  script_approved:      'Script Approved',
+  images_ready:         'Images Ready',
+  images_approved:      'Images Approved',
+  infographic_ready:    'Infographic Ready',
+  infographic_approved: 'Infographic Approved',
+  video_ready:          'Video Ready',
+  video_approved:       'Video Approved',
+  waiting_for_tamil:    'Waiting Tamil',
+  published:            'Published',
+};
+
+const MODULE_NUM = m => {
+  const n = m.match(/Module (\d)/);
+  return n ? parseInt(n[1]) : 1;
+};
+
+// ── Load ─────────────────────────────────────────────────────
+async function load() {
+  showLoader(true);
+  try {
+    const r = await fetch(`${SB_URL}/rest/v1/${TABLE()}?select=*&order=episode_number.asc&limit=200`, { headers: H });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    episodes = await r.json();
+    updateStats();
+    render();
+  } catch(e) {
+    document.getElementById('main').innerHTML = `<div class="empty-state"><div class="empty-icon">⚠️</div><p>Error loading episodes: ${e.message}</p></div>`;
+  }
+  showLoader(false);
 }
 
-function createdActions(s){
-  return `<div class="card-actions">
-    <button class="btn btn-create" onclick="toggleContent('${s.id}')">👁️ Preview Content ▼</button>
-    <button class="btn btn-teal" style="font-weight:600" onclick="sendToRender('${s.id}')">🎥 Send to Video Renderer</button>
-  </div>`;
+// ── Stats ────────────────────────────────────────────────────
+function updateStats() {
+  const chips = document.querySelectorAll('.stat-chip');
+  const counts = {
+    pending: episodes.filter(e => e.status === 'pending').length,
+    script_ready: episodes.filter(e => e.status === 'script_ready').length,
+    script_approved: episodes.filter(e => e.status === 'script_approved').length,
+    video_ready: episodes.filter(e => e.status === 'video_ready').length,
+    published: episodes.filter(e => e.status === 'published').length,
+  };
+  chips[0].textContent = `⏳ ${counts.pending} pending`;
+  chips[1].textContent = `📄 ${counts.script_ready} script ready`;
+  chips[2].textContent = `✅ ${counts.script_approved} approved`;
+  chips[3].textContent = `🎥 ${counts.video_ready} video ready`;
+  chips[4].textContent = `🚀 ${counts.published} published`;
 }
 
-function renderQueueBanner(s){
-  const rs=s.video_render_status||'queued';
-  const rl={queued:'⏳ Waiting for next cycle',rendering:'🔄 Rendering now...',complete:'✅ Done',failed:'❌ Failed'}[rs]||rs;
-  return `<div class="rq-banner">
-    <div class="rq-title"><span class="spin">🎥</span> In Video Render Queue</div>
-    <div class="rq-sub">GitHub Actions picks this up every 3 hours and renders both Tamil &amp; English videos automatically.</div>
-    <span class="rq-status">${rl}</span>
-    ${rs==='failed'?`<br><button class="btn btn-teal" style="margin-top:10px;font-size:12px;padding:6px 14px" onclick="sendToRender('${s.id}')">🔄 Re-queue</button>`:''}
-  </div>`;
-}
+// ── Render ───────────────────────────────────────────────────
+function render() {
+  const moduleSel = document.getElementById('module-sel').value;
+  const pillarSel = document.getElementById('pillar-sel').value;
 
-function videoReadyActions(s){
-  return `<div class="card-actions">
-    <button class="btn btn-teal" onclick="toggleVideoPreview('${s.id}')">🎥 Watch Videos ▼</button>
-    <button class="btn" style="background:var(--teal);color:#0d0f14;font-weight:700;border:none" onclick="markPublished('${s.id}')">🚀 Mark as Published</button>
-  </div>`;
-}
+  let filtered = episodes.filter(ep => {
+    const statusMatch = filter === 'all' || ep.status === filter;
+    const moduleMatch = moduleSel === 'all' || ep.module === moduleSel;
+    const pillarMatch = pillarSel === 'all' || ep.pillar === pillarSel;
+    return statusMatch && moduleMatch && pillarMatch;
+  });
 
-function videoPreview(s){
-  const sid=s.id;
-  const taUrl=s.video_short_tamil||null;
-  const enUrl=s.video_short_english||null;
-
-  function panel(url,lang,flag){
-    if(!url) return `<div class="vp-no-video"><div style="font-size:32px;margin-bottom:8px">🎬</div><div>Video not available yet</div></div>`;
-    return `<video class="vp-player" controls preload="metadata"><source src="${url}" type="video/mp4">Your browser doesn't support video.</video>
-    <div class="vp-meta">${flag} ${lang} · 60 sec · 1080×1920 portrait</div>
-    <div><a class="vp-dl" href="${url}" download="video_short_${lang.toLowerCase()}.mp4" target="_blank">⬇ Download ${lang} MP4</a></div>`;
+  if (!filtered.length) {
+    document.getElementById('main').innerHTML = `<div class="empty-state"><div class="empty-icon">✨</div><p>No episodes in this view</p></div>`;
+    return;
   }
 
-  return `<div class="video-preview" id="vprev-${sid}">
-    <div class="vp-header">
-      <div class="vp-title">🎥 Your Rendered Videos</div>
-      <div class="vp-sub">Review both versions before publishing to YouTube</div>
-    </div>
-    <div class="vp-tabs">
-      <div class="vp-tab active" id="vptab-${sid}-ta" onclick="switchVp('${sid}','ta')">🇮🇳 Tamil Video</div>
-      <div class="vp-tab"       id="vptab-${sid}-en" onclick="switchVp('${sid}','en')">🇬🇧 English Video</div>
-    </div>
-    <div class="vp-panel active" id="vppanel-${sid}-ta">${panel(taUrl,'Tamil','🇮🇳')}</div>
-    <div class="vp-panel"       id="vppanel-${sid}-en">${panel(enUrl,'English','🇬🇧')}</div>
-    <div class="vp-bar">
-      <div class="vp-render-info">render status: ${s.video_render_status||'complete'}</div>
-      <button class="btn" style="background:var(--teal);color:#0d0f14;font-weight:700;border:none;font-size:13px" onclick="markPublished('${sid}')">🚀 Publish to YouTube (Sprint 6)</button>
-    </div>
-  </div>`;
+  // Group by status for bucket view if showing all
+  let html = '';
+  if (filter === 'all') {
+    const ORDER = ['generating','script_ready','script_approved','images_ready','images_approved','infographic_ready','infographic_approved','video_ready','video_approved','published','pending'];
+    const groups = {};
+    filtered.forEach(ep => {
+      const s = ep.status || 'pending';
+      if (!groups[s]) groups[s] = [];
+      groups[s].push(ep);
+    });
+    ORDER.forEach(s => {
+      if (groups[s] && groups[s].length) {
+        const label = STATUS_LABELS[s] || s;
+        const count = groups[s].length;
+        html += `<div class="bucket-label">${label} · ${count} episode${count>1?'s':''}</div>`;
+        html += `<div class="episodes-grid">${groups[s].map(buildCard).join('')}</div>`;
+      }
+    });
+  } else {
+    html = `<div class="episodes-grid">${filtered.map(buildCard).join('')}</div>`;
+  }
+
+  document.getElementById('main').innerHTML = html;
 }
 
-function scriptsPanel(s){
-  const tabs=FORMATS.map((f,i)=>`<div class="fmt-tab ${s[f.ta]||s[f.en]?'has':''} ${i===0?'active':''}" id="ftab-${s.id}-${f.key}" onclick="switchFmt('${s.id}','${f.key}')">${f.icon} ${f.label}</div>`).join('');
-  const panels=FORMATS.map((f,i)=>`<div class="fmt-panel ${i===0?'active':''}" id="fpanel-${s.id}-${f.key}">
-    <div class="lang-tabs">
-      <div class="lang-tab ${s[f.ta]?'has':''} active" id="ltab-${s.id}-${f.key}-ta" onclick="switchLang('${s.id}','${f.key}','ta')">🇮🇳 Tamil</div>
-      <div class="lang-tab ${s[f.en]?'has':''}"        id="ltab-${s.id}-${f.key}-en" onclick="switchLang('${s.id}','${f.key}','en')">🇬🇧 English</div>
-    </div>
-    <div class="script-area">
-      <div class="lang-panel active" id="lpanel-${s.id}-${f.key}-ta">${scriptDisplay(s.id,f.key,'ta',f.ta,s[f.ta])}</div>
-      <div class="lang-panel"        id="lpanel-${s.id}-${f.key}-en">${scriptDisplay(s.id,f.key,'en',f.en,s[f.en])}</div>
-    </div>
-  </div>`).join('');
-  const fmts=safeJson(s.formats);
-  return `<div class="scripts-panel" id="scripts-${s.id}">
-    <div class="format-tabs">${tabs}</div>
-    <div id="fpanels-${s.id}">${panels}</div>
-    <div class="format-picker">
-      <div class="fp-title">Formats to publish</div>
-      <div class="fp-checks" id="fmtpick-${s.id}">
-        ${FORMATS.map(f=>`<label class="fp-check"><input type="checkbox" value="${f.key}" ${fmts.includes(f.key)?'checked':''} onchange="saveFmts('${s.id}')"><label>${f.icon} ${f.label}</label></label>`).join('')}
+// ── Build Card ───────────────────────────────────────────────
+function buildCard(ep) {
+  const modNum = MODULE_NUM(ep.module);
+  const status = ep.status || 'pending';
+  const actions = buildActions(ep, status);
+
+  return `
+  <div class="ep-card st-${status}" id="card-${ep.episode_number}">
+    <div class="ep-header">
+      <div class="ep-num">#${String(ep.episode_number).padStart(3,'0')}</div>
+      <div class="ep-body">
+        <div class="ep-meta">
+          <span class="module-badge mod-${modNum}">M${modNum}</span>
+          <span class="pillar-badge">${ep.pillar||''}</span>
+          <span class="status-badge sb-${status}">${STATUS_LABELS[status]||status}</span>
+        </div>
+        <div class="ep-title-ta">${ep.title_tamil||''}</div>
+        <div class="ep-title-en">${ep.title_english||''}</div>
+        ${ep.bridge ? `<div class="ep-bridge">↳ ${ep.bridge}</div>` : ''}
       </div>
     </div>
+    <div class="ep-actions">${actions}</div>
   </div>`;
 }
 
-function scriptDisplay(sid,fkey,lang,dbCol,content){
-  const uid=`${sid}-${fkey}-${lang}`;
-  if(!content) return `<div class="script-empty">⏳ Script will appear here after generation.</div>`;
-  return `<div id="display-${uid}">
-    <div class="script-text" id="stext-${uid}">${esc(content)}</div>
-    <textarea class="script-edit-area" id="sedit-${uid}">${esc(content)}</textarea>
-    <div class="script-toolbar">
-      <button class="btn-edit" id="bedit-${uid}" onclick="startEdit('${uid}')">✏️ Edit</button>
-      <button class="btn-save-edit" id="bsave-${uid}" onclick="saveEdit('${sid}','${dbCol}','${uid}')">💾 Save</button>
-      <button class="btn-cancel-edit" id="bcancel-${uid}" onclick="cancelEdit('${uid}')">Cancel</button>
-    </div>
-  </div>`;
+// ── Build Actions ────────────────────────────────────────────
+function buildActions(ep, status) {
+  const n = ep.episode_number;
+
+  if (status === 'pending') {
+    return `<button class="btn btn-generate" onclick="generateScript(${n})">⚡ Generate Script</button>`;
+  }
+
+  if (status === 'generating') {
+    return `<div class="generating-banner"><span class="spin">⚙️</span> Gemini is generating — check back in a few minutes</div>`;
+  }
+
+  if (status === 'script_ready') {
+    return `
+      <button class="btn btn-review" onclick="openModal(${n})">📄 Review Script</button>
+      <button class="btn btn-approve" onclick="quickApprove(${n},'script_approved')">✓ Approve Script</button>`;
+  }
+
+  if (status === 'script_approved') {
+    if (lang === 'ta') {
+      return `
+        <button class="btn btn-review" onclick="openModal(${n})">📄 View Script</button>
+        <button class="btn btn-disabled" disabled>🖼 Generate Images — next sprint</button>`;
+    } else {
+      return `
+        <button class="btn btn-review" onclick="openModal(${n})">📄 View Script</button>
+        <div class="waiting-banner">⏳ Waiting for Tamil video to complete before auto-generating</div>`;
+    }
+  }
+
+  if (status === 'video_ready') {
+    return `
+      <button class="btn btn-preview" onclick="previewVideo(${n})">▶ Preview Video</button>
+      <button class="btn btn-approve" onclick="quickApprove(${n},'video_approved')">✓ Approve for YouTube</button>`;
+  }
+
+  if (status === 'video_approved') {
+    return `<button class="btn btn-youtube" onclick="uploadYouTube(${n})">▲ Upload to YouTube</button>`;
+  }
+
+  if (status === 'published') {
+    const url = ep.youtube_url;
+    return url
+      ? `<a href="${url}" target="_blank" class="btn btn-youtube" style="text-decoration:none;">▶ Watch on YouTube</a>`
+      : `<span style="font-size:12px;color:var(--accent2);font-family:'JetBrains Mono',monospace;">🚀 Published</span>`;
+  }
+
+  if (status === 'waiting_for_tamil') {
+    return `<div class="waiting-banner">⏳ Waiting for Tamil Episode ${n} to be published first</div>`;
+  }
+
+  return `<span style="font-size:12px;color:var(--muted);font-family:'JetBrains Mono',monospace;">${STATUS_LABELS[status]||status}</span>`;
 }
 
-function regenPanel(s){
-  return `<div class="regen-panel" id="regen-${s.id}">
-    <div class="regen-header">🔄 Regenerate All Formats from Your Edited YT Long</div>
-    <p style="font-size:12px;color:var(--muted);margin-bottom:14px">Edit and save YT Long Tamil first. All 11 other formats will be rewritten to match.</p>
-    <div class="regen-actions">
-      <button class="btn-keep-new" onclick="requestRegen('${s.id}')">🔄 Yes, Regenerate All</button>
-      <button class="btn-keep-old" onclick="toggleRegen('${s.id}')">Cancel</button>
-    </div>
-  </div>`;
+// ── Language Switch ──────────────────────────────────────────
+function setLang(l) {
+  lang = l;
+  document.getElementById('btn-ta').className = 'lang-btn' + (l==='ta'?' active-ta':'');
+  document.getElementById('btn-en').className = 'lang-btn' + (l==='en'?' active-en':'');
+  load();
 }
 
-function contentPreview(s){
-  const ytl=safeObj(s.content_yt_long),yts=safeObj(s.content_yt_short),rl=safeObj(s.content_reels),mm=safeObj(s.content_meme),xt=safeObj(s.content_x_thread),xp=safeObj(s.content_x_post);
-  const sid=s.id;
-  const tabs=`<div class="cp-tabs">
-    <div class="cp-tab active" id="cptab-${sid}-yt_long"  onclick="switchCp('${sid}','yt_long')">▶ YT Long</div>
-    <div class="cp-tab"       id="cptab-${sid}-yt_short" onclick="switchCp('${sid}','yt_short')">⚡ YT Short</div>
-    <div class="cp-tab"       id="cptab-${sid}-reels"    onclick="switchCp('${sid}','reels')">📱 Reels</div>
-    <div class="cp-tab"       id="cptab-${sid}-meme"     onclick="switchCp('${sid}','meme')">😄 Meme</div>
-    <div class="cp-tab"       id="cptab-${sid}-x_thread" onclick="switchCp('${sid}','x_thread')">𝕏 Thread</div>
-    <div class="cp-tab"       id="cptab-${sid}-x_post"   onclick="switchCp('${sid}','x_post')">𝕏 Post</div>
-  </div>`;
-  function langToggle(sid,tab){return `<div class="cp-lang-toggle"><button class="cp-lang-btn active" data-lang="ta" onclick="cpLang('${sid}','${tab}','ta')">🇮🇳 Tamil</button><button class="cp-lang-btn" data-lang="en" onclick="cpLang('${sid}','${tab}','en')">🇬🇧 English</button></div>`;}
-  function field(label,val){return `<div class="cp-field"><span class="cp-label">${label}</span><div class="cp-value">${esc(val||'—')}</div></div>`;}
-  const ytlP=`<div class="cp-panel active" id="cppanel-${sid}-yt_long">
-    ${langToggle(sid,'yt_long')}
-    <div data-lang-panel="ta">${field('Title',ytl.title_tamil)}${field('Description',ytl.description_tamil)}${field('Thumbnail',ytl.thumbnail_text_tamil||ytl.thumbnail_text)}
-      <div class="cp-field"><span class="cp-label">Chapters</span>${safeArr(ytl.chapters_tamil||ytl.chapters).map(c=>`<div class="cp-chapter"><span class="cp-chapter-time">${esc(c.time)}</span><span>${esc(c.title)}</span></div>`).join('')||'—'}</div>
-    </div>
-    <div data-lang-panel="en" style="display:none">${field('Title',ytl.title_english)}${field('Description',ytl.description_english)}${field('Thumbnail',ytl.thumbnail_text_english||ytl.thumbnail_text)}
-      <div class="cp-field"><span class="cp-label">Chapters</span>${safeArr(ytl.chapters_english||ytl.chapters).map(c=>`<div class="cp-chapter"><span class="cp-chapter-time">${esc(c.time)}</span><span>${esc(c.title)}</span></div>`).join('')||'—'}</div>
-    </div>
-    <div class="cp-field"><span class="cp-label">Tags</span><div class="cp-tags">${(ytl.tags||[]).map(t=>`<span class="cp-tag">${esc(t)}</span>`).join('')}</div></div>
-  </div>`;
-  const ytsP=`<div class="cp-panel" id="cppanel-${sid}-yt_short">
-    ${langToggle(sid,'yt_short')}
-    <div data-lang-panel="ta">${field('Hook',yts.hook_tamil)}${field('Caption',yts.caption_tamil)}</div>
-    <div data-lang-panel="en" style="display:none">${field('Hook',yts.hook_english)}${field('Caption',yts.caption_english)}</div>
-    <div class="cp-field"><span class="cp-label">Scenes</span>${(yts.scenes||[]).map(sc=>`<div class="cp-scene"><div class="cp-scene-num">Scene ${sc.scene} · ${esc(sc.duration)}</div><div class="cp-scene-row"><span>Text overlay:</span><span>${esc(sc.text_overlay||'')}</span></div><div class="cp-scene-row"><span>Visual:</span><span>${esc(sc.visual||'')}</span></div></div>`).join('')}</div>
-    <div class="cp-field"><span class="cp-label">Hashtags</span><div class="cp-tags">${(yts.hashtags||[]).map(t=>`<span class="cp-tag">${esc(t)}</span>`).join('')}</div></div>
-  </div>`;
-  const rlP=`<div class="cp-panel" id="cppanel-${sid}-reels">
-    ${langToggle(sid,'reels')}
-    <div data-lang-panel="ta">${field('Hook',rl.hook_tamil)}${field('Caption',rl.caption_tamil)}</div>
-    <div data-lang-panel="en" style="display:none">${field('Hook',rl.hook_english)}${field('Caption',rl.caption_english)}</div>
-    <div class="cp-field"><span class="cp-label">Scenes</span>${(rl.scenes||[]).map(sc=>`<div class="cp-scene"><div class="cp-scene-num">Scene ${sc.scene}</div><div class="cp-scene-row"><span>Narration:</span><span>${esc(sc.narration||'')}</span></div><div class="cp-scene-row"><span>Visual:</span><span>${esc(sc.visual_direction||'')}</span></div></div>`).join('')}</div>
-  </div>`;
-  const mmP=`<div class="cp-panel" id="cppanel-${sid}-meme">
-    ${mm.image_base64?`<div class="cp-meme-img"><img src="data:image/png;base64,${mm.image_base64}" alt="Meme"/></div>`:''}
-    ${field('Top Text (Tamil)',mm.top_text)}${field('Bottom Text (Tamil)',mm.bottom_text)}
-    ${field('Top Text (English)',mm.top_text_english)}${field('Bottom Text (English)',mm.bottom_text_english)}
-    ${field('Viral Caption',mm.viral_caption)}
-  </div>`;
-  const xtP=`<div class="cp-panel" id="cppanel-${sid}-x_thread">
-    ${langToggle(sid,'x_thread')}
-    <div data-lang-panel="ta">${(xt.thread_tamil||[]).map(t=>`<div class="cp-tweet"><div class="cp-tweet-num">Tweet ${t.tweet}</div>${esc(t.text||'')}</div>`).join('')||'—'}</div>
-    <div data-lang-panel="en" style="display:none">${(xt.thread_english||[]).map(t=>`<div class="cp-tweet"><div class="cp-tweet-num">Tweet ${t.tweet}</div>${esc(t.text||'')}</div>`).join('')||'—'}</div>
-  </div>`;
-  const xpP=`<div class="cp-panel" id="cppanel-${sid}-x_post">
-    ${langToggle(sid,'x_post')}
-    <div data-lang-panel="ta">${field('Post',xp.post_tamil)}</div>
-    <div data-lang-panel="en" style="display:none">${field('Post',xp.post_english)}</div>
-  </div>`;
-  return `<div class="content-preview" id="content-${sid}">
-    ${tabs}${ytlP}${ytsP}${rlP}${mmP}${xtP}${xpP}
-    <div class="cp-approve-bar">
-      <button class="btn-cp-approve" onclick="sendToRender('${sid}')">🎥 Send to Video Renderer →</button>
-    </div>
-  </div>`;
+// ── Filter ───────────────────────────────────────────────────
+function setFilter(f, btn) {
+  filter = f;
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  render();
 }
 
-/* ── Toggle / switch helpers ─────────────────────────────────────────────── */
-function toggleScripts(id){const p=document.getElementById(`scripts-${id}`);p.classList.toggle('open');if(p.classList.contains('open'))switchFmt(id,FORMATS[0].key);}
-function toggleRegen(id){document.getElementById(`regen-${id}`)?.classList.toggle('open');}
-function toggleContent(id){document.getElementById(`content-${id}`)?.classList.toggle('open');}
-function toggleVideoPreview(id){document.getElementById(`vprev-${id}`)?.classList.toggle('open');}
-function switchFmt(sid,fkey){FORMATS.forEach(f=>{document.getElementById(`ftab-${sid}-${f.key}`)?.classList.toggle('active',f.key===fkey);document.getElementById(`fpanel-${sid}-${f.key}`)?.classList.toggle('active',f.key===fkey);});}
-function switchLang(sid,fkey,lang){['ta','en'].forEach(l=>{document.getElementById(`ltab-${sid}-${fkey}-${l}`)?.classList.toggle('active',l===lang);document.getElementById(`lpanel-${sid}-${fkey}-${l}`)?.classList.toggle('active',l===lang);});}
-function switchCp(sid,tab){['yt_long','yt_short','reels','meme','x_thread','x_post'].forEach(t=>{document.getElementById(`cptab-${sid}-${t}`)?.classList.toggle('active',t===tab);document.getElementById(`cppanel-${sid}-${t}`)?.classList.toggle('active',t===tab);});}
-function switchVp(sid,lang){['ta','en'].forEach(l=>{document.getElementById(`vptab-${sid}-${l}`)?.classList.toggle('active',l===lang);document.getElementById(`vppanel-${sid}-${l}`)?.classList.toggle('active',l===lang);});}
-function cpLang(sid,tab,lang){const el=document.getElementById(`cppanel-${sid}-${tab}`);if(!el)return;el.querySelectorAll('.cp-lang-btn').forEach(b=>b.classList.toggle('active',b.dataset.lang===lang));el.querySelectorAll('[data-lang-panel]').forEach(p=>p.style.display=p.dataset.langPanel===lang?'':'none');}
+// ── Generate Script (single) ─────────────────────────────────
+async function generateScript(n) {
+  const card = document.getElementById(`card-${n}`);
+  const btn = card?.querySelector('.btn-generate');
+  if (btn) { btn.disabled = true; btn.textContent = '⚙️ Triggering...'; }
 
-/* ── Edit helpers ────────────────────────────────────────────────────────── */
-function startEdit(uid){const t=document.getElementById(`stext-${uid}`),e=document.getElementById(`sedit-${uid}`);e.value=t.textContent;e.style.display='block';t.style.display='none';document.getElementById(`bedit-${uid}`).style.display='none';document.getElementById(`bsave-${uid}`).style.display='inline-block';document.getElementById(`bcancel-${uid}`).style.display='inline-block';e.focus();}
-function cancelEdit(uid){document.getElementById(`sedit-${uid}`).style.display='none';document.getElementById(`stext-${uid}`).style.display='block';document.getElementById(`bedit-${uid}`).style.display='inline-block';document.getElementById(`bsave-${uid}`).style.display='none';document.getElementById(`bcancel-${uid}`).style.display='none';}
-async function saveEdit(sid,dbCol,uid){const txt=document.getElementById(`sedit-${uid}`).value.trim();if(!txt)return;const r=await fetch(`${SB_URL}/rest/v1/content_queue?id=eq.${sid}`,{method:'PATCH',headers:{...H,'Prefer':'return=minimal'},body:JSON.stringify({[dbCol]:txt})});if(r.ok){document.getElementById(`stext-${uid}`).textContent=txt;const s=stories.find(x=>x.id===sid);if(s)s[dbCol]=txt;cancelEdit(uid);toast('✅ Saved!','ok');}else toast('❌ Save failed','err');}
-
-/* ── Actions ─────────────────────────────────────────────────────────────── */
-async function approve(id){await patch(id,{status:'approved',approved_at:new Date().toISOString()});upd(id,{status:'approved'});updateStats();render();toast('✅ Approved — scripts generating','ok');}
-async function reject(id){await patch(id,{status:'rejected',rejected_at:new Date().toISOString()});upd(id,{status:'rejected'});updateStats();render();}
-async function markReady(id){await patch(id,{status:'ready'});upd(id,{status:'ready'});updateStats();render();toast('✅ Ready!','ok');}
-async function backToScripted(id){await patch(id,{status:'scripted'});upd(id,{status:'scripted'});updateStats();render();toast('↩️ Back to Scripted','ok');}
-async function createContent(id){await patch(id,{status:'creating'});upd(id,{status:'creating'});updateStats();render();toast('🎬 Content creation started — ~5 min','ok');}
-async function sendFeedback(id){const fb=document.getElementById(`fb-${id}`).value.trim();if(!fb)return;await patch(id,{status:'revision',feedback:fb});upd(id,{status:'revision',feedback:fb});updateStats();render();}
-async function saveFmts(id){const c=document.getElementById(`fmtpick-${id}`);const checked=[...c.querySelectorAll('input:checked')].map(i=>i.value);await patch(id,{formats:JSON.stringify(checked)});upd(id,{formats:JSON.stringify(checked)});toast('✅ Formats saved','ok');}
-async function toggleFmtApprove(sid,fkey){const s=stories.find(x=>x.id===sid);if(!s)return;const fmts=safeJson(s.formats);const idx=fmts.indexOf(fkey);if(idx>-1)fmts.splice(idx,1);else fmts.push(fkey);await patch(sid,{formats:JSON.stringify(fmts)});upd(sid,{formats:JSON.stringify(fmts)});render();toast(idx>-1?`Removed ${fkey}`:`✅ ${fkey} approved`,'ok');}
-async function requestRegen(sid){await patch(sid,{regenerate_requested:true});upd(sid,{regenerate_requested:true});document.getElementById(`regen-${sid}`)?.classList.remove('open');toast('🔄 Regeneration queued — ~30 min','ok');}
-async function sendToRender(id){await patch(id,{status:'published_ready',video_render_status:'queued'});upd(id,{status:'published_ready',video_render_status:'queued'});updateStats();render();toast('🎥 In render queue — videos ready in ~3 hrs','ok');}
-async function markPublished(id){await patch(id,{status:'published',published_at:new Date().toISOString()});upd(id,{status:'published'});updateStats();render();toast('🚀 Marked as published!','ok');}
-
-/* ── Idea modal ──────────────────────────────────────────────────────────── */
-function openModal(){document.getElementById('idea-modal').classList.add('open');document.getElementById('idea-title').focus();}
-function closeModal(){document.getElementById('idea-modal').classList.remove('open');document.getElementById('idea-title').value='';document.getElementById('idea-desc').value='';}
-async function submitIdea(){
-  const title=document.getElementById('idea-title').value.trim();
-  if(!title){document.getElementById('idea-title').focus();return;}
-  const btn=document.getElementById('submit-btn');btn.disabled=true;btn.textContent='Adding...';
-  const payload={title,summary:document.getElementById('idea-desc').value.trim()||null,niche:document.getElementById('idea-niche').value,source_name:'💡 My Idea',viral_score:75,status:'pending',language:'both',formats:'[]',recommended_formats:'["yt_long","yt_short","reels","x_post"]',feedback:document.getElementById('idea-format').value};
-  const r=await fetch(`${SB_URL}/rest/v1/content_queue`,{method:'POST',headers:{...H,'Prefer':'return=representation'},body:JSON.stringify(payload)});
-  btn.disabled=false;btn.textContent='Add to Queue ➜';
-  if(r.ok){const[ns]=await r.json();stories.unshift(ns);closeModal();updateStats();render();toast('✅ Idea added!','ok');}
-  else toast('❌ Failed','err');
+  try {
+    const r = await fetch(EDGE_FN, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SB_KEY}` },
+      body: JSON.stringify({ episode_number: n })
+    });
+    const data = await r.json();
+    if (data.success) {
+      await patchEpisode(n, { status: 'generating' });
+      showToast(`Episode ${n} queued — Gemini is working`, 'success');
+      setTimeout(load, 1500);
+    } else {
+      throw new Error(data.error || 'Unknown error');
+    }
+  } catch(e) {
+    showToast(`Error: ${e.message}`, 'error');
+    if (btn) { btn.disabled = false; btn.textContent = '⚡ Generate Script'; }
+  }
 }
 
-/* ── Supabase helpers ────────────────────────────────────────────────────── */
-async function patch(id,data){return fetch(`${SB_URL}/rest/v1/content_queue?id=eq.${id}`,{method:'PATCH',headers:{...H,'Prefer':'return=minimal'},body:JSON.stringify(data)});}
-function upd(id,data){const s=stories.find(x=>x.id===id);if(s)Object.assign(s,data);}
+// ── Generate All Pending ─────────────────────────────────────
+async function generateAll() {
+  const pending = episodes.filter(e => e.status === 'pending');
+  if (!pending.length) { showToast('No pending episodes to generate', 'info'); return; }
 
-/* ── Utilities ───────────────────────────────────────────────────────────── */
-function toast(msg,type='ok'){const t=document.getElementById('toast');t.textContent=msg;t.className=`toast show ${type}`;setTimeout(()=>{t.className='toast';},3500);}
-function esc(s){return s?s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'):'';}
-function safeJson(v){try{return JSON.parse(v||'[]');}catch{return[];}}
-function safeObj(v){if(!v)return{};if(typeof v==='object'&&!Array.isArray(v))return v;try{return JSON.parse(v);}catch{return{};}}
-function safeArr(v){if(!v)return[];if(Array.isArray(v))return v;try{const p=JSON.parse(v);return Array.isArray(p)?p:[];}catch{return[];}}
-function isToday(d){return d.toDateString()===new Date().toDateString();}
-function isYesterday(d){const y=new Date();y.setDate(y.getDate()-1);return d.toDateString()===y.toDateString();}
-function ago(ts){const s=Math.floor((Date.now()-new Date(ts))/1000);if(s<60)return'just now';if(s<3600)return`${Math.floor(s/60)}m ago`;if(s<86400)return`${Math.floor(s/3600)}h ago`;return`${Math.floor(s/86400)}d ago`;}
-function pubDate(ts){if(!ts)return'';const d=new Date(ts),now=new Date();const time=d.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',hour12:true});const y=new Date();y.setDate(now.getDate()-1);if(d.toDateString()===now.toDateString())return`🕐 Today ${time}`;if(d.toDateString()===y.toDateString())return`🕐 Yesterday ${time}`;return`🕐 ${d.toLocaleDateString('en-IN',{day:'numeric',month:'short'})} ${time}`;}
+  const btn = document.getElementById('btn-gen-all');
+  btn.disabled = true;
+  btn.textContent = `⚙️ Queueing ${pending.length}...`;
 
+  const prog = document.getElementById('gen-progress');
+  const fill = document.getElementById('gen-progress-fill');
+  const txt  = document.getElementById('gen-progress-text');
+  prog.classList.add('show');
+
+  let done = 0;
+  for (const ep of pending) {
+    txt.textContent = `Triggering Episode ${ep.episode_number} (${done+1}/${pending.length})...`;
+    fill.style.width = `${Math.round((done/pending.length)*100)}%`;
+    try {
+      await fetch(EDGE_FN, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SB_KEY}` },
+        body: JSON.stringify({ episode_number: ep.episode_number })
+      });
+      await patchEpisode(ep.episode_number, { status: 'generating' });
+    } catch(e) { /* continue */ }
+    done++;
+    await delay(2000); // 2s between each to avoid rate limits
+  }
+
+  fill.style.width = '100%';
+  txt.textContent = `✅ All ${done} episodes queued!`;
+  btn.disabled = false;
+  btn.textContent = '⚡ Generate All Pending';
+  showToast(`${done} episodes queued for generation`, 'success');
+  setTimeout(() => { prog.classList.remove('show'); load(); }, 3000);
+}
+
+// ── Quick Approve (without modal) ───────────────────────────
+async function quickApprove(n, newStatus) {
+  try {
+    await patchEpisode(n, { status: newStatus });
+    showToast(`Episode ${n} → ${STATUS_LABELS[newStatus]}`, 'success');
+    load();
+  } catch(e) {
+    showToast(`Error: ${e.message}`, 'error');
+  }
+}
+
+// ── Modal ────────────────────────────────────────────────────
+function openModal(n) {
+  const ep = episodes.find(e => e.episode_number === n);
+  if (!ep) return;
+  modalEp = ep;
+  modalLang = lang; // start on current language tab
+
+  document.getElementById('modal-ep-num').textContent = `Episode ${n} · ${ep.module}`;
+  document.getElementById('modal-title').textContent = ep.title_tamil;
+  document.getElementById('modal-subtitle').textContent = ep.title_english;
+
+  const tScript = ep.script_tamil || ep.script_english || '';
+  const eScript = ep.script_english || '';
+
+  document.getElementById('script-content-ta').textContent = tScript || '— Script not generated yet —';
+  if (!tScript) document.getElementById('script-content-ta').className = 'script-empty';
+  else document.getElementById('script-content-ta').className = 'script-text';
+
+  document.getElementById('script-content-en').textContent = eScript || '— English script not generated yet —';
+  if (!eScript) document.getElementById('script-content-en').className = 'script-empty';
+  else document.getElementById('script-content-en').className = 'script-text';
+
+  // Reset regen panels
+  document.getElementById('regen-ta').classList.remove('open');
+  document.getElementById('regen-en').classList.remove('open');
+  document.getElementById('regen-note-ta').value = '';
+  document.getElementById('regen-note-en').value = '';
+  document.getElementById('save-pref-ta').checked = false;
+  document.getElementById('save-pref-en').checked = false;
+
+  // Status note
+  const s = ep.status || 'pending';
+  document.getElementById('modal-status-note').textContent = `status: ${STATUS_LABELS[s]||s}`;
+
+  // Approve button label
+  document.getElementById('modal-approve-btn').textContent =
+    s === 'script_ready' ? '✓ Approve Script' : '✓ Approved ✅';
+  document.getElementById('modal-approve-btn').disabled = s === 'script_approved';
+
+  switchModalLang(lang);
+  document.getElementById('modal-overlay').classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+
+function switchModalLang(l) {
+  modalLang = l;
+  document.getElementById('modal-script-ta').style.display = l==='ta' ? 'block' : 'none';
+  document.getElementById('modal-script-en').style.display = l==='en' ? 'block' : 'none';
+  document.getElementById('mtab-ta').className = 'modal-lang-tab' + (l==='ta' ? ' active-ta' : '');
+  document.getElementById('mtab-en').className = 'modal-lang-tab' + (l==='en' ? ' active-en' : '');
+
+  // In English mode, hide approve (handled separately), show only regen
+  if (l === 'en' && lang === 'ta') {
+    document.getElementById('modal-approve-btn').style.display = 'none';
+  } else {
+    document.getElementById('modal-approve-btn').style.display = '';
+  }
+}
+
+function closeModal(event) {
+  if (event && event.target !== document.getElementById('modal-overlay')) return;
+  document.getElementById('modal-overlay').classList.remove('open');
+  document.body.style.overflow = '';
+  modalEp = null;
+}
+
+function openRegen() {
+  const panel = document.getElementById(`regen-${modalLang}`);
+  panel.classList.toggle('open');
+}
+function toggleRegen(l) {
+  document.getElementById(`regen-${l}`).classList.remove('open');
+}
+
+async function approveScript() {
+  if (!modalEp) return;
+  const n = modalEp.episode_number;
+  const table = TABLE();
+  try {
+    await patchTable(table, n, { status: 'script_approved', script_approved_at: new Date().toISOString() });
+    // Also approve English table if we're in Tamil mode (English script was generated together)
+    if (lang === 'ta') {
+      await patchTable('english_episodes', n, { status: 'script_ready' });
+    }
+    showToast(`Episode ${n} script approved ✓`, 'success');
+    closeModal();
+    load();
+  } catch(e) {
+    showToast(`Error: ${e.message}`, 'error');
+  }
+}
+
+async function submitRegen(l) {
+  if (!modalEp) return;
+  const n = modalEp.episode_number;
+  const note = document.getElementById(`regen-note-${l}`).value.trim();
+  if (!note) { showToast('Please enter a regeneration note', 'error'); return; }
+
+  const savePref = document.getElementById(`save-pref-${l}`).checked;
+
+  try {
+    // Save preference if requested
+    if (savePref) {
+      const cat = detectPrefCategory(note);
+      await fetch(`${SB_URL}/rest/v1/channel_preferences`, {
+        method: 'POST',
+        headers: H,
+        body: JSON.stringify({ category: cat, preference: note, episode_number: n, is_active: true })
+      });
+      showToast(`Preference saved: [${cat}]`, 'info');
+    }
+
+    // Save regen note and reset status to pending
+    const table = l === 'ta' ? 'tamil_episodes' : 'english_episodes';
+    await patchTable(table, n, {
+      regenerate_note: note,
+      status: 'pending',
+      script_tamil: null,
+      script_english: null
+    });
+
+    // Trigger regeneration
+    await fetch(EDGE_FN, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SB_KEY}` },
+      body: JSON.stringify({ episode_number: n })
+    });
+
+    await patchTable(table, n, { status: 'generating' });
+    showToast(`Episode ${n} queued for regeneration`, 'success');
+    closeModal();
+    load();
+  } catch(e) {
+    showToast(`Error: ${e.message}`, 'error');
+  }
+}
+
+function detectPrefCategory(note) {
+  const n = note.toLowerCase();
+  if (/image|visual|photo|scene|colour|color|style/.test(n)) return 'image';
+  if (/voice|audio|tone|speed|pace|narrat/.test(n)) return 'voice';
+  if (/infograph|svg|diagram|chart/.test(n)) return 'infographic';
+  return 'script';
+}
+
+// ── Placeholder actions (future sprints) ─────────────────────
+function previewVideo(n) {
+  const ep = episodes.find(e => e.episode_number === n);
+  if (ep?.video_url) window.open(ep.video_url, '_blank');
+  else showToast('Video URL not available', 'info');
+}
+
+async function uploadYouTube(n) {
+  showToast('YouTube upload — coming in next sprint', 'info');
+}
+
+// ── Supabase helpers ─────────────────────────────────────────
+async function patchEpisode(n, data) {
+  return patchTable(TABLE(), n, data);
+}
+
+async function patchTable(table, n, data) {
+  const r = await fetch(`${SB_URL}/rest/v1/${table}?episode_number=eq.${n}`, {
+    method: 'PATCH',
+    headers: { ...H, 'Prefer': 'return=minimal' },
+    body: JSON.stringify(data)
+  });
+  if (!r.ok) throw new Error(`Supabase error ${r.status}`);
+}
+
+// ── Utilities ────────────────────────────────────────────────
+function showLoader(on) {
+  document.getElementById('loadbar').classList.toggle('show', on);
+}
+
+function showToast(msg, type='info') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = `toast ${type}`;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 3500);
+}
+
+const delay = ms => new Promise(r => setTimeout(r, ms));
+
+// Keyboard close modal
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    document.getElementById('modal-overlay').classList.remove('open');
+    document.body.style.overflow = '';
+    modalEp = null;
+  }
+});
+
+// ── Init ─────────────────────────────────────────────────────
 load();
+setInterval(load, 60000); // refresh every 60s
 </script>
 </body>
 </html>
