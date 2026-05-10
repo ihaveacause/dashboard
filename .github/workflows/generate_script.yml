@@ -1,0 +1,34 @@
+name: Generate Episode Script
+
+on:
+  workflow_dispatch:
+    inputs:
+      episode_number:
+        description: 'Episode number to generate script for'
+        required: true
+        type: string
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install requests google-generativeai
+
+      - name: Generate script
+        env:
+          SUPABASE_URL:  ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY:  ${{ secrets.SUPABASE_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          EPISODE_NUMBER: ${{ inputs.episode_number }}
+        run: python script_generator.py
