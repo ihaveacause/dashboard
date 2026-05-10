@@ -778,7 +778,9 @@ body {
 // ── Config ──────────────────────────────────────────────────
 const SB_URL = 'https://alfuvzlmatfkgdrkeqgk.supabase.co';
 const SB_KEY = 'sb_publishable_W6dVLZyqGI60qF6nDchJWg_kv2ZFfhn';
-const EDGE_FN = `${SB_URL}/functions/v1/trigger-script-gen`;
+const EDGE_FN       = `${SB_URL}/functions/v1/trigger-script-gen`;
+const EDGE_IMG_FN   = `${SB_URL}/functions/v1/trigger-image-gen`;
+const EDGE_VIDEO_FN = `${SB_URL}/functions/v1/trigger-video-gen`;
 
 const H = {
   'apikey': SB_KEY,
@@ -937,12 +939,32 @@ function buildActions(ep, status) {
     if (lang === 'ta') {
       return `
         <button class="btn btn-review" onclick="openModal(${n})">📄 View Script</button>
-        <button class="btn btn-disabled" disabled>🖼 Generate Images — next sprint</button>`;
+        <button class="btn btn-preview" onclick="generateImages(${n})">🖼 Generate Images</button>`;
     } else {
       return `
         <button class="btn btn-review" onclick="openModal(${n})">📄 View Script</button>
-        <div class="waiting-banner">⏳ Waiting for Tamil video to complete before auto-generating</div>`;
+        <div class="waiting-banner">⏳ Waiting for Tamil video to complete</div>`;
     }
+  }
+
+  if (status === 'generating_images') {
+    return `<div class="generating-banner"><span class="spin">🎨</span> Imagen 3 generating cosmic scenes — check back in ~5 min</div>`;
+  }
+
+  if (status === 'images_ready') {
+    return `
+      <button class="btn btn-review" onclick="openImagesModal(${n})">🖼 Review Images</button>
+      <button class="btn btn-approve" onclick="quickApprove(${n},'images_approved')">✓ Approve Images</button>`;
+  }
+
+  if (status === 'images_approved') {
+    return `
+      <button class="btn btn-review" onclick="openImagesModal(${n})">🖼 View Images</button>
+      <button class="btn btn-preview" onclick="generateVideo(${n})">🎬 Generate Video</button>`;
+  }
+
+  if (status === 'rendering_video') {
+    return `<div class="generating-banner"><span class="spin">🎬</span> FFmpeg rendering video — check back in ~15 min</div>`;
   }
 
   if (status === 'video_ready') {
@@ -1070,6 +1092,15 @@ function openModal(n) {
   document.getElementById('modal-ep-num').textContent = `Episode ${n} · ${ep.module}`;
   document.getElementById('modal-title').textContent = ep.title_tamil;
   document.getElementById('modal-subtitle').textContent = ep.title_english;
+
+  // Reset any image modal customisations
+  document.getElementById('modal-lang-tabs').style.display = '';
+  document.getElementById('script-content-ta').style.whiteSpace = '';
+  document.getElementById('script-content-ta').style.background = '';
+  document.getElementById('script-content-ta').style.border = '';
+  document.getElementById('script-content-ta').style.padding = '';
+  document.getElementById('modal-regen-btn').style.display = '';
+  document.getElementById('modal-approve-btn').onclick = approveScript;
 
   const tScript = ep.script_tamil || ep.script_english || '';
   const eScript = ep.script_english || '';
@@ -1205,11 +1236,115 @@ function detectPrefCategory(note) {
   return 'script';
 }
 
-// ── Placeholder actions (future sprints) ─────────────────────
+// ── Generate Images ──────────────────────────────────────────
+async function generateImages(n) {
+  try {
+    await patchEpisode(n, { status: 'generating_images' });
+    const r = await fetch(EDGE_IMG_FN, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SB_KEY}` },
+      body: JSON.stringify({ episode_number: n })
+    });
+    const data = await r.json();
+    if (data.success) {
+      showToast(`Episode ${n} — Imagen 3 generating cosmic scenes`, 'success');
+      setTimeout(load, 2000);
+    } else throw new Error(data.error || 'Unknown error');
+  } catch(e) {
+    showToast(`Error: ${e.message}`, 'error');
+    await patchEpisode(n, { status: 'script_approved' });
+  }
+}
+
+// ── Generate Video ───────────────────────────────────────────
+async function generateVideo(n) {
+  try {
+    await patchEpisode(n, { status: 'rendering_video' });
+    const r = await fetch(EDGE_VIDEO_FN, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SB_KEY}` },
+      body: JSON.stringify({ episode_number: n })
+    });
+    const data = await r.json();
+    if (data.success) {
+      showToast(`Episode ${n} — FFmpeg assembling video`, 'success');
+      setTimeout(load, 2000);
+    } else throw new Error(data.error || 'Unknown error');
+  } catch(e) {
+    showToast(`Error: ${e.message}`, 'error');
+    await patchEpisode(n, { status: 'images_approved' });
+  }
+}
+
+// ── Images Review Modal ──────────────────────────────────────
+function openImagesModal(n) {
+  const ep = episodes.find(e => e.episode_number === n);
+  if (!ep) return;
+
+  let imageData = [];
+  try {
+    imageData = typeof ep.image_urls === 'string'
+      ? JSON.parse(ep.image_urls)
+      : (ep.image_urls || []);
+  } catch(e) { imageData = []; }
+
+  let svgData = null;
+  try {
+    svgData = typeof ep.infographic_svg === 'string'
+      ? JSON.parse(ep.infographic_svg)
+      : ep.infographic_svg;
+  } catch(e) {}
+
+  const imgHtml = imageData.map((img, i) => `
+    <div style="margin-bottom:20px;">
+      <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted);margin-bottom:8px;">
+        Scene ${img.id} — ${img.label}
+      </div>
+      <img src="${img.url}" style="width:100%;border-radius:10px;border:1px solid var(--border2);" loading="lazy"/>
+      <div style="font-size:11px;color:var(--muted);margin-top:6px;font-style:italic;">${img.prompt||''}</div>
+    </div>
+  `).join('');
+
+  const svgHtml = svgData ? `
+    <div style="margin-bottom:20px;">
+      <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted);margin-bottom:8px;">
+        SVG Infographic — 4 States of Consciousness
+      </div>
+      <div style="background:var(--surface2);border:1px solid var(--border2);border-radius:10px;padding:16px;overflow:hidden;">
+        ${svgData.svg || '<p style="color:var(--muted);font-size:12px;">SVG not available</p>'}
+      </div>
+    </div>
+  ` : '';
+
+  // Use script modal but repurpose for images
+  document.getElementById('modal-ep-num').textContent = `Episode ${n} · ${ep.module}`;
+  document.getElementById('modal-title').textContent = '🖼 Image Review';
+  document.getElementById('modal-subtitle').textContent = ep.title_english;
+  document.getElementById('modal-lang-tabs').style.display = 'none';
+  document.getElementById('modal-script-ta').style.display = 'block';
+  document.getElementById('modal-script-en').style.display = 'none';
+  document.getElementById('script-content-ta').innerHTML = imgHtml + svgHtml;
+  document.getElementById('script-content-ta').style.whiteSpace = 'normal';
+  document.getElementById('script-content-ta').style.background = 'none';
+  document.getElementById('script-content-ta').style.border = 'none';
+  document.getElementById('script-content-ta').style.padding = '0';
+  document.getElementById('modal-approve-btn').textContent = '✓ Approve Images';
+  document.getElementById('modal-approve-btn').disabled = ep.status === 'images_approved';
+  document.getElementById('modal-approve-btn').onclick = () => {
+    quickApprove(n, 'images_approved');
+    closeModal();
+  };
+  document.getElementById('modal-regen-btn').style.display = 'none';
+  document.getElementById('modal-status-note').textContent = `status: ${ep.status}`;
+  document.getElementById('modal-overlay').classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+
+// ── Video Preview ────────────────────────────────────────────
 function previewVideo(n) {
   const ep = episodes.find(e => e.episode_number === n);
-  if (ep?.video_url) window.open(ep.video_url, '_blank');
-  else showToast('Video URL not available', 'info');
+  if (!ep?.video_url) { showToast('Video URL not available', 'info'); return; }
+  window.open(ep.video_url, '_blank');
 }
 
 async function uploadYouTube(n) {
