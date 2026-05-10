@@ -1,34 +1,50 @@
 """
-I Have a Cause — Image Pipeline
-=================================
-Triggered by GitHub Actions with EPISODE_NUMBER input.
-Flow:
-  1. Fetch episode + approved script from tamil_episodes
-  2. Fetch active channel_preferences
-  3. Gemini → generates 5 cosmic/surreal scene descriptions
-  4. Imagen 3 → generates each scene image
-  5. Gemini → generates SVG infographic (4 states concentric diagram)
-  6. Upload all to Supabase Storage bucket 'episode-images'
-  7. Save image_urls + infographic_svg to tamil_episodes
-  8. status → images_ready
+I Have a Cause — Image Pipeline (Vertex AI)
+============================================
+Uses Vertex AI Imagen 3 for high quality cosmic/surreal images
+and Gemini for SVG infographic generation.
 """
 
 import os
 import json
 import base64
 import requests
+import tempfile
 from google import genai
 from google.genai import types
+from google.oauth2 import service_account
+import google.auth.transport.requests
 from datetime import datetime
+from pathlib import Path
 
 # ── Config ─────────────────────────────────────────────────
 SUPABASE_URL   = os.environ["SUPABASE_URL"]
 SUPABASE_KEY   = os.environ["SUPABASE_KEY"]
 GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
 EPISODE_NUMBER = int(os.environ["EPISODE_NUMBER"])
+GCP_CREDS_JSON = os.environ["GOOGLE_APPLICATION_CREDENTIALS_JSON"]
 
-client = genai.Client(api_key=GEMINI_API_KEY)
+PROJECT_ID = "gen-lang-client-0078128013"
+LOCATION   = "us-central1"
 
+# ── Clients ─────────────────────────────────────────────────
+# Gemini client (for scene descriptions + SVG)
+gemini_client = genai.Client(api_key=GEMINI_API_KEY)
+
+# Vertex AI credentials (for Imagen 3)
+creds_info = json.loads(GCP_CREDS_JSON)
+credentials = service_account.Credentials.from_service_account_info(
+    creds_info,
+    scopes=["https://www.googleapis.com/auth/cloud-platform"]
+)
+
+def get_vertex_token():
+    """Get fresh access token for Vertex AI REST calls."""
+    auth_req = google.auth.transport.requests.Request()
+    credentials.refresh(auth_req)
+    return credentials.token
+
+# ── Supabase helpers ────────────────────────────────────────
 SB_HEADERS = {
     "apikey":        SUPABASE_KEY,
     "Authorization": f"Bearer {SUPABASE_KEY}",
@@ -37,7 +53,6 @@ SB_HEADERS = {
 }
 REST = f"{SUPABASE_URL}/rest/v1"
 
-# ── Supabase helpers ────────────────────────────────────────
 def db_get(table, params):
     r = requests.get(
         f"{REST}/{table}",
@@ -46,11 +61,10 @@ def db_get(table, params):
     )
     return r.json() if r.status_code == 200 else []
 
-def db_patch(table, episode_number, data):
+def db_patch(table, n, data):
     r = requests.patch(
-        f"{REST}/{table}?episode_number=eq.{episode_number}",
-        headers=SB_HEADERS,
-        json=data, timeout=15
+        f"{REST}/{table}?episode_number=eq.{n}",
+        headers=SB_HEADERS, json=data, timeout=15
     )
     return r.status_code in (200, 204)
 
@@ -83,13 +97,12 @@ def fetch_preferences():
         "is_active": "eq.true",
         "select": "category,preference"
     })
-    image_prefs = [r["preference"] for r in rows if r["category"] == "image"]
-    return "\n".join(f"- {p}" for p in image_prefs) if image_prefs else ""
+    prefs = [r["preference"] for r in rows if r["category"] == "image"]
+    return "\n".join(f"- {p}" for p in prefs) if prefs else ""
 
-# ── Step 1: Generate scene descriptions ─────────────────────
+# ── Step 1: Scene descriptions ──────────────────────────────
 def generate_scene_descriptions(episode, prefs):
     print(f"\n🎨 Step 1: Generating scene descriptions...")
-
     pref_block = f"\n\nIMAGE PREFERENCES:\n{prefs}" if prefs else ""
 
     prompt = f"""You are a visual director for "I Have a Cause" — a Tamil philosophy YouTube channel.
@@ -98,92 +111,93 @@ Episode: {episode['episode_number']} — {episode['title_english']}
 Tamil Title: {episode['title_tamil']}
 Module: {episode['module']}
 Bridge: {episode['bridge']}
-Script excerpt (first 800 chars): {str(episode.get('script_tamil',''))[:800]}{pref_block}
+Script (first 800 chars): {str(episode.get('script_tamil',''))[:800]}{pref_block}
 
-VISUAL STYLE MANDATE:
-- Cosmic/surreal aesthetic — the human as a fragile, tiny being inside vast cosmic consciousness
+VISUAL STYLE:
+- Cosmic/surreal — human as fragile being inside vast cosmic consciousness
 - Abstract dream states, ethereal light, infinite space
-- Deep blues, purples, indigo, gold light rays, nebulae, geometric sacred patterns
-- NOT realistic photography — painterly, cinematic, otherworldly
-- Each image must feel like a different dimension of consciousness
+- Deep blues, purples, indigo, gold light rays, nebulae, sacred geometry
+- Painterly and cinematic, NOT realistic photography
 
-Generate EXACTLY 5 scene image prompts for Imagen 3. Each prompt should be 2-3 sentences, highly detailed and visual.
-
-Return ONLY valid JSON, no markdown:
+Generate EXACTLY 5 scene prompts for Imagen 3. Return ONLY valid JSON:
 {{
   "scenes": [
-    {{
-      "id": 1,
-      "label": "Hook — Opening Image",
-      "prompt": "detailed Imagen 3 prompt here"
-    }},
-    {{
-      "id": 2,
-      "label": "Waking State",
-      "prompt": "detailed Imagen 3 prompt here"
-    }},
-    {{
-      "id": 3,
-      "label": "Dream State",
-      "prompt": "detailed Imagen 3 prompt here"
-    }},
-    {{
-      "id": 4,
-      "label": "Deep Sleep / Prajna",
-      "prompt": "detailed Imagen 3 prompt here"
-    }},
-    {{
-      "id": 5,
-      "label": "Turiya — Pure Consciousness",
-      "prompt": "detailed Imagen 3 prompt here"
-    }}
+    {{"id": 1, "label": "Hook — Opening Image", "prompt": "detailed prompt"}},
+    {{"id": 2, "label": "Waking State — Vaishvanara", "prompt": "detailed prompt"}},
+    {{"id": 3, "label": "Dream State — Taijasa", "prompt": "detailed prompt"}},
+    {{"id": 4, "label": "Deep Sleep — Prajna", "prompt": "detailed prompt"}},
+    {{"id": 5, "label": "Pure Consciousness — Turiya", "prompt": "detailed prompt"}}
   ]
 }}"""
 
-    response = client.models.generate_content(
-        model="gemini-2.5-flash",
-        contents=prompt
+    response = gemini_client.models.generate_content(
+        model="gemini-2.5-flash", contents=prompt
     )
     raw = response.text.strip().replace("```json","").replace("```","").strip()
     data = json.loads(raw)
-    scenes = data["scenes"]
-    print(f"   ✅ {len(scenes)} scene descriptions generated")
-    return scenes
+    print(f"   ✅ {len(data['scenes'])} scene descriptions generated")
+    return data["scenes"]
 
-# ── Step 2: Generate images with Imagen 3 ──────────────────
-def generate_images(scenes, episode_number):
-    print(f"\n🖼  Step 2: Generating {len(scenes)} images with Imagen 3...")
+# ── Step 2: Imagen 3 via Vertex AI REST API ─────────────────
+def generate_image_vertex(prompt, scene_id):
+    """Call Imagen 3 via Vertex AI REST API directly."""
+    token = get_vertex_token()
+
+    full_prompt = (
+        f"{prompt} "
+        f"Cinematic 16:9, cosmic surreal philosophy art, "
+        f"deep space atmosphere, painterly, ethereal glow, "
+        f"ultra detailed, award winning digital art."
+    )
+
+    url = (
+        f"https://{LOCATION}-aiplatform.googleapis.com/v1/"
+        f"projects/{PROJECT_ID}/locations/{LOCATION}/"
+        f"publishers/google/models/imagen-3.0-generate-001:predict"
+    )
+
+    payload = {
+        "instances": [{"prompt": full_prompt}],
+        "parameters": {
+            "sampleCount": 1,
+            "aspectRatio": "16:9",
+            "outputMimeType": "image/jpeg",
+            "safetyFilterLevel": "block_few",
+            "personGeneration": "allow_adult"
+        }
+    }
+
+    r = requests.post(
+        url,
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json"
+        },
+        json=payload,
+        timeout=120
+    )
+
+    if r.status_code == 200:
+        data = r.json()
+        b64 = data["predictions"][0]["bytesBase64Encoded"]
+        return base64.b64decode(b64)
+    else:
+        print(f"      ❌ Vertex API error {r.status_code}: {r.text[:300]}")
+        return None
+
+def generate_images(scenes):
+    print(f"\n🖼  Step 2: Generating {len(scenes)} images with Imagen 3 (Vertex AI)...")
     image_urls = []
 
     for scene in scenes:
         print(f"   Scene {scene['id']}: {scene['label']}...")
         try:
-            # Add style suffix to every prompt
-            full_prompt = (
-                f"{scene['prompt']} "
-                f"Cinematic 16:9, cosmic surreal, digital art, "
-                f"deep space atmosphere, painterly, ethereal glow, "
-                f"ultra detailed, award winning photography style."
-            )
-
-            response = client.models.generate_images(
-                model="imagen-3.0-generate-001",
-                prompt=full_prompt,
-                config=types.GenerateImagesConfig(
-                    number_of_images=1,
-                    aspect_ratio="16:9",
-                    output_mime_type="image/jpeg",
-                    safety_filter_level="block_only_high",
-                )
-            )
-
-            if not response.generated_images:
-                print(f"      ⚠️  No image generated for scene {scene['id']}")
+            image_bytes = generate_image_vertex(scene["prompt"], scene["id"])
+            if not image_bytes:
                 continue
 
-            image_bytes = response.generated_images[0].image.image_bytes
-            storage_path = f"ep{str(episode_number).zfill(3)}/scene_{scene['id']}.jpg"
-            url = upload_to_storage("episode-images", storage_path, image_bytes, "image/jpeg")
+            storage_path = f"ep{EPISODE_NUMBER:03d}/scene_{scene['id']}.jpg"
+            url = upload_to_storage("episode-images", storage_path, image_bytes)
 
             if url:
                 image_urls.append({
@@ -193,71 +207,54 @@ def generate_images(scenes, episode_number):
                     "prompt": scene["prompt"]
                 })
                 print(f"      ✅ Uploaded: {storage_path}")
-            else:
-                print(f"      ❌ Upload failed for scene {scene['id']}")
-
         except Exception as e:
-            print(f"      ❌ Error on scene {scene['id']}: {e}")
-            continue
+            print(f"      ❌ Scene {scene['id']} error: {e}")
 
-    print(f"   ✅ {len(image_urls)}/{len(scenes)} images generated and uploaded")
+    print(f"   ✅ {len(image_urls)}/{len(scenes)} images generated")
     return image_urls
 
-# ── Step 3: Generate SVG Infographic ───────────────────────
+# ── Step 3: SVG Infographic ─────────────────────────────────
 def generate_svg_infographic(episode):
     print(f"\n📊 Step 3: Generating SVG infographic...")
 
-    prompt = f"""You are a data visualization expert for "I Have a Cause" — a Tamil philosophy YouTube channel.
+    prompt = f"""Create a stunning SVG infographic (1920x1080px) for this Tamil philosophy episode.
 
 Episode: {episode['episode_number']} — {episode['title_english']}
-Module: {episode['module']}
 Bridge: {episode['bridge']}
 
-Create a stunning SVG infographic (1920x1080px) that visualizes the core concept of this episode.
+DESIGN:
+- 4 concentric circles, same plane, superimposed, one inside the other
+- Outermost to innermost: Vaishvanara (Waking), Taijasa (Dream), Prajna (Deep Sleep), Turiya (Pure Consciousness)
+- Deep space black background with star field
+- Rings in gold/amber/indigo/white glow with SVG gradients and filter blur
+- Tamil + English labels for each ring
+- Single pure white light point at center (Turiya)
+- "I Have a Cause" watermark bottom right
+- Feeling: looking at the universe from inside consciousness
 
-DESIGN MANDATE:
-- 4 concentric circles all in the same plane, superimposed, one inside the other
-- All circles share the same center point — like rings of a ripple or tree rings
-- From outermost to innermost: Vaishvanara (Waking), Taijasa (Dream), Prajna (Deep Sleep), Turiya (Pure Consciousness)
-- Cosmic color palette: deep space black background, rings in gold/amber/indigo/white glow
-- Each ring has a label inside or beside it in both Tamil and English
-- A single point of pure white light at the very center (Turiya)
-- Subtle star field in background
-- Channel watermark "I Have a Cause" in bottom right
-- The visual feeling: you are looking at the universe from inside consciousness
-- Use SVG gradients, glows (filter blur), and transparency for depth
+Return ONLY the SVG code starting with <svg and ending with </svg>."""
 
-Return ONLY the complete SVG code starting with <svg and ending with </svg>.
-No markdown, no explanation, just the SVG."""
-
-    response = client.models.generate_content(
-        model="gemini-2.5-flash",
-        contents=prompt
+    response = gemini_client.models.generate_content(
+        model="gemini-2.5-flash", contents=prompt
     )
-
     svg = response.text.strip()
-    # Clean up if wrapped in markdown
     if "```svg" in svg:
         svg = svg.split("```svg")[1].split("```")[0].strip()
     elif "```" in svg:
         svg = svg.split("```")[1].split("```")[0].strip()
 
-    # Upload SVG to storage
-    svg_bytes = svg.encode("utf-8")
-    storage_path = f"ep{str(episode['episode_number']).zfill(3)}/infographic.svg"
-    url = upload_to_storage("episode-images", storage_path, svg_bytes, "image/svg+xml")
-
-    if url:
-        print(f"   ✅ Infographic uploaded: {storage_path}")
-    else:
-        print(f"   ❌ Infographic upload failed")
-
+    storage_path = f"ep{EPISODE_NUMBER:03d}/infographic.svg"
+    url = upload_to_storage(
+        "episode-images", storage_path,
+        svg.encode("utf-8"), "image/svg+xml"
+    )
+    print(f"   {'✅' if url else '❌'} Infographic {'uploaded' if url else 'failed'}")
     return svg, url
 
 # ── Main ────────────────────────────────────────────────────
 def main():
     print("=" * 60)
-    print(f"🖼  Image Pipeline — Episode {EPISODE_NUMBER}")
+    print(f"🖼  Image Pipeline (Vertex AI) — Episode {EPISODE_NUMBER}")
     print(f"   {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("=" * 60)
 
@@ -266,47 +263,32 @@ def main():
         print(f"❌ Episode {EPISODE_NUMBER} not found")
         return
 
-    if episode.get("status") != "script_approved":
-        print(f"⚠️  Episode status is '{episode.get('status')}' — expected 'script_approved'")
-        print("   Proceeding anyway...")
-
     print(f"\n📖 {episode['title_english']}")
     print(f"   Bridge: {episode['bridge']}")
 
-    # Mark as generating
     db_patch("tamil_episodes", EPISODE_NUMBER, {"status": "generating_images"})
-
     prefs = fetch_preferences()
-    if prefs:
-        print(f"\n📋 Image preferences loaded")
 
     try:
-        # Step 1: Scene descriptions
-        scenes = generate_scene_descriptions(episode, prefs)
-
-        # Step 2: Imagen 3 images
-        image_urls = generate_images(scenes, EPISODE_NUMBER)
-
-        # Step 3: SVG infographic
-        svg_content, svg_url = generate_svg_infographic(episode)
+        scenes     = generate_scene_descriptions(episode, prefs)
+        image_urls = generate_images(scenes)
+        svg, svg_url = generate_svg_infographic(episode)
 
         if not image_urls:
             print("❌ No images generated — aborting")
             db_patch("tamil_episodes", EPISODE_NUMBER, {"status": "script_approved"})
             return
 
-        # Save to Supabase
         ok = db_patch("tamil_episodes", EPISODE_NUMBER, {
             "image_urls":      json.dumps(image_urls),
-            "infographic_svg": json.dumps({"svg": svg_content, "url": svg_url}),
+            "infographic_svg": json.dumps({"svg": svg, "url": svg_url}),
             "status":          "images_ready",
         })
 
         if ok:
             print(f"\n{'='*60}")
-            print(f"✅ Episode {EPISODE_NUMBER} — Images ready for review!")
-            print(f"   {len(image_urls)} images + infographic uploaded")
-            print(f"   Open dashboard to review and approve images.")
+            print(f"✅ Episode {EPISODE_NUMBER} — {len(image_urls)} images ready!")
+            print(f"   Open dashboard to review and approve.")
             print(f"{'='*60}")
         else:
             print("❌ Failed to save to Supabase")
