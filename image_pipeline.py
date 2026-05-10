@@ -202,11 +202,21 @@ def generate_image_vertex(prompt, scene_id):
         print(f"      ❌ Vertex API error {r.status_code}: {r.text[:300]}")
         return None
 
-def generate_images(scenes):
-    print(f"\n🖼  Step 2: Generating {len(scenes)} images with Imagen 3 (Vertex AI)...")
-    image_urls = []
+def generate_images(scenes, existing_urls=None):
+    print(f"\n🖼  Step 2: Generating images with Imagen 3 (Vertex AI)...")
 
-    for scene in scenes:
+    # Start with any already-generated images
+    image_urls = existing_urls or []
+    existing_ids = {img["id"] for img in image_urls}
+    missing = [s for s in scenes if s["id"] not in existing_ids]
+
+    if not missing:
+        print(f"   ✅ All {len(scenes)} images already exist — skipping")
+        return image_urls
+
+    print(f"   Already have: {sorted(existing_ids)} — Generating missing: {[s['id'] for s in missing]}")
+
+    for scene in missing:
         print(f"   Scene {scene['id']}: {scene['label']}...")
         try:
             image_bytes = call_gemini_with_retry(
@@ -217,7 +227,7 @@ def generate_images(scenes):
                 continue
 
             import time
-            time.sleep(5)  # Avoid Vertex AI rate limiting between images
+            time.sleep(10)  # Avoid Vertex AI rate limiting between images
 
             storage_path = f"ep{EPISODE_NUMBER:03d}/scene_{scene['id']}.jpg"
             url = upload_to_storage("episode-images", storage_path, image_bytes)
@@ -296,9 +306,28 @@ def main():
     prefs = fetch_preferences()
 
     try:
-        scenes     = generate_scene_descriptions(episode, prefs)
-        image_urls = generate_images(scenes)
-        svg, svg_url = generate_svg_infographic(episode)
+        scenes = generate_scene_descriptions(episode, prefs)
+
+        # Load any already-generated images to avoid regenerating them
+        existing = []
+        if episode.get("image_urls"):
+            try:
+                existing = json.loads(episode["image_urls"]) if isinstance(episode["image_urls"], str) else episode["image_urls"]
+                if existing:
+                    print(f"   📦 Found {len(existing)} existing images — will only generate missing ones")
+            except:
+                existing = []
+
+        image_urls = generate_images(scenes, existing)
+        # Only generate SVG if it doesn't already exist
+        existing_svg = episode.get("infographic_svg")
+        if existing_svg:
+            print(f"
+📊 Step 3: SVG already exists — skipping")
+            svg      = json.loads(existing_svg).get("svg","") if isinstance(existing_svg, str) else existing_svg.get("svg","")
+            svg_url  = json.loads(existing_svg).get("url","") if isinstance(existing_svg, str) else existing_svg.get("url","")
+        else:
+            svg, svg_url = generate_svg_infographic(episode)
 
         if not image_urls:
             print("❌ No images generated — aborting")
