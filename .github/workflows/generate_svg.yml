@@ -1,0 +1,40 @@
+name: Generate Episode SVG
+
+on:
+  workflow_dispatch:
+    inputs:
+      episode_number:
+        description: 'Episode number'
+        required: true
+        type: string
+      regen_note:
+        description: 'What to change in the infographic'
+        required: false
+        type: string
+        default: ''
+
+jobs:
+  generate-svg:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install requests google-genai
+
+      - name: Generate SVG
+        env:
+          SUPABASE_URL:   ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY:   ${{ secrets.SUPABASE_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          EPISODE_NUMBER: ${{ inputs.episode_number }}
+          REGEN_NOTE:     ${{ inputs.regen_note }}
+        run: python svg_generator.py
