@@ -784,14 +784,23 @@ const EDGE_IMG_FN   = `${SB_URL}/functions/v1/trigger-image-gen`;
 const EDGE_VIDEO_FN = `${SB_URL}/functions/v1/trigger-video-gen`;
 const EDGE_SVG_FN   = `${SB_URL}/functions/v1/trigger-svg-gen`;
 
+// ── Headers ─────────────────────────────────────────────────
+// H: for regular Supabase REST API calls
 const H = {
   'apikey': SB_KEY,
   'Authorization': `Bearer ${SB_KEY}`,
   'Content-Type': 'application/json'
 };
 
+// EDGE_H: for Edge Function calls — includes apikey required by Supabase gateway
+const EDGE_H = {
+  'apikey': SB_KEY,
+  'Authorization': `Bearer ${SB_KEY}`,
+  'Content-Type': 'application/json'
+};
+
 // ── State ────────────────────────────────────────────────────
-let lang        = 'ta';   // 'ta' | 'en'
+let lang        = 'ta';
 let filter      = 'all';
 let episodes    = [];
 let modalEp     = null;
@@ -869,7 +878,6 @@ function render() {
     return;
   }
 
-  // Group by status for bucket view if showing all
   let html = '';
   if (filter === 'all') {
     const ORDER = ['generating','script_ready','script_approved','images_ready','images_approved','infographic_ready','infographic_approved','video_ready','video_approved','published','pending'];
@@ -926,17 +934,14 @@ function buildActions(ep, status) {
   if (status === 'pending') {
     return `<button class="btn btn-generate" onclick="generateScript(${n})">⚡ Generate Script</button>`;
   }
-
   if (status === 'generating') {
     return `<div class="generating-banner"><span class="spin">⚙️</span> Gemini is generating — check back in a few minutes</div>`;
   }
-
   if (status === 'script_ready') {
     return `
       <button class="btn btn-review" onclick="openModal(${n})">📄 Review Script</button>
       <button class="btn btn-approve" onclick="quickApprove(${n},'script_approved')">✓ Approve Script</button>`;
   }
-
   if (status === 'script_approved') {
     if (lang === 'ta') {
       return `
@@ -948,44 +953,36 @@ function buildActions(ep, status) {
         <div class="waiting-banner">⏳ Waiting for Tamil video to complete</div>`;
     }
   }
-
   if (status === 'generating_images') {
     return `<div class="generating-banner"><span class="spin">🎨</span> Imagen 3 generating cosmic scenes — check back in ~5 min</div>`;
   }
-
   if (status === 'images_ready') {
     return `
       <button class="btn btn-review" onclick="openImagesModal(${n})">🖼 Review Images</button>
       <button class="btn btn-approve" onclick="quickApprove(${n},'images_approved')">✓ Approve Images</button>`;
   }
-
   if (status === 'images_approved') {
     return `
       <button class="btn btn-review" onclick="openImagesModal(${n})">🖼 View Images</button>
       <button class="btn btn-preview" onclick="generateVideo(${n})">🎬 Generate Video</button>`;
   }
-
   if (status === 'rendering_video') {
     return `<div class="generating-banner"><span class="spin">🎬</span> FFmpeg rendering video — check back in ~15 min</div>`;
   }
-
   if (status === 'video_ready') {
     return `
       <button class="btn btn-preview" onclick="previewVideo(${n})">▶ Preview Video</button>
       <button class="btn btn-approve" onclick="quickApprove(${n},'video_approved')">✓ Approve for YouTube</button>`;
   }
-
   if (status === 'video_approved') {
     return `<button class="btn btn-youtube" onclick="uploadYouTube(${n})">▲ Upload to YouTube</button>`;
   }
-
   if (status === 'published') {
     const url = ep.youtube_url;
     return url
       ? `<a href="${url}" target="_blank" class="btn btn-youtube" style="text-decoration:none;">▶ Watch on YouTube</a>`
       : `<span style="font-size:12px;color:var(--accent2);font-family:'JetBrains Mono',monospace;">🚀 Published</span>`;
   }
-
   if (status === 'waiting_for_tamil') {
     return `<div class="waiting-banner">⏳ Waiting for Tamil Episode ${n} to be published first</div>`;
   }
@@ -1018,7 +1015,7 @@ async function generateScript(n) {
   try {
     const r = await fetch(EDGE_FN, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SB_KEY}` },
+      headers: EDGE_H,
       body: JSON.stringify({ episode_number: n })
     });
     const data = await r.json();
@@ -1056,13 +1053,13 @@ async function generateAll() {
     try {
       await fetch(EDGE_FN, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SB_KEY}` },
+        headers: EDGE_H,
         body: JSON.stringify({ episode_number: ep.episode_number })
       });
       await patchEpisode(ep.episode_number, { status: 'generating' });
     } catch(e) { /* continue */ }
     done++;
-    await delay(2000); // 2s between each to avoid rate limits
+    await delay(2000);
   }
 
   fill.style.width = '100%';
@@ -1073,7 +1070,7 @@ async function generateAll() {
   setTimeout(() => { prog.classList.remove('show'); load(); }, 3000);
 }
 
-// ── Quick Approve (without modal) ───────────────────────────
+// ── Quick Approve ────────────────────────────────────────────
 async function quickApprove(n, newStatus) {
   try {
     await patchEpisode(n, { status: newStatus });
@@ -1089,13 +1086,12 @@ function openModal(n) {
   const ep = episodes.find(e => e.episode_number === n);
   if (!ep) return;
   modalEp = ep;
-  modalLang = lang; // start on current language tab
+  modalLang = lang;
 
   document.getElementById('modal-ep-num').textContent = `Episode ${n} · ${ep.module}`;
   document.getElementById('modal-title').textContent = ep.title_tamil;
   document.getElementById('modal-subtitle').textContent = ep.title_english;
 
-  // Reset any image modal customisations
   document.getElementById('modal-lang-tabs').style.display = '';
   document.getElementById('script-content-ta').style.whiteSpace = '';
   document.getElementById('script-content-ta').style.background = '';
@@ -1108,14 +1104,11 @@ function openModal(n) {
   const eScript = ep.script_english || '';
 
   document.getElementById('script-content-ta').textContent = tScript || '— Script not generated yet —';
-  if (!tScript) document.getElementById('script-content-ta').className = 'script-empty';
-  else document.getElementById('script-content-ta').className = 'script-text';
+  document.getElementById('script-content-ta').className = tScript ? 'script-text' : 'script-empty';
 
   document.getElementById('script-content-en').textContent = eScript || '— English script not generated yet —';
-  if (!eScript) document.getElementById('script-content-en').className = 'script-empty';
-  else document.getElementById('script-content-en').className = 'script-text';
+  document.getElementById('script-content-en').className = eScript ? 'script-text' : 'script-empty';
 
-  // Reset regen panels
   document.getElementById('regen-ta').classList.remove('open');
   document.getElementById('regen-en').classList.remove('open');
   document.getElementById('regen-note-ta').value = '';
@@ -1123,11 +1116,8 @@ function openModal(n) {
   document.getElementById('save-pref-ta').checked = false;
   document.getElementById('save-pref-en').checked = false;
 
-  // Status note
   const s = ep.status || 'pending';
   document.getElementById('modal-status-note').textContent = `status: ${STATUS_LABELS[s]||s}`;
-
-  // Approve button label
   document.getElementById('modal-approve-btn').textContent =
     s === 'script_ready' ? '✓ Approve Script' : '✓ Approved ✅';
   document.getElementById('modal-approve-btn').disabled = s === 'script_approved';
@@ -1143,8 +1133,6 @@ function switchModalLang(l) {
   document.getElementById('modal-script-en').style.display = l==='en' ? 'block' : 'none';
   document.getElementById('mtab-ta').className = 'modal-lang-tab' + (l==='ta' ? ' active-ta' : '');
   document.getElementById('mtab-en').className = 'modal-lang-tab' + (l==='en' ? ' active-en' : '');
-
-  // In English mode, hide approve (handled separately), show only regen
   if (l === 'en' && lang === 'ta') {
     document.getElementById('modal-approve-btn').style.display = 'none';
   } else {
@@ -1173,7 +1161,6 @@ async function approveScript() {
   const table = TABLE();
   try {
     await patchTable(table, n, { status: 'script_approved', script_approved_at: new Date().toISOString() });
-    // Also approve English table if we're in Tamil mode (English script was generated together)
     if (lang === 'ta') {
       await patchTable('english_episodes', n, { status: 'script_ready' });
     }
@@ -1194,7 +1181,6 @@ async function submitRegen(l) {
   const savePref = document.getElementById(`save-pref-${l}`).checked;
 
   try {
-    // Save preference if requested
     if (savePref) {
       const cat = detectPrefCategory(note);
       await fetch(`${SB_URL}/rest/v1/channel_preferences`, {
@@ -1205,7 +1191,6 @@ async function submitRegen(l) {
       showToast(`Preference saved: [${cat}]`, 'info');
     }
 
-    // Save regen note and reset status to pending
     const table = l === 'ta' ? 'tamil_episodes' : 'english_episodes';
     await patchTable(table, n, {
       regenerate_note: note,
@@ -1214,10 +1199,9 @@ async function submitRegen(l) {
       script_english: null
     });
 
-    // Trigger regeneration
     await fetch(EDGE_FN, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SB_KEY}` },
+      headers: EDGE_H,
       body: JSON.stringify({ episode_number: n })
     });
 
@@ -1244,7 +1228,7 @@ async function generateImages(n) {
     await patchEpisode(n, { status: 'generating_images' });
     const r = await fetch(EDGE_IMG_FN, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SB_KEY}` },
+      headers: EDGE_H,
       body: JSON.stringify({ episode_number: n })
     });
     const data = await r.json();
@@ -1264,7 +1248,7 @@ async function generateVideo(n) {
     await patchEpisode(n, { status: 'rendering_video' });
     const r = await fetch(EDGE_VIDEO_FN, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SB_KEY}` },
+      headers: EDGE_H,
       body: JSON.stringify({ episode_number: n })
     });
     const data = await r.json();
@@ -1370,7 +1354,6 @@ function openImagesModal(n) {
     </div>
   ` : '';
 
-  // Use script modal but repurpose for images
   document.getElementById('modal-ep-num').textContent = `Episode ${n} · ${ep.module}`;
   document.getElementById('modal-title').textContent = '🖼 Image Review';
   document.getElementById('modal-subtitle').textContent = ep.title_english;
@@ -1386,9 +1369,9 @@ function openImagesModal(n) {
   document.getElementById('modal-approve-btn').disabled = ep.status === 'images_approved';
   document.getElementById('modal-approve-btn').onclick = () => {
     closeModal();
-    quickApprove(n, 'images_approved'); // auto-triggers video
+    quickApprove(n, 'images_approved');
   };
-  document.getElementById('modal-regen-btn').style.display = 'none'; // per-image regen handled inline
+  document.getElementById('modal-regen-btn').style.display = 'none';
   document.getElementById('modal-status-note').textContent = `status: ${ep.status}`;
   document.getElementById('modal-overlay').classList.add('open');
   document.body.style.overflow = 'hidden';
@@ -1434,7 +1417,6 @@ function showToast(msg, type='info') {
 
 const delay = ms => new Promise(r => setTimeout(r, ms));
 
-// Keyboard close modal
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
     document.getElementById('modal-overlay').classList.remove('open');
@@ -1467,11 +1449,10 @@ async function submitInfographicRegen(epNum) {
     showToast('Infographic preference saved ✓', 'info');
   }
 
-  // Trigger SVG-ONLY regeneration — images stay untouched
   try {
     const r = await fetch(EDGE_SVG_FN, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SB_KEY}` },
+      headers: EDGE_H,
       body: JSON.stringify({ episode_number: epNum, regen_note: note })
     });
     const data = await r.json();
@@ -1511,7 +1492,6 @@ async function submitSingleRegen(epNum, sceneId) {
     showToast('Image preference saved ✓', 'info');
   }
 
-  // Store regen note and re-trigger image generation for this episode
   await patchTable('tamil_episodes', epNum, {
     regenerate_note: `Regenerate scene ${sceneId}: ${note}`,
     status: 'script_approved'
@@ -1524,7 +1504,7 @@ async function submitSingleRegen(epNum, sceneId) {
 
 // ── Init ─────────────────────────────────────────────────────
 load();
-setInterval(load, 60000); // refresh every 60s
+setInterval(load, 60000);
 </script>
 </body>
 </html>
