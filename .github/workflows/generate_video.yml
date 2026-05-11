@@ -22,21 +22,22 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Cache pip packages
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-video-${{ hashFiles('**/generate_video.yml') }}
-          restore-keys: ${{ runner.os }}-pip-video-
-
       - name: Install system dependencies
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends \
-            ffmpeg fonts-noto fonts-noto-color-emoji fonts-indic
+            ffmpeg \
+            fonts-noto \
+            fonts-noto-extra \
+            fonts-noto-color-emoji \
+            fonts-indic \
+            libcairo2-dev \
+            libpango1.0-dev \
+            libgdk-pixbuf2.0-dev \
+            libffi-dev
 
       - name: Install Python dependencies
-        run: pip install requests google-auth
+        run: pip install requests google-auth Pillow numpy cairosvg
 
       - name: Render video
         env:
