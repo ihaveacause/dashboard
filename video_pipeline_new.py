@@ -113,6 +113,9 @@ def with_retry(fn, max_retries=4, wait=30):
     for attempt in range(max_retries):
         try:
             return fn()
+        except ValueError as e:
+            # Config errors — don't retry, fail immediately
+            raise
         except Exception as e:
             if attempt < max_retries - 1:
                 print(f"   ⚠️  Attempt {attempt+1} failed: {str(e)[:80]}")
@@ -164,13 +167,11 @@ def generate_voice_neural2(script_text, output_path):
             "input": {"text": chunk},
             "voice": {
                 "languageCode": "ta-IN",
-                "name": "ta-IN-Neural2-A",  # Natural Tamil Neural2 voice
-                "ssmlGender": "MALE"
+                "name": "ta-IN-Chirp3-HD-Charon",  # Best Tamil voice - Chirp3 HD
             },
             "audioConfig": {
                 "audioEncoding": "MP3",
-                "speakingRate": 0.95,  # Slightly slower for philosophy
-                "pitch": -1.0          # Slightly deeper, more authoritative
+                "speakingRate": 0.92,
             }
         }
         def _tts_call(chunk=chunk, i=i):
@@ -184,10 +185,19 @@ def generate_voice_neural2(script_text, output_path):
             )
             if r.status_code == 200:
                 return base64.b64decode(r.json()["audioContent"])
-            raise Exception(f"TTS error {r.status_code}: {r.text[:200]}")
+            # Don't retry config errors (400) — only retry server/rate errors
+            if r.status_code == 400:
+                raise ValueError(f"TTS config error: {r.text[:300]}")
+            raise Exception(f"TTS server error {r.status_code}: {r.text[:200]}")
 
         try:
-            audio_bytes = with_retry(_tts_call, max_retries=4, wait=20)
+            audio_bytes = with_retry(_tts_call, max_retries=3, wait=15)
+        except ValueError:
+            # Chirp3 HD failed — fallback to WaveNet
+            print(f"   ↩️  Chirp3 HD failed, trying WaveNet fallback...")
+            payload["voice"] = {"languageCode": "ta-IN", "name": "ta-IN-Wavenet-B", "ssmlGender": "MALE"}
+            payload["audioConfig"]["pitch"] = -2.0
+            audio_bytes = with_retry(_tts_call, max_retries=2, wait=10)
             chunk_path  = WORK_DIR / f"chunk_{i:03d}.mp3"
             chunk_path.write_bytes(audio_bytes)
             chunk_files.append(str(chunk_path))
