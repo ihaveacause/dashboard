@@ -6,8 +6,8 @@ Flow:
   1. Fetch episode details from tamil_episodes
   2. Fetch active channel_preferences
   3. Gemini Deep Research → rich knowledge base
-  4. Gemini → detailed Tamil script
-  5. Gemini → natural English script (same research, fresh voice)
+  4. Gemini → clean spoken Tamil script (no markdown)
+  5. Gemini → clean spoken English script (same research)
   6. Save both to tamil_episodes + english_episodes
   7. Update status → script_ready in both tables
 """
@@ -24,7 +24,6 @@ GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
 EPISODE_NUMBER = int(os.environ["EPISODE_NUMBER"])
 
 client = genai.Client(api_key=GEMINI_API_KEY)
-
 
 SB_HEADERS = {
     "apikey":        SUPABASE_KEY,
@@ -108,7 +107,7 @@ Perform comprehensive research and provide:
 7. STORY/ANALOGY: A compelling story or analogy that makes this concept tangible
 8. SOCIAL CONNECTION: How this philosophy applies to social reform and compassion (the channel's mission)
 
-Research deeply and thoroughly. This will be used to write a 12-20 minute YouTube video script."""
+Research deeply and thoroughly. This will be used to write a {episode['target_duration_min']}-minute YouTube video script."""
 
     response = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
     research = response.text
@@ -119,7 +118,11 @@ Research deeply and thoroughly. This will be used to write a 12-20 minute YouTub
 def generate_tamil_script(episode, research, preferences):
     print(f"\n✍️  Step 2: Tamil Script")
     pref_block = f"\n\nCHANNEL PREFERENCES (apply these always):\n{preferences}" if preferences else ""
-    
+
+    target_min  = episode['target_duration_min']
+    # Tamil speech: ~120-130 words/min at 0.92 speed → ~110 words/min effective
+    target_words = target_min * 110
+
     prompt = f"""நீங்கள் "I Have a Cause" YouTube சேனலுக்கான expert Tamil script writer.
 
 இந்த சேனலின் குணாதிசயங்கள்:
@@ -136,32 +139,23 @@ English Title: {episode['title_english']}
 Module: {episode['module']}
 Bridge/Angle: {episode['bridge']}
 Sources: {episode['research_source']}
-Target Duration: {episode['target_duration_min']} நிமிடங்கள்
+Target Duration: {target_min} நிமிடங்கள் (~{target_words} words)
 
 RESEARCH (இதை base-ஆக வைத்து script எழுதுங்கள்):
 {research}
 
-இப்போது ஒரு detailed, engaging Tamil YouTube script எழுதுங்கள்:
+CRITICAL FORMATTING RULES — இவற்றை கண்டிப்பாக பின்பற்றவும்:
+- Script முழுவதும் தொடர்ச்சியான பேச்சு வடிவில் இருக்க வேண்டும்
+- எந்த section headings போடாதீர்கள் (HOOK:, INTRODUCTION: போன்றவை வேண்டாம்)
+- எந்த timestamps போடாதீர்கள் (0:00-2:00 போன்றவை வேண்டாம்)
+- எந்த markdown formatting வேண்டாம் (**bold**, *italic*, ## headers, bullet points, numbered lists)
+- Script ஒரு YouTuber camera-வில் நேரடியாக பேசுவது போல் இருக்க வேண்டும்
+- ஒவ்வொரு paragraph-உம் இயல்பாக அடுத்ததில் தொடர வேண்டும்
 
-கட்டாயம் இந்த structure follow செய்யவும்:
+FLOW (headings இல்லாமல் இந்த வரிசையில் எழுதுங்கள்):
+பார்வையாளரை உடனே கட்டிப் போடும் தொடக்கம். பிறகு episode-ஐ introduce செய்யுங்கள். பிறகு core philosophy, examples, stories, modern connections விரிவாக விளக்குங்கள். பிறகு இந்த தத்துவம் சமூக மாற்றத்துடன் எப்படி தொடர்புடையது என்று சொல்லுங்கள். இறுதியில் summary, subscribe கோரிக்கை, next episode preview.
 
-HOOK (0:00-0:30):
-[பார்வையாளரை 30 வினாடியில் கட்டிப் போடும் தொடக்கம் — ஒரு கேள்வி, ஒரு உண்மை, அல்லது ஒரு அதிர்ச்சியான statement]
-
-INTRODUCTION (0:30-2:00):
-[Episode-ஐ introduce செய்யுங்கள் — இன்று என்ன கற்றுக்கொள்வோம்]
-
-MAIN CONTENT (2:00-{episode['target_duration_min']-2}:00):
-[Core philosophy, examples, stories, modern connections — detailed sections]
-
-SOCIAL CONNECTION ({episode['target_duration_min']-2}:00-{episode['target_duration_min']-1}:00):
-[இந்த தத்துவம் சமூக மாற்றத்துடன் எப்படி தொடர்புடையது]
-
-CONCLUSION & CTA ({episode['target_duration_min']-1}:00-{episode['target_duration_min']}:00):
-[Summary + Subscribe + Next episode preview]
-
-Script இயல்பான பேச்சு வழக்கில் இருக்கட்டும். YouTuber பேசுவது போல் எழுதுங்கள்.
-குறைந்தது 1500 words எழுதுங்கள் — detailed and rich."""
+குறைந்தது {target_words} words எழுதுங்கள். Script நேரடியாக தொடங்கட்டும் — எந்த label-உம் வேண்டாம்."""
 
     response = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
     script = response.text
@@ -171,12 +165,12 @@ Script இயல்பான பேச்சு வழக்கில் இர�
 # ── Step 3: English Script ────────────────────────────────────
 def generate_english_script(episode, research, preferences):
     print(f"\n✍️  Step 3: English Script")
-    
-    # Build English-specific preferences
-    eng_prefs = ""
-    if preferences:
-        eng_prefs = f"\n\nCHANNEL PREFERENCES (apply these always):\n{preferences}"
-    
+    eng_prefs = f"\n\nCHANNEL PREFERENCES (apply these always):\n{preferences}" if preferences else ""
+
+    target_min  = episode['target_duration_min']
+    # English speech: ~140-150 words/min at 0.92 speed → ~130 words/min effective
+    target_words = target_min * 130
+
     prompt = f"""You are an expert English script writer for "I Have a Cause" — a Tamil philosophy YouTube channel.
 
 Channel voice characteristics:
@@ -194,30 +188,23 @@ Tamil Title: {episode['title_tamil']}
 Module: {episode['module']}
 Bridge/Angle: {episode['bridge']}
 Sources: {episode['research_source']}
-Target Duration: {episode['target_duration_min']} minutes
+Target Duration: {target_min} minutes (~{target_words} words)
 
 RESEARCH (use this as your foundation — same content, fresh English voice):
 {research}
 
-Write a detailed, engaging English YouTube script using this EXACT structure:
+CRITICAL FORMATTING RULES — follow these exactly:
+- Write the entire script as continuous flowing spoken prose
+- NO section headings (no HOOK:, INTRODUCTION:, MAIN CONTENT:, CONCLUSION: etc.)
+- NO timestamps (no 0:00-2:00 markers)
+- NO markdown formatting (no **bold**, no *italic*, no ## headers, no bullet points, no numbered lists)
+- Write exactly as you would speak to a camera — natural, warm, intelligent
+- Each paragraph flows naturally into the next with no labels or breaks
 
-HOOK (0:00-0:30):
-[A powerful opening that stops the viewer — a question, a paradox, or a stunning fact]
+FLOW (write without any headings, in this order):
+Open with a powerful hook that stops the viewer immediately. Then ease into the episode topic. Then unpack the core philosophy with examples, analogies, science, and stories in rich detail. Then connect this philosophy to social reform and compassion. Close with a meaningful summary, subscribe ask, and next episode teaser.
 
-INTRODUCTION (0:30-2:00):
-[Set up the episode — what will they discover today]
-
-MAIN CONTENT (2:00-{episode['target_duration_min']-2}:00):
-[Core philosophy unpacked with examples, analogies, science, and stories]
-
-SOCIAL CONNECTION ({episode['target_duration_min']-2}:00-{episode['target_duration_min']-1}:00):
-[How this philosophy drives social reform and compassion]
-
-CONCLUSION & CTA ({episode['target_duration_min']-1}:00-{episode['target_duration_min']}:00):
-[Powerful summary + Subscribe + Next episode teaser]
-
-Write in natural spoken English — as if you're speaking to camera.
-Minimum 1500 words — rich, layered, and profound."""
+Write at least {target_words} words. Start the script directly — no labels, no preamble."""
 
     response = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
     script = response.text
@@ -227,16 +214,13 @@ Minimum 1500 words — rich, layered, and profound."""
 # ── Save scripts ──────────────────────────────────────────────
 def save_scripts(tamil_script, english_script):
     print(f"\n💾 Saving to Supabase...")
-    now = datetime.utcnow().isoformat()
 
-    # Save Tamil script
     ok_ta = db_patch("tamil_episodes", "episode_number", EPISODE_NUMBER, {
         "script_tamil": tamil_script,
         "status": "script_ready",
     })
     print(f"   Tamil episodes: {'✅' if ok_ta else '❌'}")
 
-    # Save English script
     ok_en = db_patch("english_episodes", "episode_number", EPISODE_NUMBER, {
         "script_english": english_script,
         "status": "script_ready",
@@ -250,7 +234,6 @@ def save_preference_if_noted(episode):
     note = episode.get("regenerate_note", "")
     if not note:
         return
-    # Detect category from note keywords
     note_lower = note.lower()
     if any(w in note_lower for w in ["image", "visual", "photo", "picture", "colour", "color"]):
         category = "image"
@@ -281,7 +264,6 @@ def main():
     print(f"   {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("=" * 60)
 
-    # Fetch episode
     episode = fetch_episode()
     if not episode:
         print(f"❌ Episode {EPISODE_NUMBER} not found in tamil_episodes")
@@ -291,34 +273,22 @@ def main():
     print(f"   Module: {episode['module']}")
     print(f"   Bridge: {episode['bridge']}")
 
-    # Check if regeneration (has a note)
     if episode.get("regenerate_note"):
         print(f"   🔄 Regeneration requested: {episode['regenerate_note']}")
         save_preference_if_noted(episode)
 
-    # Mark as generating
-    db_patch("tamil_episodes", "episode_number", EPISODE_NUMBER,
-             {"status": "generating"})
-    db_patch("english_episodes", "episode_number", EPISODE_NUMBER,
-             {"status": "generating"})
+    db_patch("tamil_episodes", "episode_number", EPISODE_NUMBER, {"status": "generating"})
+    db_patch("english_episodes", "episode_number", EPISODE_NUMBER, {"status": "generating"})
 
-    # Fetch preferences
     preferences = fetch_preferences()
     if preferences:
         print(f"\n📋 Channel preferences loaded")
 
     try:
-        # Step 1: Deep Research
-        research = deep_research(episode)
-
-        # Step 2: Tamil Script
-        tamil_script = generate_tamil_script(episode, research, preferences)
-
-        # Step 3: English Script
+        research      = deep_research(episode)
+        tamil_script  = generate_tamil_script(episode, research, preferences)
         english_script = generate_english_script(episode, research, preferences)
-
-        # Save both
-        success = save_scripts(tamil_script, english_script)
+        success       = save_scripts(tamil_script, english_script)
 
         if success:
             print(f"\n{'=' * 60}")
@@ -327,19 +297,15 @@ def main():
             print(f"{'=' * 60}")
         else:
             print(f"\n❌ Save failed — check Supabase connection")
-            db_patch("tamil_episodes", "episode_number", EPISODE_NUMBER,
-                     {"status": "pending"})
-            db_patch("english_episodes", "episode_number", EPISODE_NUMBER,
-                     {"status": "pending"})
+            db_patch("tamil_episodes", "episode_number", EPISODE_NUMBER, {"status": "pending"})
+            db_patch("english_episodes", "episode_number", EPISODE_NUMBER, {"status": "pending"})
 
     except Exception as e:
         print(f"\n❌ Error: {e}")
         import traceback
         traceback.print_exc()
-        db_patch("tamil_episodes", "episode_number", EPISODE_NUMBER,
-                 {"status": "pending"})
-        db_patch("english_episodes", "episode_number", EPISODE_NUMBER,
-                 {"status": "pending"})
+        db_patch("tamil_episodes", "episode_number", EPISODE_NUMBER, {"status": "pending"})
+        db_patch("english_episodes", "episode_number", EPISODE_NUMBER, {"status": "pending"})
 
 if __name__ == "__main__":
     main()
