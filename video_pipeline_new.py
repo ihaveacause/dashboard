@@ -2,7 +2,8 @@
 I Have a Cause — Video Pipeline
 ================================
 - Vertex AI Chirp3 HD Tamil voice (Callirrhoe, female, 0.89x)
-- PIL text overlay: 4 lines centered, adaptive color, fade transitions
+- PIL composites text directly onto image frames (no FFmpeg overlay)
+- 4-line centered text, font size 20, adaptive color
 - SVG infographic as second-to-last scene
 - FFmpeg pan/zoom + audio assembly
 """
@@ -115,17 +116,14 @@ def clean_script(text):
 
 # ── Text chunk splitting ─────────────────────────────────────
 def split_into_chunks(text, words_per_line=7, lines_per_chunk=4):
-    """Split cleaned script into 4-line display chunks."""
     words = text.split()
-    chunks = []
-    i = 0
+    chunks, i = [], 0
     while i < len(words):
         lines = []
         for _ in range(lines_per_chunk):
             if i >= len(words):
                 break
-            line = ' '.join(words[i:i + words_per_line])
-            lines.append(line)
+            lines.append(' '.join(words[i:i + words_per_line]))
             i += words_per_line
         if lines:
             chunks.append('\n'.join(lines))
@@ -135,188 +133,153 @@ def split_into_chunks(text, words_per_line=7, lines_per_chunk=4):
 def detect_brightness(image_path):
     try:
         img = Image.open(image_path).convert('L')
-        brightness = float(np.array(img).mean())
-        return 'dark' if brightness < 128 else 'light'
+        return 'dark' if float(np.array(img).mean()) < 128 else 'light'
     except:
         return 'dark'
 
-# ── Find Tamil font ──────────────────────────────────────────
-def find_tamil_font():
+# ── Find best available font ─────────────────────────────────
+def find_font(size=20):
+    # Prefer fonts with broad Unicode + Tamil coverage
     candidates = [
         '/usr/share/fonts/truetype/noto/NotoSansTamil-Regular.ttf',
         '/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf',
-        '/usr/share/fonts/noto/NotoSansTamil-Regular.ttf',
+        '/usr/share/fonts/truetype/noto/NotoSansDevanagari-Regular.ttf',
         '/usr/share/fonts/truetype/lohit-tamil/Lohit-Tamil.ttf',
         '/usr/share/fonts/truetype/freefont/FreeSans.ttf',
+        '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
     ]
     for path in candidates:
         if Path(path).exists():
-            print(f"   Font found: {path}")
-            return path
-    print("   ⚠️  No Tamil font found, using default")
-    return None
+            try:
+                font = ImageFont.truetype(path, size)
+                print(f"   Font: {Path(path).name} @ {size}px")
+                return font
+            except:
+                continue
+    print("   ⚠️  Using default PIL font")
+    return ImageFont.load_default()
 
-# ── Render text overlay PNG ──────────────────────────────────
-def render_text_png(chunk, brightness, font_path, font_size=40):
-    """Render 4-line text block as RGBA PNG centered on frame."""
-    frame  = Image.new('RGBA', (W, H), (0, 0, 0, 0))
-    draw   = ImageDraw.Draw(frame)
+# ── PIL: composite text directly onto image ──────────────────
+def composite_text_on_image(image_path, chunk, brightness, font):
+    """Open image, draw semi-transparent text block in center, return RGB image."""
+    base = Image.open(image_path).convert('RGBA').resize((W, H))
 
-    try:
-        font = ImageFont.truetype(font_path, font_size) if font_path else ImageFont.load_default()
-    except:
-        font = ImageFont.load_default()
+    # Transparent overlay layer
+    overlay = Image.new('RGBA', (W, H), (0, 0, 0, 0))
+    draw    = ImageDraw.Draw(overlay)
 
-    lines = chunk.split('\n')
-    line_h = font_size + 10
-    total_h = len(lines) * line_h
-    pad = 22
+    lines    = chunk.split('\n')
+    line_gap = 6
+    line_h   = 20 + line_gap   # font size + gap
+    total_h  = len(lines) * line_h
+    pad      = 14
 
-    # Measure max width
-    max_w = 0
+    # Measure widths
+    widths = []
     for line in lines:
         try:
-            bbox = draw.textbbox((0, 0), line, font=font)
-            max_w = max(max_w, bbox[2] - bbox[0])
+            bb = draw.textbbox((0, 0), line, font=font)
+            widths.append(bb[2] - bb[0])
         except:
-            max_w = max(max_w, len(line) * (font_size // 2))
+            widths.append(len(line) * 10)
+    max_w = max(widths) if widths else 200
 
-    # Background rectangle
-    bg_x1 = (W - max_w) // 2 - pad
-    bg_y1 = (H - total_h) // 2 - pad
-    bg_x2 = (W + max_w) // 2 + pad
-    bg_y2 = (H + total_h) // 2 + pad
+    # Background rect (semi-transparent, tighter)
+    cx     = W // 2
+    cy     = H // 2
+    bg_x1  = cx - max_w // 2 - pad
+    bg_y1  = cy - total_h // 2 - pad
+    bg_x2  = cx + max_w // 2 + pad
+    bg_y2  = cy + total_h // 2 + pad
 
     if brightness == 'dark':
-        bg_color   = (0,   0,   0,   150)
-        text_color = (255, 255, 255, 255)
+        bg_fill   = (0,   0,   0,   120)   # subtle dark tint
+        text_fill = (255, 255, 255, 255)   # white text
     else:
-        bg_color   = (255, 255, 255, 150)
-        text_color = (20,  20,  20,  255)
+        bg_fill   = (255, 255, 255, 120)   # subtle light tint
+        text_fill = (15,  15,  15,  255)   # near-black text
 
-    draw.rectangle([bg_x1, bg_y1, bg_x2, bg_y2], fill=bg_color)
+    draw.rectangle([bg_x1, bg_y1, bg_x2, bg_y2], fill=bg_fill)
 
-    # Draw lines
-    y = (H - total_h) // 2
-    for line in lines:
-        try:
-            bbox = draw.textbbox((0, 0), line, font=font)
-            lw   = bbox[2] - bbox[0]
-        except:
-            lw = len(line) * (font_size // 2)
-        x = (W - lw) // 2
-        draw.text((x, y), line, font=font, fill=text_color)
+    # Draw each line centered
+    y = cy - total_h // 2
+    for line, lw in zip(lines, widths):
+        x = cx - lw // 2
+        draw.text((x, y), line, font=font, fill=text_fill)
         y += line_h
 
-    return frame
+    # Composite onto original image — background fully visible
+    result = Image.alpha_composite(base, overlay)
+    return result.convert('RGB')
 
-# ── Create text overlay video ────────────────────────────────
-def create_text_overlay(chunks, chunk_dur, brightness_map, image_dur, num_images, out_path):
-    """Create RGBA text overlay video — one clip per chunk with fade in/out."""
-    print(f"\n📝 Creating text overlay ({len(chunks)} chunks × {chunk_dur:.1f}s)...")
-    font_path   = find_tamil_font()
-    fade_frames = int(0.5 * FPS)   # 0.5s fade
-    clip_paths  = []
+# ── Build one video clip from a PIL image ────────────────────
+def build_clip(pil_image, duration, pan_dir, out_path):
+    """Save PIL image to PNG then create pan/zoom video clip."""
+    png = WORK_DIR / f"_tmp_{out_path.stem}.png"
+    pil_image.save(str(png))
 
-    for i, chunk in enumerate(chunks):
-        img_idx    = min(int(i * chunk_dur / image_dur), num_images - 1)
-        brightness = brightness_map.get(img_idx, 'dark')
+    zoom   = 1.06
+    big_w  = int(W * zoom)
+    big_h  = int(H * zoom)
+    pad_x  = big_w - W
+    pad_y  = big_h - H
+    frames = max(int(duration * FPS), 1)
+    xs, ys, xe, ye = pan_dir
+    x0, y0 = int(xs * pad_x), int(ys * pad_y)
+    x1, y1 = int(xe * pad_x), int(ye * pad_y)
 
-        # Render PNG
-        png_path = WORK_DIR / f"txt_{i:03d}.png"
-        frame    = render_text_png(chunk, brightness, font_path)
-        frame.save(str(png_path), 'PNG')
-
-        # Build clip with fade in/out (alpha channel)
-        clip_path  = WORK_DIR / f"txt_clip_{i:03d}.webm"
-        n_frames   = max(int(chunk_dur * FPS), fade_frames * 3)
-        fade_out_s = max(0, chunk_dur - 0.5)
-
-        cmd = [
-            "ffmpeg", "-y",
-            "-loop", "1", "-i", str(png_path),
-            "-t", str(chunk_dur),
-            "-r", str(FPS),
-            "-vf", (
-                f"format=yuva420p,"
-                f"fade=in:0:{fade_frames}:alpha=1,"
-                f"fade=out:st={fade_out_s}:d=0.5:alpha=1"
-            ),
-            "-c:v", "libvpx-vp9",
-            "-auto-alt-ref", "0",
-            str(clip_path)
+    vf = (
+        f"scale={big_w}:{big_h},"
+        f"crop={W}:{H}:"
+        f"'({x0}+({x1}-{x0})*n/{frames})':"
+        f"'({y0}+({y1}-{y0})*n/{frames})'"
+    )
+    cmd = [
+        "ffmpeg", "-y", "-loop", "1", "-i", str(png),
+        "-vf", vf, "-t", str(duration), "-r", str(FPS),
+        "-c:v", "libx264", "-preset", "veryfast", "-crf", "26",
+        "-pix_fmt", "yuv420p", str(out_path)
+    ]
+    r = subprocess.run(cmd, capture_output=True, text=True)
+    if r.returncode != 0:
+        # static fallback
+        cmd2 = [
+            "ffmpeg", "-y", "-loop", "1", "-i", str(png),
+            "-vf", f"scale={W}:{H}", "-t", str(duration), "-r", str(FPS),
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "26",
+            "-pix_fmt", "yuv420p", str(out_path)
         ]
-        r = subprocess.run(cmd, capture_output=True, text=True)
-        if r.returncode == 0:
-            clip_paths.append(str(clip_path))
-            if (i + 1) % 10 == 0:
-                print(f"   ✅ Text clips: {i+1}/{len(chunks)}")
-        else:
-            print(f"   ⚠️  Text clip {i} failed: {r.stderr[-100:]}")
+        subprocess.run(cmd2, capture_output=True)
+    png.unlink(missing_ok=True)
+    return out_path.exists()
 
-    if not clip_paths:
-        return False
-
-    # Concatenate text clips
-    concat = WORK_DIR / "txt_list.txt"
-    concat.write_text('\n'.join(f"file '{p}'" for p in clip_paths))
-    r = subprocess.run([
-        "ffmpeg", "-y", "-f", "concat", "-safe", "0",
-        "-i", str(concat),
-        "-c:v", "libvpx-vp9", "-auto-alt-ref", "0",
-        str(out_path)
-    ], capture_output=True, text=True)
-
-    if r.returncode == 0:
-        print(f"   ✅ Text overlay video ready")
-        return True
-    print(f"   ❌ Text overlay concat failed: {r.stderr[-200:]}")
-    return False
-
-# ── Download SVG as image ────────────────────────────────────
+# ── Download SVG as PNG ──────────────────────────────────────
 def download_svg(svg_data):
-    """Download infographic SVG/PNG and return local path."""
     if not svg_data:
         return None
-    url = None
-    if isinstance(svg_data, dict):
-        url = svg_data.get('url')
-    elif isinstance(svg_data, str):
-        try:
-            url = json.loads(svg_data).get('url')
-        except:
-            url = svg_data
-
+    try:
+        raw = svg_data if isinstance(svg_data, dict) else json.loads(svg_data)
+        url = raw.get('url') if isinstance(raw, dict) else None
+    except:
+        url = svg_data if isinstance(svg_data, str) and svg_data.startswith('http') else None
     if not url:
         return None
-
     try:
         r = requests.get(url, timeout=30)
         if r.status_code != 200:
             return None
-
-        content_type = r.headers.get('content-type', '')
-        out_path = WORK_DIR / "infographic.png"
-
-        if 'svg' in content_type or url.lower().endswith('.svg'):
-            try:
-                import cairosvg
-                cairosvg.svg2png(
-                    bytestring=r.content,
-                    write_to=str(out_path),
-                    output_width=W,
-                    output_height=H
-                )
-            except Exception as e:
-                print(f"   ⚠️  SVG convert failed: {e}")
-                return None
+        out = WORK_DIR / "infographic.png"
+        ct  = r.headers.get('content-type', '')
+        if 'svg' in ct or url.lower().endswith('.svg'):
+            import cairosvg
+            cairosvg.svg2png(bytestring=r.content, write_to=str(out),
+                             output_width=W, output_height=H)
         else:
-            out_path.write_bytes(r.content)
-
+            out.write_bytes(r.content)
         print(f"   ✅ Infographic downloaded")
-        return str(out_path)
+        return str(out)
     except Exception as e:
-        print(f"   ⚠️  Infographic download failed: {e}")
+        print(f"   ⚠️  Infographic failed: {e}")
         return None
 
 # ── Download episode images ──────────────────────────────────
@@ -346,7 +309,7 @@ def with_retry(fn, max_retries=3, wait=15):
             raise
         except Exception as e:
             if attempt < max_retries - 1:
-                print(f"   ⚠️  Attempt {attempt+1} failed: {str(e)[:80]}")
+                print(f"   ⚠️  Attempt {attempt+1}: {str(e)[:80]}")
                 time.sleep(wait)
             else:
                 raise
@@ -355,21 +318,21 @@ def with_retry(fn, max_retries=3, wait=15):
 def generate_voice(script_text, output_path):
     print(f"\n🎙  Generating voice (Callirrhoe, 0.89x)...")
     full_text = clean_script(script_text)
-    print(f"   Cleaned script: {len(full_text)} chars")
+    print(f"   Cleaned: {len(full_text)} chars")
 
     chunks, current, current_len = [], [], 0
     for word in full_text.split():
-        word_len = len(word.encode('utf-8')) + 1
-        if current_len + word_len >= 4000 and current:
+        wl = len(word.encode('utf-8')) + 1
+        if current_len + wl >= 4000 and current:
             chunks.append(' '.join(current))
             current, current_len = [], 0
         current.append(word)
-        current_len += word_len
+        current_len += wl
     if current:
         chunks.append(' '.join(current))
 
-    print(f"   TTS chunks: {len(chunks)}")
-    token, url, chunk_files = get_token(), "https://texttospeech.googleapis.com/v1/text:synthesize", []
+    print(f"   TTS: {len(chunks)} chunks")
+    token, url, files = get_token(), "https://texttospeech.googleapis.com/v1/text:synthesize", []
 
     for i, chunk in enumerate(chunks):
         payload = {
@@ -378,49 +341,47 @@ def generate_voice(script_text, output_path):
             "audioConfig": {"audioEncoding": "MP3", "speakingRate": 0.89}
         }
 
-        def _call(chunk=chunk):
-            r = requests.post(url, headers={
+        def _call(c=chunk):
+            res = requests.post(url, headers={
                 "Authorization": f"Bearer {token}",
                 "Content-Type":  "application/json"
             }, json=payload, timeout=60)
-            if r.status_code == 200:
-                return base64.b64decode(r.json()["audioContent"])
-            if r.status_code == 400:
-                raise ValueError(f"TTS config error: {r.text[:200]}")
-            raise Exception(f"TTS error {r.status_code}: {r.text[:200]}")
+            if res.status_code == 200:
+                return base64.b64decode(res.json()["audioContent"])
+            if res.status_code == 400:
+                raise ValueError(f"Config error: {res.text[:200]}")
+            raise Exception(f"TTS {res.status_code}: {res.text[:200]}")
 
         try:
-            audio    = with_retry(_call)
-            cp       = WORK_DIR / f"chunk_{i:03d}.mp3"
+            audio = with_retry(_call)
+            cp    = WORK_DIR / f"chunk_{i:03d}.mp3"
             cp.write_bytes(audio)
-            chunk_files.append(str(cp))
+            files.append(str(cp))
             print(f"   ✅ Chunk {i+1}/{len(chunks)}")
         except ValueError:
-            print(f"   ↩️  Fallback to WaveNet for chunk {i+1}")
             payload["voice"] = {"languageCode": "ta-IN", "name": "ta-IN-Wavenet-A", "ssmlGender": "FEMALE"}
             try:
                 audio = with_retry(_call)
                 cp    = WORK_DIR / f"chunk_{i:03d}.mp3"
                 cp.write_bytes(audio)
-                chunk_files.append(str(cp))
+                files.append(str(cp))
+                print(f"   ✅ Chunk {i+1}/{len(chunks)} (WaveNet)")
             except Exception as e:
                 print(f"   ⚠️  Chunk {i+1} failed: {e}")
         except Exception as e:
             print(f"   ⚠️  Chunk {i+1} failed: {e}")
 
-    if not chunk_files:
+    if not files:
         return False
-
-    if len(chunk_files) == 1:
-        shutil.copy(chunk_files[0], str(output_path))
+    if len(files) == 1:
+        shutil.copy(files[0], str(output_path))
     else:
         lst = WORK_DIR / "audio_list.txt"
-        lst.write_text('\n'.join(f"file '{p}'" for p in chunk_files))
+        lst.write_text('\n'.join(f"file '{p}'" for p in files))
         subprocess.run([
             "ffmpeg", "-y", "-f", "concat", "-safe", "0",
             "-i", str(lst), "-c", "copy", str(output_path)
         ], capture_output=True)
-
     print(f"   ✅ Voice ready")
     return True
 
@@ -435,137 +396,84 @@ def get_duration(path):
     except:
         return 600.0
 
-# ── Build one image clip with pan/zoom ───────────────────────
-def build_image_clip(img_path, duration, pan_dir, out_path):
-    zoom   = 1.06
-    big_w  = int(W * zoom)
-    big_h  = int(H * zoom)
-    pad_x  = big_w - W
-    pad_y  = big_h - H
-    frames = max(int(duration * FPS), 1)
-    xs, ys, xe, ye = pan_dir
-    x0, y0 = int(xs * pad_x), int(ys * pad_y)
-    x1, y1 = int(xe * pad_x), int(ye * pad_y)
-
-    vf = (
-        f"scale={big_w}:{big_h},"
-        f"crop={W}:{H}:"
-        f"'({x0}+({x1}-{x0})*n/{frames})':"
-        f"'({y0}+({y1}-{y0})*n/{frames})'"
-    )
-    cmd = [
-        "ffmpeg", "-y", "-loop", "1", "-i", str(img_path),
-        "-vf", vf, "-t", str(duration), "-r", str(FPS),
-        "-c:v", "libx264", "-preset", "veryfast", "-crf", "26",
-        "-pix_fmt", "yuv420p", str(out_path)
-    ]
-    r = subprocess.run(cmd, capture_output=True, text=True)
-    if r.returncode != 0:
-        # static fallback
-        cmd2 = [
-            "ffmpeg", "-y", "-loop", "1", "-i", str(img_path),
-            "-vf", f"scale={W}:{H}", "-t", str(duration), "-r", str(FPS),
-            "-c:v", "libx264", "-preset", "veryfast", "-crf", "26",
-            "-pix_fmt", "yuv420p", str(out_path)
-        ]
-        subprocess.run(cmd2, capture_output=True)
-    return out_path.exists()
-
-# ── Assemble final video ─────────────────────────────────────
+# ── Assemble video ───────────────────────────────────────────
 def assemble_video(image_paths, svg_path, audio_path, script_text, output_path):
     print(f"\n🎬 Assembling video...")
     audio_dur = get_duration(audio_path)
 
-    # Build scene list: content images + SVG near end
+    # Build scene list — SVG as second-to-last
     scene_paths = list(image_paths)
     if svg_path:
-        # Insert SVG as second-to-last scene
         scene_paths.insert(-1, svg_path)
-        print(f"   ✅ SVG inserted as scene {len(scene_paths)-1}")
+        print(f"   SVG inserted as scene {len(scene_paths)-1}/{len(scene_paths)}")
 
     num_scenes = len(scene_paths)
-    dur_each   = audio_dur / num_scenes
+    scene_dur  = audio_dur / num_scenes
 
-    print(f"   Audio: {audio_dur:.1f}s | {num_scenes} scenes × {dur_each:.1f}s")
+    # Text chunks
+    cleaned    = clean_script(script_text)
+    chunks     = split_into_chunks(cleaned)
+    chunk_dur  = audio_dur / max(len(chunks), 1)
+    print(f"   {num_scenes} scenes × {scene_dur:.1f}s | {len(chunks)} text chunks × {chunk_dur:.1f}s")
 
+    # Brightness per scene
+    brightness_map = {i: detect_brightness(sp) for i, sp in enumerate(scene_paths)}
+
+    # Font
+    font = find_font(size=20)
+
+    # Pan directions
     pan_dirs = [
         (0, 0, 1, 1), (1, 1, 0, 0), (0, 1, 1, 0),
         (1, 0, 0, 1), (0.5, 0, 0.5, 1),
     ]
 
-    # ── Step 1: Brightness map ───────────────────────────────
-    brightness_map = {}
-    for i, sp in enumerate(scene_paths):
-        brightness_map[i] = detect_brightness(sp)
-    print(f"   Brightness detected for {num_scenes} scenes")
-
-    # ── Step 2: Image pan/zoom clips ─────────────────────────
+    # ── Create one clip per text chunk ──────────────────────
+    # PIL composites text directly on image — background fully visible
     clip_paths = []
-    for i, sp in enumerate(scene_paths):
-        out = WORK_DIR / f"clip_{i:02d}.mp4"
-        ok  = build_image_clip(sp, dur_each, pan_dirs[i % len(pan_dirs)], out)
+    for i, chunk in enumerate(chunks):
+        scene_idx  = min(int(i * chunk_dur / scene_dur), num_scenes - 1)
+        scene_img  = scene_paths[scene_idx]
+        brightness = brightness_map[scene_idx]
+
+        composited = composite_text_on_image(scene_img, chunk, brightness, font)
+        clip_out   = WORK_DIR / f"clip_{i:03d}.mp4"
+        ok         = build_clip(composited, chunk_dur, pan_dirs[i % len(pan_dirs)], clip_out)
         if ok:
-            clip_paths.append(str(out))
-            print(f"   ✅ Scene clip {i+1}/{num_scenes}")
+            clip_paths.append(str(clip_out))
+        if (i + 1) % 10 == 0 or (i + 1) == len(chunks):
+            print(f"   ✅ Clips: {i+1}/{len(chunks)}")
 
     if not clip_paths:
         return False
 
-    # ── Step 3: Concatenate image clips → raw.mp4 ────────────
-    raw = WORK_DIR / "raw.mp4"
+    # ── Concatenate clips ────────────────────────────────────
+    print(f"\n   🔗 Concatenating {len(clip_paths)} clips...")
     concat = WORK_DIR / "clips.txt"
     concat.write_text('\n'.join(f"file '{p}'" for p in clip_paths))
+    raw = WORK_DIR / "raw.mp4"
     subprocess.run([
         "ffmpeg", "-y", "-f", "concat", "-safe", "0",
         "-i", str(concat), "-c", "copy", str(raw)
     ], capture_output=True)
 
-    # ── Step 4: Add audio → raw_audio.mp4 ────────────────────
-    raw_audio = WORK_DIR / "raw_audio.mp4"
-    subprocess.run([
+    # ── Add audio ────────────────────────────────────────────
+    print(f"   🎵 Adding narration...")
+    r = subprocess.run([
         "ffmpeg", "-y",
         "-i", str(raw), "-i", str(audio_path),
         "-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
         "-shortest", "-movflags", "+faststart",
-        str(raw_audio)
-    ], capture_output=True)
+        str(output_path)
+    ], capture_output=True, text=True)
 
-    # ── Step 5: Text overlay ──────────────────────────────────
-    cleaned      = clean_script(script_text)
-    chunks       = split_into_chunks(cleaned)
-    chunk_dur    = audio_dur / max(len(chunks), 1)
-    overlay_path = WORK_DIR / "text_overlay.webm"
+    if r.returncode == 0:
+        mb = Path(output_path).stat().st_size / 1024 / 1024
+        print(f"   ✅ Final video: {mb:.1f} MB")
+        return True
 
-    ok_overlay = create_text_overlay(
-        chunks, chunk_dur, brightness_map,
-        dur_each, num_scenes, overlay_path
-    )
-
-    # ── Step 6: Composite text onto video ────────────────────
-    if ok_overlay and overlay_path.exists():
-        print(f"\n   🖼  Compositing text overlay...")
-        r = subprocess.run([
-            "ffmpeg", "-y",
-            "-i", str(raw_audio),
-            "-i", str(overlay_path),
-            "-filter_complex", "[0:v][1:v]overlay=0:0:format=auto",
-            "-c:v", "libx264", "-preset", "veryfast", "-crf", "24",
-            "-c:a", "copy", "-movflags", "+faststart",
-            str(output_path)
-        ], capture_output=True, text=True)
-
-        if r.returncode == 0:
-            mb = Path(output_path).stat().st_size / 1024 / 1024
-            print(f"   ✅ Final video with text overlay: {mb:.1f} MB")
-            return True
-        else:
-            print(f"   ⚠️  Overlay failed, using video without text: {r.stderr[-200:]}")
-
-    # Fallback: use video without text overlay
-    shutil.copy(str(raw_audio), str(output_path))
-    mb = Path(output_path).stat().st_size / 1024 / 1024
-    print(f"   ✅ Final video (no overlay fallback): {mb:.1f} MB")
-    return True
+    print(f"   ❌ Assembly failed: {r.stderr[-200:]}")
+    return False
 
 # ── Main ─────────────────────────────────────────────────────
 def main():
@@ -588,19 +496,16 @@ def main():
     db_patch("tamil_episodes", EPISODE_NUMBER, {"status": "rendering_video"})
 
     try:
-        # Images
         image_paths = download_images(episode["image_urls"])
         if not image_paths:
             db_patch("tamil_episodes", EPISODE_NUMBER, {"status": "images_approved"})
             return
 
-        # SVG infographic
-        print(f"\n🖼  Downloading SVG infographic...")
+        print(f"\n🖼  Checking SVG infographic...")
         svg_path = download_svg(episode.get("infographic_svg"))
         if not svg_path:
-            print("   ℹ️  No infographic — skipping SVG scene")
+            print("   ℹ️  No infographic")
 
-        # Voice
         script     = episode.get("script_tamil") or episode.get("title_tamil", "")
         audio_path = WORK_DIR / "narration.mp3"
         ok_voice   = generate_voice(script, audio_path)
@@ -610,7 +515,6 @@ def main():
             db_patch("tamil_episodes", EPISODE_NUMBER, {"status": "images_approved"})
             return
 
-        # Assemble
         video_path = WORK_DIR / f"ep{EPISODE_NUMBER:03d}_tamil.mp4"
         ok_video   = assemble_video(
             image_paths, svg_path, audio_path, script, video_path
@@ -620,7 +524,6 @@ def main():
             db_patch("tamil_episodes", EPISODE_NUMBER, {"status": "images_approved"})
             return
 
-        # Upload
         print(f"\n☁️  Uploading...")
         storage_path = f"ep{EPISODE_NUMBER:03d}/ep{EPISODE_NUMBER:03d}_tamil.mp4"
         video_url    = upload_video(str(video_path), storage_path)
