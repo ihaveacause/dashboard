@@ -6,8 +6,8 @@ FFmpeg assembles images with smooth pan + crossfade.
 """
 
 import os
+import re
 import json
-import asyncio
 import base64
 import requests
 import subprocess
@@ -90,6 +90,36 @@ def fetch_episode():
     })
     return rows[0] if rows else None
 
+# ── Clean script for TTS ────────────────────────────────────
+def clean_script(text):
+    """Strip ALL markdown and structural formatting so TTS reads pure spoken prose."""
+    # Section headers with timestamps: HOOK (0:00-0:30): or MAIN CONTENT (2:00-10:00):
+    text = re.sub(r'^[A-Z][A-Z\s&/]+\s*\(\d+:\d+[^)]*\)\s*:?', '', text, flags=re.MULTILINE)
+    # ALL-CAPS labels at line start: HOOK:  INTRODUCTION:  CONCLUSION & CTA:
+    text = re.sub(r'^[A-Z][A-Z\s&/]{2,}:\s*', '', text, flags=re.MULTILINE)
+    # Markdown bold/italic: **text** *text* __text__
+    text = re.sub(r'\*{1,3}([^*]+)\*{1,3}', r'\1', text)
+    text = re.sub(r'_{1,2}([^_]+)_{1,2}', r'\1', text)
+    # Numbered lists: 1. 2. 10.
+    text = re.sub(r'^\d+\.\s+', '', text, flags=re.MULTILINE)
+    # Bullet points: * - •
+    text = re.sub(r'^[\*\-•]\s+', '', text, flags=re.MULTILINE)
+    # Markdown headers: # ## ###
+    text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)
+    # Horizontal rules: --- ===
+    text = re.sub(r'^[-=]{3,}$', '', text, flags=re.MULTILINE)
+    # Stage directions and notes in brackets: [pause] [cut to] [B-roll]
+    text = re.sub(r'\[.*?\]', '', text)
+    # Timestamps: (0:00) (2:00-10:00)
+    text = re.sub(r'\(\d+:\d+(?:\s*[-–]\s*\d+:\d+)?\)', '', text)
+    # Stray colons left from stripped headers at line start
+    text = re.sub(r'^:\s*', '', text, flags=re.MULTILINE)
+    # Collapse multiple spaces
+    text = re.sub(r' {2,}', ' ', text)
+    # Collapse 3+ blank lines to one
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    return text.strip()
+
 # ── Download images ─────────────────────────────────────────
 def download_images(image_urls_json):
     print(f"\n📥 Downloading images...")
@@ -113,9 +143,8 @@ def with_retry(fn, max_retries=4, wait=30):
     for attempt in range(max_retries):
         try:
             return fn()
-        except ValueError as e:
-            # Config errors — don't retry, fail immediately
-            raise
+        except ValueError:
+            raise   # Config errors — fail fast, no retry
         except Exception as e:
             if attempt < max_retries - 1:
                 print(f"   ⚠️  Attempt {attempt+1} failed: {str(e)[:80]}")
@@ -128,31 +157,21 @@ def with_retry(fn, max_retries=4, wait=30):
 def generate_voice_neural2(script_text, output_path):
     print(f"\n🎙  Generating Tamil voice with Vertex Neural2...")
 
-    # Clean script for TTS
-    clean_lines = []
-    for line in script_text.split('\n'):
-        line = line.strip()
-        if not line or line.startswith('#'):
-            continue
-        if ':' in line[:15] and len(line) > 20:
-            content = line.split(':', 1)[1].strip()
-            if content:
-                clean_lines.append(content)
-        else:
-            clean_lines.append(line)
+    # Clean all formatting before TTS
+    full_text = clean_script(script_text)
+    print(f"   Script cleaned: {len(full_text)} chars")
 
-    full_text = ' '.join(clean_lines)
-
-    # Chunk into 4500 byte pieces (Neural2 limit)
+    # Chunk into 4000 byte pieces (safe under Neural2 5000 byte limit)
     chunks = []
     words  = full_text.split()
     current, current_len = [], 0
     for word in words:
-        current_len += len(word.encode('utf-8')) + 1
-        current.append(word)
-        if current_len >= 4000:
+        word_len = len(word.encode('utf-8')) + 1
+        if current_len + word_len >= 4000 and current:
             chunks.append(' '.join(current))
             current, current_len = [], 0
+        current.append(word)
+        current_len += word_len
     if current:
         chunks.append(' '.join(current))
 
@@ -167,48 +186,62 @@ def generate_voice_neural2(script_text, output_path):
             "input": {"text": chunk},
             "voice": {
                 "languageCode": "ta-IN",
-                "name": "ta-IN-Chirp3-HD-Charon",  # Best Tamil voice - Chirp3 HD
+                "name": "ta-IN-Chirp3-HD-Charon",
             },
             "audioConfig": {
                 "audioEncoding": "MP3",
                 "speakingRate": 0.92,
             }
         }
+
         def _tts_call(chunk=chunk, i=i):
             r = requests.post(
                 url,
                 headers={
                     "Authorization": f"Bearer {token}",
-                    "Content-Type": "application/json"
+                    "Content-Type":  "application/json"
                 },
                 json=payload, timeout=60
             )
             if r.status_code == 200:
                 return base64.b64decode(r.json()["audioContent"])
-            # Don't retry config errors (400) — only retry server/rate errors
             if r.status_code == 400:
                 raise ValueError(f"TTS config error: {r.text[:300]}")
             raise Exception(f"TTS server error {r.status_code}: {r.text[:200]}")
 
         try:
+            # ── PRIMARY: Chirp3 HD ──────────────────────────
             audio_bytes = with_retry(_tts_call, max_retries=3, wait=15)
-        except ValueError:
-            # Chirp3 HD failed — fallback to WaveNet
-            print(f"   ↩️  Chirp3 HD failed, trying WaveNet fallback...")
-            payload["voice"] = {"languageCode": "ta-IN", "name": "ta-IN-Wavenet-B", "ssmlGender": "MALE"}
-            payload["audioConfig"]["pitch"] = -2.0
-            audio_bytes = with_retry(_tts_call, max_retries=2, wait=10)
-            chunk_path  = WORK_DIR / f"chunk_{i:03d}.mp3"
+            chunk_path  = WORK_DIR / f"chunk_{i:03d}.mp3"   # ← BUG FIX: was missing on success path
             chunk_path.write_bytes(audio_bytes)
             chunk_files.append(str(chunk_path))
             print(f"   ✅ Chunk {i+1}/{len(chunks)}")
+
+        except ValueError:
+            # ── FALLBACK: WaveNet ───────────────────────────
+            print(f"   ↩️  Chirp3 HD config error, trying WaveNet fallback...")
+            payload["voice"] = {
+                "languageCode": "ta-IN",
+                "name":         "ta-IN-Wavenet-B",
+                "ssmlGender":   "MALE"
+            }
+            payload["audioConfig"]["pitch"] = -2.0
+            try:
+                audio_bytes = with_retry(_tts_call, max_retries=2, wait=10)
+                chunk_path  = WORK_DIR / f"chunk_{i:03d}.mp3"
+                chunk_path.write_bytes(audio_bytes)
+                chunk_files.append(str(chunk_path))
+                print(f"   ✅ Chunk {i+1}/{len(chunks)} (WaveNet fallback)")
+            except Exception as e:
+                print(f"   ⚠️  Chunk {i+1} failed completely: {e}")
+
         except Exception as e:
             print(f"   ⚠️  Chunk {i+1} failed after retries: {e}")
 
     if not chunk_files:
         return False
 
-    # Concatenate chunks
+    # Concatenate all chunks into one MP3
     if len(chunk_files) == 1:
         shutil.copy(chunk_files[0], str(output_path))
     else:
@@ -219,7 +252,7 @@ def generate_voice_neural2(script_text, output_path):
             "-i", str(concat), "-c", "copy", str(output_path)
         ], capture_output=True)
 
-    print(f"   ✅ Voice ready")
+    print(f"   ✅ Voice ready — {len(chunk_files)} chunks assembled")
     return True
 
 # ── Get audio duration ──────────────────────────────────────
@@ -247,20 +280,19 @@ def assemble_video(image_paths, audio_path, output_path):
     print(f"   Audio: {audio_dur:.1f}s | {num} images × {dur_each:.1f}s")
     print(f"   Output: {W}×{H} @ {FPS}fps")
 
-    # Pan directions alternate per clip
     pan_dirs = [
-        (0, 0, 1, 1),    # top-left → bottom-right
-        (1, 1, 0, 0),    # bottom-right → top-left
-        (0, 1, 1, 0),    # bottom-left → top-right
-        (1, 0, 0, 1),    # top-right → bottom-left
-        (0.5, 0, 0.5, 1) # top-center → bottom-center
+        (0,   0,   1,   1  ),
+        (1,   1,   0,   0  ),
+        (0,   1,   1,   0  ),
+        (1,   0,   0,   1  ),
+        (0.5, 0,   0.5, 1  ),
     ]
 
-    zoom    = 1.06
-    big_w   = int(W * zoom)
-    big_h   = int(H * zoom)
-    pad_x   = big_w - W
-    pad_y   = big_h - H
+    zoom   = 1.06
+    big_w  = int(W * zoom)
+    big_h  = int(H * zoom)
+    pad_x  = big_w - W
+    pad_y  = big_h - H
     clip_paths = []
 
     for i, img in enumerate(image_paths):
@@ -270,7 +302,6 @@ def assemble_video(image_paths, audio_path, output_path):
         x0, y0 = int(xs * pad_x), int(ys * pad_y)
         x1, y1 = int(xe * pad_x), int(ye * pad_y)
 
-        # Simple crop pan — fast to render
         vf = (
             f"scale={big_w}:{big_h},"
             f"crop={W}:{H}:"
@@ -295,7 +326,6 @@ def assemble_video(image_paths, audio_path, output_path):
             clip_paths.append(str(out))
             print(f"   ✅ Clip {i+1}/{num}")
         else:
-            # Static fallback
             cmd2 = [
                 "ffmpeg", "-y", "-loop", "1", "-i", str(img),
                 "-vf", f"scale={W}:{H}",
@@ -311,7 +341,6 @@ def assemble_video(image_paths, audio_path, output_path):
     if not clip_paths:
         return False
 
-    # Concatenate
     print(f"\n   🔗 Concatenating {len(clip_paths)} clips...")
     concat = WORK_DIR / "clips.txt"
     concat.write_text("\n".join(f"file '{p}'" for p in clip_paths))
@@ -322,8 +351,7 @@ def assemble_video(image_paths, audio_path, output_path):
         "-i", str(concat), "-c", "copy", str(raw)
     ], capture_output=True)
 
-    # Add audio
-    print(f"   🎵 Adding Neural2 narration...")
+    print(f"   🎵 Adding narration...")
     r = subprocess.run([
         "ffmpeg", "-y",
         "-i", str(raw),
