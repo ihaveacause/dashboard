@@ -1,7 +1,7 @@
 """
 I Have a Cause — Video Pipeline (Vertex AI Neural2 + FFmpeg)
 =============================================================
-Uses Vertex AI Neural2 Tamil voice for natural narration.
+Uses Vertex AI Chirp3 HD Tamil voice for natural narration.
 FFmpeg assembles images with smooth pan + crossfade.
 """
 
@@ -90,33 +90,39 @@ def fetch_episode():
     })
     return rows[0] if rows else None
 
-# ── Clean script for TTS ────────────────────────────────────
+# ── Clean script for TTS ─────────────────────────────────────
 def clean_script(text):
-    """Strip ALL markdown and structural formatting so TTS reads pure spoken prose."""
-    # Section headers with timestamps: HOOK (0:00-0:30): or MAIN CONTENT (2:00-10:00):
-    text = re.sub(r'^[A-Z][A-Z\s&/]+\s*\(\d+:\d+[^)]*\)\s*:?', '', text, flags=re.MULTILINE)
-    # ALL-CAPS labels at line start: HOOK:  INTRODUCTION:  CONCLUSION & CTA:
-    text = re.sub(r'^[A-Z][A-Z\s&/]{2,}:\s*', '', text, flags=re.MULTILINE)
-    # Markdown bold/italic: **text** *text* __text__
+    """Strip ALL formatting so TTS reads pure spoken prose."""
+    # Remove **bold** and __bold__
     text = re.sub(r'\*{1,3}([^*]+)\*{1,3}', r'\1', text)
-    text = re.sub(r'_{1,2}([^_]+)_{1,2}', r'\1', text)
-    # Numbered lists: 1. 2. 10.
+    text = re.sub(r'_{1,2}([^_]+)_{1,2}',   r'\1', text)
+    # Remove remaining stray * or _
+    text = re.sub(r'\*+', '', text)
+    text = re.sub(r'_+',  '', text)
+    # Replace dash used as separator ( - ) with a comma
+    text = re.sub(r'\s+[-–—]\s+', ', ', text)
+    # Remove section headers with timestamps
+    text = re.sub(r'^[A-Z][A-Z\s&/]+\s*\(\d+:\d+[^)]*\)\s*:?', '', text, flags=re.MULTILINE)
+    # Remove ALL-CAPS labels at line start
+    text = re.sub(r'^[A-Z][A-Z\s&/]{2,}:\s*', '', text, flags=re.MULTILINE)
+    # Remove numbered lists
     text = re.sub(r'^\d+\.\s+', '', text, flags=re.MULTILINE)
-    # Bullet points: * - •
+    # Remove bullet points
     text = re.sub(r'^[\*\-•]\s+', '', text, flags=re.MULTILINE)
-    # Markdown headers: # ## ###
+    # Remove markdown headers
     text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)
-    # Horizontal rules: --- ===
+    # Remove horizontal rules
     text = re.sub(r'^[-=]{3,}$', '', text, flags=re.MULTILINE)
-    # Stage directions and notes in brackets: [pause] [cut to] [B-roll]
+    # Remove stage directions in square brackets
     text = re.sub(r'\[.*?\]', '', text)
-    # Timestamps: (0:00) (2:00-10:00)
+    # Remove parentheses that wrap single words (read as "bracket")
+    text = re.sub(r'\(([^)]{1,30})\)', r'\1', text)
+    # Remove timestamps
     text = re.sub(r'\(\d+:\d+(?:\s*[-–]\s*\d+:\d+)?\)', '', text)
-    # Stray colons left from stripped headers at line start
+    # Remove stray colons at line start
     text = re.sub(r'^:\s*', '', text, flags=re.MULTILINE)
-    # Collapse multiple spaces
-    text = re.sub(r' {2,}', ' ', text)
-    # Collapse 3+ blank lines to one
+    # Collapse multiple spaces and blank lines
+    text = re.sub(r' {2,}',  ' ',    text)
     text = re.sub(r'\n{3,}', '\n\n', text)
     return text.strip()
 
@@ -144,7 +150,7 @@ def with_retry(fn, max_retries=4, wait=30):
         try:
             return fn()
         except ValueError:
-            raise   # Config errors — fail fast, no retry
+            raise
         except Exception as e:
             if attempt < max_retries - 1:
                 print(f"   ⚠️  Attempt {attempt+1} failed: {str(e)[:80]}")
@@ -153,15 +159,15 @@ def with_retry(fn, max_retries=4, wait=30):
             else:
                 raise
 
-# ── Generate Tamil voice via Vertex Neural2 ─────────────────
+# ── Generate Tamil voice ─────────────────────────────────────
 def generate_voice_neural2(script_text, output_path):
-    print(f"\n🎙  Generating Tamil voice with Vertex Neural2...")
+    print(f"\n🎙  Generating Tamil voice (Chirp3 HD — Callirrhoe)...")
 
     # Clean all formatting before TTS
     full_text = clean_script(script_text)
     print(f"   Script cleaned: {len(full_text)} chars")
 
-    # Chunk into 4000 byte pieces (safe under Neural2 5000 byte limit)
+    # Chunk into 4000 byte pieces
     chunks = []
     words  = full_text.split()
     current, current_len = [], 0
@@ -186,11 +192,11 @@ def generate_voice_neural2(script_text, output_path):
             "input": {"text": chunk},
             "voice": {
                 "languageCode": "ta-IN",
-                "name": "ta-IN-Chirp3-HD-Charon",
+                "name":         "ta-IN-Chirp3-HD-Callirrhoe",  # Female voice
             },
             "audioConfig": {
                 "audioEncoding": "MP3",
-                "speakingRate": 0.92,
+                "speakingRate":  0.89,   # Slightly slower, meditative pace
             }
         }
 
@@ -210,22 +216,22 @@ def generate_voice_neural2(script_text, output_path):
             raise Exception(f"TTS server error {r.status_code}: {r.text[:200]}")
 
         try:
-            # ── PRIMARY: Chirp3 HD ──────────────────────────
+            # PRIMARY: Chirp3 HD Callirrhoe (female)
             audio_bytes = with_retry(_tts_call, max_retries=3, wait=15)
-            chunk_path  = WORK_DIR / f"chunk_{i:03d}.mp3"   # ← BUG FIX: was missing on success path
+            chunk_path  = WORK_DIR / f"chunk_{i:03d}.mp3"
             chunk_path.write_bytes(audio_bytes)
             chunk_files.append(str(chunk_path))
             print(f"   ✅ Chunk {i+1}/{len(chunks)}")
 
         except ValueError:
-            # ── FALLBACK: WaveNet ───────────────────────────
-            print(f"   ↩️  Chirp3 HD config error, trying WaveNet fallback...")
+            # FALLBACK: WaveNet female
+            print(f"   ↩️  Chirp3 HD failed, trying WaveNet fallback...")
             payload["voice"] = {
                 "languageCode": "ta-IN",
-                "name":         "ta-IN-Wavenet-B",
-                "ssmlGender":   "MALE"
+                "name":         "ta-IN-Wavenet-A",
+                "ssmlGender":   "FEMALE"
             }
-            payload["audioConfig"]["pitch"] = -2.0
+            payload["audioConfig"].pop("pitch", None)
             try:
                 audio_bytes = with_retry(_tts_call, max_retries=2, wait=10)
                 chunk_path  = WORK_DIR / f"chunk_{i:03d}.mp3"
@@ -241,7 +247,6 @@ def generate_voice_neural2(script_text, output_path):
     if not chunk_files:
         return False
 
-    # Concatenate all chunks into one MP3
     if len(chunk_files) == 1:
         shutil.copy(chunk_files[0], str(output_path))
     else:
