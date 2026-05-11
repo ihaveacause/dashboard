@@ -682,6 +682,7 @@ body {
     <button class="filter-btn" onclick="setFilter('script_ready',this)">Script Ready</button>
     <button class="filter-btn" onclick="setFilter('script_approved',this)">Script Approved</button>
     <button class="filter-btn" onclick="setFilter('images_ready',this)">Images Ready</button>
+    <button class="filter-btn" onclick="setFilter('images_approved',this)">Images Approved</button>
     <button class="filter-btn" onclick="setFilter('video_ready',this)">Video Ready</button>
     <button class="filter-btn" onclick="setFilter('published',this)">Published</button>
     <div class="filter-divider"></div>
@@ -1384,8 +1385,8 @@ function openImagesModal(n) {
   document.getElementById('modal-approve-btn').textContent = '✓ Approve Images';
   document.getElementById('modal-approve-btn').disabled = ep.status === 'images_approved';
   document.getElementById('modal-approve-btn').onclick = () => {
-    quickApprove(n, 'images_approved');
     closeModal();
+    quickApprove(n, 'images_approved'); // auto-triggers video
   };
   document.getElementById('modal-regen-btn').style.display = 'none'; // per-image regen handled inline
   document.getElementById('modal-status-note').textContent = `status: ${ep.status}`;
