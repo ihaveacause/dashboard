@@ -9,7 +9,7 @@ on:
         type: string
 
 jobs:
-  generate:
+  generate-script:
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -22,20 +22,13 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Cache pip packages
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-script-${{ hashFiles('**/generate_script.yml') }}
-          restore-keys: ${{ runner.os }}-pip-script-
-
       - name: Install dependencies
-        run: pip install requests google-genai
+        run: pip install requests google-auth google-cloud-aiplatform
 
       - name: Generate script
         env:
-          SUPABASE_URL:   ${{ secrets.SUPABASE_URL }}
-          SUPABASE_KEY:   ${{ secrets.SUPABASE_KEY }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          EPISODE_NUMBER: ${{ inputs.episode_number }}
+          SUPABASE_URL:                        ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY:                        ${{ secrets.SUPABASE_KEY }}
+          GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
+          EPISODE_NUMBER:                      ${{ inputs.episode_number }}
         run: python script_generator.py
