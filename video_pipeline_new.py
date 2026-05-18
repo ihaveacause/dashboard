@@ -8,7 +8,8 @@ I Have a Cause — Video Pipeline
 - Three fonts pre-loaded: Tamil (NotoSansTamil), Latin, Devanagari
 - Word-level rendering — Tamil rendered as whole words not char-by-char
 - 20 words per chunk — tight sync, no dropped words
-- Line wrap: 60 chars for English, 40 for Tamil
+- Adaptive font size — shrinks if chunk needs >4 lines so ALL words visible
+- Line wrap: 45 chars for Tamil, 65 for English
 - clean_script() strips markdown AND parenthetical stage directions
 - Background music mixed at 8% volume, full duration, 3s fade in/out
 - SVG infographic as second-to-last scene
@@ -37,9 +38,10 @@ SUPABASE_KEY   = os.environ["SUPABASE_KEY"]
 EPISODE_NUMBER = int(os.environ["EPISODE_NUMBER"])
 GCP_CREDS_JSON = os.environ["GOOGLE_APPLICATION_CREDENTIALS_JSON"]
 
-W, H, FPS  = 1280, 720, 24
-FONT_SIZE  = 36
-SPEAK_RATE = 0.85
+W, H, FPS       = 1280, 720, 24
+FONT_SIZE       = 30        # base font size
+FONT_SIZE_SMALL = 24        # used when chunk needs >4 lines
+SPEAK_RATE      = 0.85
 
 # TTS
 TAMIL_VOICE   = "ta-IN-Chirp3-HD-Callirrhoe"
@@ -49,7 +51,7 @@ PROJECT_ID    = "gen-lang-client-0078128013"
 
 # Background music
 MUSIC_URL    = "https://alfuvzlmatfkgdrkeqgk.supabase.co/storage/v1/object/public/episode-music/background.mp3"
-MUSIC_VOLUME = 0.08
+MUSIC_VOLUME = 0.12
 MUSIC_FADE   = 3
 
 SB_HEADERS = {
@@ -124,13 +126,10 @@ def download_music():
         return None
 
 # ── Font loading ────────────────────────────────────────────
-def load_fonts(size):
-    """
-    Load fonts. NotoSansTamil-Regular is confirmed present on runner.
-    Returns dict of font objects.
-    """
+def load_fonts(size, small_size):
+    """Load Tamil, Latin, Devanagari fonts at both normal and small sizes."""
     tamil_candidates = [
-        "/usr/share/fonts/truetype/noto/NotoSansTamil-Regular.ttf",   # confirmed present
+        "/usr/share/fonts/truetype/noto/NotoSansTamil-Regular.ttf",
         "/usr/share/fonts/truetype/noto/NotoSerifTamil-Regular.ttf",
     ]
     latin_candidates = [
@@ -148,35 +147,38 @@ def load_fonts(size):
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
     ]
 
-    def try_load(candidates):
+    def try_load(candidates, sz):
         for path in candidates:
             if Path(path).exists():
                 try:
-                    return ImageFont.truetype(path, size), path
+                    return ImageFont.truetype(path, sz), path
                 except Exception:
                     continue
         return None, None
 
-    results = {}
+    fonts      = {}   # normal size
+    fonts_small = {}  # small size for overflow chunks
+
     for name, candidates in [
         ("tamil",      tamil_candidates),
         ("latin",      latin_candidates),
         ("devanagari", devanagari_candidates),
         ("universal",  universal_candidates),
     ]:
-        font, path = try_load(candidates)
-        results[name] = font
+        font, path = try_load(candidates, size)
+        font_s, _  = try_load(candidates, small_size)
+        fonts[name]       = font
+        fonts_small[name] = font_s
         short = Path(path).name if path else "not found"
         print(f"   Font [{name}]: {'✅' if font else '❌'} {short}")
 
-    results["default"] = ImageFont.load_default()
-    return results
+    fonts["default"]       = ImageFont.load_default()
+    fonts_small["default"] = ImageFont.load_default()
+
+    return fonts, fonts_small
 
 def get_font_for_word(word, fonts):
-    """
-    Detect the dominant script of a word and return appropriate font.
-    Works at word level — Tamil script rendered as whole unit.
-    """
+    """Detect dominant script of word and return appropriate font."""
     tamil_count = devanagari_count = latin_count = 0
     for ch in word:
         try:
@@ -199,7 +201,7 @@ def get_font_for_word(word, fonts):
 
 # ── Script cleaning ─────────────────────────────────────────
 def clean_script(text):
-    """Strip all markdown, stage directions, and formatting before TTS."""
+    """Strip markdown, stage directions, and formatting before TTS."""
     text = re.sub(r'\(.*?\)', ' ', text)
     text = re.sub(r'\[.*?\]', ' ', text)
     text = re.sub(r'\*+', '', text)
@@ -217,6 +219,22 @@ def chunk_script(script, words_per_chunk=20):
     words = script.split()
     return [" ".join(words[i:i + words_per_chunk])
             for i in range(0, len(words), words_per_chunk)]
+
+# ── Build lines from text ───────────────────────────────────
+def build_lines(text, max_chars):
+    """Wrap text into lines. Returns list of word lists."""
+    words = text.split()
+    lines, cur, cur_len = [], [], 0
+    for word in words:
+        if cur_len + len(word) + 1 > max_chars and cur:
+            lines.append(cur)
+            cur, cur_len = [word], len(word)
+        else:
+            cur.append(word)
+            cur_len += len(word) + 1
+    if cur:
+        lines.append(cur)
+    return lines
 
 # ── Cloud TTS ───────────────────────────────────────────────
 def generate_tts_chunk(text, chunk_idx, voice_name, language_code):
@@ -255,7 +273,6 @@ def generate_tts_chunk(text, chunk_idx, voice_name, language_code):
         return None
 
 def get_audio_duration(path):
-    """Get audio duration in seconds using ffprobe."""
     try:
         result = subprocess.run(
             ["ffprobe", "-v", "error", "-show_entries", "format=duration",
@@ -296,12 +313,12 @@ def download_svg_as_image(svg_text):
         return Image.new("RGB", (W, H), (5, 5, 20))
 
 # ── Text frame rendering ────────────────────────────────────
-def render_text_frame(base_img, text, fonts, is_tamil=True):
+def render_text_frame(base_img, text, fonts, fonts_small, is_tamil=True):
     """
     Composite text onto image.
-    KEY FIX: Renders each word as a whole unit using the correct font.
-    Tamil is an abugida — characters must not be split; render word-by-word.
-    Line wrap: 40 chars for Tamil, 60 for English.
+    - Renders each word as a whole unit (preserves Tamil ligatures)
+    - If chunk needs >4 lines → uses smaller font so ALL words are visible
+    - No words ever cut off or hidden
     """
     img     = base_img.copy().convert("RGBA")
     overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
@@ -311,22 +328,21 @@ def render_text_frame(base_img, text, fonts, is_tamil=True):
     text_col = (255, 255, 255, 240) if dark else (20, 20, 20, 240)
     bg_col   = (0,   0,   0,   110) if dark else (255, 255, 255, 110)
 
-    # ── Build lines (word-level wrap) ──────────────────────
-    max_chars = 40 if is_tamil else 60
-    words     = text.split()
-    lines, cur, cur_len = [], [], 0
-    for word in words:
-        if cur_len + len(word) + 1 > max_chars and cur:
-            lines.append(cur)
-            cur, cur_len = [word], len(word)
-        else:
-            cur.append(word)
-            cur_len += len(word) + 1
-    if cur:
-        lines.append(cur)
-    lines = lines[:4]  # max 4 lines
+    max_chars = 45 if is_tamil else 65
 
-    line_h  = FONT_SIZE + 12
+    # Build lines at normal size
+    lines = build_lines(text, max_chars)
+
+    # If >4 lines — switch to small font and rewrap with wider chars
+    if len(lines) > 4:
+        active_fonts = fonts_small
+        line_h       = FONT_SIZE_SMALL + 10
+        max_chars    = 55 if is_tamil else 80
+        lines        = build_lines(text, max_chars)
+    else:
+        active_fonts = fonts
+        line_h       = FONT_SIZE + 10
+
     total_h = len(lines) * line_h + 24
     box_y   = H - total_h - 60
     box_x   = 60
@@ -337,20 +353,15 @@ def render_text_frame(base_img, text, fonts, is_tamil=True):
         fill=bg_col
     )
 
-    # ── Render word by word (not char by char) ─────────────
+    # Render word by word — preserves Tamil ligatures
     for li, line_words in enumerate(lines):
         y = box_y + li * line_h
         x = box_x
-
         for wi, word in enumerate(line_words):
-            font = get_font_for_word(word, fonts)
+            font  = get_font_for_word(word, active_fonts)
             space = " " if wi < len(line_words) - 1 else ""
             token = word + space
-
-            # Draw whole word at once — preserves Tamil ligatures
             draw.text((x, y), token, font=font, fill=text_col)
-
-            # Advance x by word width
             try:
                 bbox = font.getbbox(token)
                 x += bbox[2] - bbox[0]
@@ -405,8 +416,8 @@ def mix_music(video_path, music_path, output_path):
         return video_path
 
 # ── Single language render ──────────────────────────────────
-def render_video(script, all_scenes, fonts, voice_name, language_code,
-                 label, lang_prefix, work_subdir, music_path):
+def render_video(script, all_scenes, fonts, fonts_small, voice_name,
+                 language_code, label, lang_prefix, work_subdir, music_path):
     """Render full video for one language. Returns path to final mp4 or None."""
     print(f"\n{'─'*50}")
     print(f"🎬 Rendering {label} video...")
@@ -429,7 +440,7 @@ def render_video(script, all_scenes, fonts, voice_name, language_code,
             print(f"   ⚠️  Chunk {i+1} TTS failed — skipping")
             continue
 
-        composited = render_text_frame(base_img, chunk, fonts, is_tamil=is_tamil)
+        composited = render_text_frame(base_img, chunk, fonts, fonts_small, is_tamil=is_tamil)
         frame_path = work_subdir / f"frame_{i:04d}.jpg"
         composited.save(str(frame_path), "JPEG", quality=95)
 
@@ -443,7 +454,7 @@ def render_video(script, all_scenes, fonts, voice_name, language_code,
         print(f"   ❌ No clips generated for {label}")
         return None
 
-    # Concatenate clips
+    # Concatenate
     concat_file = work_subdir / "concat.txt"
     with open(concat_file, "w") as f:
         for cp in clip_paths:
@@ -485,14 +496,14 @@ def main():
     db_patch("tamil_episodes", EPISODE_NUMBER, {"status": "rendering_video"})
 
     try:
-        # Load fonts once — shared by both videos
+        # Load fonts at both sizes — shared by both videos
         print(f"\n🔤 Loading fonts...")
-        fonts = load_fonts(FONT_SIZE)
+        fonts, fonts_small = load_fonts(FONT_SIZE, FONT_SIZE_SMALL)
 
-        # Download background music once — shared by both videos
+        # Download music once — shared by both videos
         music_path = download_music()
 
-        # Download scene images from tamil_episodes (shared)
+        # Scene images from tamil_episodes — shared
         image_urls_raw = tamil_ep.get("image_urls", "[]")
         image_urls     = json.loads(image_urls_raw) if isinstance(image_urls_raw, str) else image_urls_raw
         image_urls     = sorted(image_urls, key=lambda x: x["id"])
@@ -528,7 +539,8 @@ def main():
         if tamil_script:
             print(f"\n📝 Tamil script: {len(tamil_script.split())} words")
             tamil_path = render_video(
-                script=tamil_script, all_scenes=all_scenes, fonts=fonts,
+                script=tamil_script, all_scenes=all_scenes,
+                fonts=fonts, fonts_small=fonts_small,
                 voice_name=TAMIL_VOICE, language_code="ta-IN",
                 label="Tamil", lang_prefix="ta",
                 work_subdir=WORK_DIR / "tamil", music_path=music_path
@@ -556,7 +568,8 @@ def main():
         if english_script:
             print(f"\n📝 English script: {len(english_script.split())} words")
             english_path = render_video(
-                script=english_script, all_scenes=all_scenes, fonts=fonts,
+                script=english_script, all_scenes=all_scenes,
+                fonts=fonts, fonts_small=fonts_small,
                 voice_name=ENGLISH_VOICE, language_code="en-US",
                 label="English", lang_prefix="en",
                 work_subdir=WORK_DIR / "english", music_path=music_path
