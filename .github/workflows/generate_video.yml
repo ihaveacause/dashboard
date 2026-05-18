@@ -1,5 +1,4 @@
 name: Generate Episode Video
-
 on:
   workflow_dispatch:
     inputs:
@@ -7,12 +6,10 @@ on:
         description: 'Episode number to render video for'
         required: true
         type: string
-
 jobs:
   render-video:
     runs-on: ubuntu-latest
     timeout-minutes: 90
-
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
@@ -35,6 +32,9 @@ jobs:
             libpango1.0-dev \
             libgdk-pixbuf2.0-dev \
             libffi-dev
+
+      - name: Find Tamil fonts
+        run: find /usr/share/fonts -name "*Tamil*" -o -name "*tamil*" 2>/dev/null
 
       - name: Install Python dependencies
         run: pip install requests google-auth Pillow numpy cairosvg
