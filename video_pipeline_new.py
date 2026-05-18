@@ -6,14 +6,13 @@ I Have a Cause — Video Pipeline
     English: en-US-Chirp3-HD-Charon     (male,   0.85x)
 - PIL composites text directly onto image frames (no FFmpeg overlay)
 - Three fonts pre-loaded: Tamil (NotoSansTamil), Latin, Devanagari
-- Per-character font selection — no boxes for any script
+- Word-level rendering — Tamil rendered as whole words not char-by-char
 - 20 words per chunk — tight sync, no dropped words
 - Line wrap: 60 chars for English, 40 for Tamil
 - clean_script() strips markdown AND parenthetical stage directions
 - Background music mixed at 8% volume, full duration, 3s fade in/out
 - SVG infographic as second-to-last scene
 - Saves video_url correctly to both tamil_episodes and english_episodes
-- FFmpeg assembles final video
 """
 
 import os
@@ -39,7 +38,7 @@ EPISODE_NUMBER = int(os.environ["EPISODE_NUMBER"])
 GCP_CREDS_JSON = os.environ["GOOGLE_APPLICATION_CREDENTIALS_JSON"]
 
 W, H, FPS  = 1280, 720, 24
-FONT_SIZE  = 32
+FONT_SIZE  = 36
 SPEAK_RATE = 0.85
 
 # TTS
@@ -49,9 +48,9 @@ TTS_ENDPOINT  = "https://texttospeech.googleapis.com/v1beta1/text:synthesize"
 PROJECT_ID    = "gen-lang-client-0078128013"
 
 # Background music
-MUSIC_URL     = "https://alfuvzlmatfkgdrkeqgk.supabase.co/storage/v1/object/public/episode-music/background.mp3"
-MUSIC_VOLUME  = 0.08   # 8% — felt but never heard over voice
-MUSIC_FADE    = 3      # seconds fade in / fade out
+MUSIC_URL    = "https://alfuvzlmatfkgdrkeqgk.supabase.co/storage/v1/object/public/episode-music/background.mp3"
+MUSIC_VOLUME = 0.08
+MUSIC_FADE   = 3
 
 SB_HEADERS = {
     "apikey":        SUPABASE_KEY,
@@ -110,7 +109,6 @@ def upload_video(filename, data_bytes):
 
 # ── Download background music ───────────────────────────────
 def download_music():
-    """Download background music track to local file. Returns path or None."""
     try:
         print(f"\n🎵 Downloading background music...")
         r = requests.get(MUSIC_URL, timeout=60)
@@ -119,20 +117,21 @@ def download_music():
             music_path.write_bytes(r.content)
             print(f"   ✅ Music downloaded ({len(r.content)//1024} KB)")
             return str(music_path)
-        else:
-            print(f"   ❌ Music download failed: {r.status_code}")
-            return None
+        print(f"   ❌ Music download failed: {r.status_code}")
+        return None
     except Exception as e:
         print(f"   ❌ Music download error: {e}")
         return None
 
 # ── Font loading ────────────────────────────────────────────
 def load_fonts(size):
-    """Load Tamil (NotoSansTamil preferred), Latin, Devanagari fonts."""
+    """
+    Load fonts. NotoSansTamil-Regular is confirmed present on runner.
+    Returns dict of font objects.
+    """
     tamil_candidates = [
-        "/usr/share/fonts/truetype/noto/NotoSansTamil-Regular.ttf",
+        "/usr/share/fonts/truetype/noto/NotoSansTamil-Regular.ttf",   # confirmed present
         "/usr/share/fonts/truetype/noto/NotoSerifTamil-Regular.ttf",
-        "/usr/share/fonts/truetype/lohit-tamil/Lohit-Tamil.ttf",
     ]
     latin_candidates = [
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
@@ -167,34 +166,40 @@ def load_fonts(size):
     ]:
         font, path = try_load(candidates)
         results[name] = font
-        short = Path(path).name if path else "default fallback"
-        print(f"   Font [{name}]: {'✅' if font else '⚠️ '} {short}")
+        short = Path(path).name if path else "not found"
+        print(f"   Font [{name}]: {'✅' if font else '❌'} {short}")
 
     results["default"] = ImageFont.load_default()
     return results
 
-def get_font_for_char(ch, fonts):
-    """Return best font for a character based on Unicode block."""
-    try:
-        name = unicodedata.name(ch, "")
-    except Exception:
-        name = ""
-    if "TAMIL" in name:
+def get_font_for_word(word, fonts):
+    """
+    Detect the dominant script of a word and return appropriate font.
+    Works at word level — Tamil script rendered as whole unit.
+    """
+    tamil_count = devanagari_count = latin_count = 0
+    for ch in word:
+        try:
+            name = unicodedata.name(ch, "")
+        except Exception:
+            name = ""
+        if "TAMIL" in name:
+            tamil_count += 1
+        elif "DEVANAGARI" in name:
+            devanagari_count += 1
+        elif ch.isascii() and ch.isalpha():
+            latin_count += 1
+
+    if tamil_count >= latin_count and tamil_count >= devanagari_count:
         return fonts["tamil"] or fonts["universal"] or fonts["default"]
-    elif "DEVANAGARI" in name:
+    elif devanagari_count > latin_count:
         return fonts["devanagari"] or fonts["universal"] or fonts["default"]
-    elif ch.isascii():
-        return fonts["latin"] or fonts["universal"] or fonts["default"]
     else:
-        return fonts["universal"] or fonts["default"]
+        return fonts["latin"] or fonts["universal"] or fonts["default"]
 
 # ── Script cleaning ─────────────────────────────────────────
 def clean_script(text):
-    """
-    Strip all markdown, stage directions, and formatting before TTS.
-    Handles: (parentheticals), [brackets], **bold**, *italic*,
-    #headers, numbered lists, bullets, underscores.
-    """
+    """Strip all markdown, stage directions, and formatting before TTS."""
     text = re.sub(r'\(.*?\)', ' ', text)
     text = re.sub(r'\[.*?\]', ' ', text)
     text = re.sub(r'\*+', '', text)
@@ -208,7 +213,7 @@ def clean_script(text):
 
 # ── Script chunking ─────────────────────────────────────────
 def chunk_script(script, words_per_chunk=20):
-    """Split into ~20 word chunks — tight sync, no dropped words."""
+    """Split into ~20 word chunks for tight sync."""
     words = script.split()
     return [" ".join(words[i:i + words_per_chunk])
             for i in range(0, len(words), words_per_chunk)]
@@ -292,7 +297,12 @@ def download_svg_as_image(svg_text):
 
 # ── Text frame rendering ────────────────────────────────────
 def render_text_frame(base_img, text, fonts, is_tamil=True):
-    """Composite text onto image with per-character font selection."""
+    """
+    Composite text onto image.
+    KEY FIX: Renders each word as a whole unit using the correct font.
+    Tamil is an abugida — characters must not be split; render word-by-word.
+    Line wrap: 40 chars for Tamil, 60 for English.
+    """
     img     = base_img.copy().convert("RGBA")
     overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
     draw    = ImageDraw.Draw(overlay)
@@ -301,40 +311,51 @@ def render_text_frame(base_img, text, fonts, is_tamil=True):
     text_col = (255, 255, 255, 240) if dark else (20, 20, 20, 240)
     bg_col   = (0,   0,   0,   110) if dark else (255, 255, 255, 110)
 
+    # ── Build lines (word-level wrap) ──────────────────────
     max_chars = 40 if is_tamil else 60
     words     = text.split()
     lines, cur, cur_len = [], [], 0
     for word in words:
         if cur_len + len(word) + 1 > max_chars and cur:
-            lines.append(" ".join(cur))
+            lines.append(cur)
             cur, cur_len = [word], len(word)
         else:
             cur.append(word)
             cur_len += len(word) + 1
     if cur:
-        lines.append(" ".join(cur))
-    lines = lines[:4]
+        lines.append(cur)
+    lines = lines[:4]  # max 4 lines
 
-    line_h  = FONT_SIZE + 10
+    line_h  = FONT_SIZE + 12
     total_h = len(lines) * line_h + 24
     box_y   = H - total_h - 60
     box_x   = 60
 
+    # Background box
     draw.rectangle(
         [box_x - 12, box_y - 12, W - box_x + 12, box_y + total_h + 12],
         fill=bg_col
     )
 
-    for li, line in enumerate(lines):
-        y, x = box_y + li * line_h, box_x
-        for ch in line:
-            font = get_font_for_char(ch, fonts)
-            draw.text((x, y), ch, font=font, fill=text_col)
+    # ── Render word by word (not char by char) ─────────────
+    for li, line_words in enumerate(lines):
+        y = box_y + li * line_h
+        x = box_x
+
+        for wi, word in enumerate(line_words):
+            font = get_font_for_word(word, fonts)
+            space = " " if wi < len(line_words) - 1 else ""
+            token = word + space
+
+            # Draw whole word at once — preserves Tamil ligatures
+            draw.text((x, y), token, font=font, fill=text_col)
+
+            # Advance x by word width
             try:
-                bbox = font.getbbox(ch)
-                x += (bbox[2] - bbox[0]) + 1
+                bbox = font.getbbox(token)
+                x += bbox[2] - bbox[0]
             except Exception:
-                x += FONT_SIZE
+                x += len(token) * (FONT_SIZE // 2)
 
     return Image.alpha_composite(img, overlay).convert("RGB")
 
@@ -353,24 +374,16 @@ def frames_to_clip(frame_path, audio_path, clip_idx, lang_prefix):
     ], check=True, timeout=300)
     return str(clip_path)
 
-# ── Mix background music into final video ──────────────────
+# ── Mix background music ────────────────────────────────────
 def mix_music(video_path, music_path, output_path):
-    """
-    Mix background music under voice audio.
-    - Music loops to full video duration
-    - Volume: 8%
-    - Fade in: 3s, Fade out: 3s
-    - Falls back to original video if music mixing fails
-    """
+    """Mix background music at 8% volume with 3s fade in/out."""
     try:
-        # Get video duration
         duration = get_audio_duration(video_path)
-        print(f"   🎵 Mixing music (video: {duration:.1f}s, vol: {MUSIC_VOLUME*100:.0f}%)...")
-
+        print(f"   🎵 Mixing music (video: {duration:.1f}s, vol: {int(MUSIC_VOLUME*100)}%)...")
         subprocess.run([
             "ffmpeg", "-y", "-loglevel", "error",
             "-i", video_path,
-            "-stream_loop", "-1", "-i", music_path,   # loop music
+            "-stream_loop", "-1", "-i", music_path,
             "-filter_complex",
             (
                 f"[1:a]volume={MUSIC_VOLUME},"
@@ -385,13 +398,11 @@ def mix_music(video_path, music_path, output_path):
             "-c:a", "aac", "-b:a", "192k",
             output_path
         ], check=True, timeout=600)
-
         print(f"   ✅ Music mixed successfully")
         return output_path
-
     except Exception as e:
         print(f"   ⚠️  Music mixing failed: {e} — using video without music")
-        return video_path   # fallback to original
+        return video_path
 
 # ── Single language render ──────────────────────────────────
 def render_video(script, all_scenes, fonts, voice_name, language_code,
@@ -410,8 +421,8 @@ def render_video(script, all_scenes, fonts, voice_name, language_code,
     print(f"   Chunks: {len(chunks)} | Scenes: {scene_count}")
 
     for i, chunk in enumerate(chunks):
-        scene_idx = min(int(i / len(chunks) * scene_count), scene_count - 1)
-        base_img  = all_scenes[scene_idx]
+        scene_idx  = min(int(i / len(chunks) * scene_count), scene_count - 1)
+        base_img   = all_scenes[scene_idx]
 
         audio_path = generate_tts_chunk(chunk, i, voice_name, language_code)
         if not audio_path:
@@ -422,7 +433,7 @@ def render_video(script, all_scenes, fonts, voice_name, language_code,
         frame_path = work_subdir / f"frame_{i:04d}.jpg"
         composited.save(str(frame_path), "JPEG", quality=95)
 
-        clip_path = frames_to_clip(frame_path, audio_path, i, lang_prefix)
+        clip_path  = frames_to_clip(frame_path, audio_path, i, lang_prefix)
         clip_paths.append(clip_path)
 
         if (i + 1) % 10 == 0:
@@ -445,15 +456,13 @@ def render_video(script, all_scenes, fonts, voice_name, language_code,
         "-c", "copy", str(raw_video)
     ], check=True, timeout=600)
 
-    print(f"   ✅ {label} video assembled — {len(clip_paths)}/{len(chunks)} clips")
+    print(f"   ✅ {label} assembled — {len(clip_paths)}/{len(chunks)} clips")
 
-    # Mix background music
+    # Mix music
     final_video = work_subdir / f"final_{lang_prefix}.mp4"
     if music_path:
-        result = mix_music(str(raw_video), music_path, str(final_video))
-        return result
-    else:
-        return str(raw_video)
+        return mix_music(str(raw_video), music_path, str(final_video))
+    return str(raw_video)
 
 # ── Main ────────────────────────────────────────────────────
 def main():
@@ -504,7 +513,7 @@ def main():
             except Exception as e:
                 print(f"   ⚠️  SVG load failed: {e}")
 
-        # Build scene list — SVG second-to-last
+        # Scene list — SVG second-to-last
         all_scenes = scene_images.copy()
         if svg_img and len(all_scenes) > 1:
             all_scenes.insert(-1, svg_img)
@@ -519,15 +528,10 @@ def main():
         if tamil_script:
             print(f"\n📝 Tamil script: {len(tamil_script.split())} words")
             tamil_path = render_video(
-                script        = tamil_script,
-                all_scenes    = all_scenes,
-                fonts         = fonts,
-                voice_name    = TAMIL_VOICE,
-                language_code = "ta-IN",
-                label         = "Tamil",
-                lang_prefix   = "ta",
-                work_subdir   = WORK_DIR / "tamil",
-                music_path    = music_path
+                script=tamil_script, all_scenes=all_scenes, fonts=fonts,
+                voice_name=TAMIL_VOICE, language_code="ta-IN",
+                label="Tamil", lang_prefix="ta",
+                work_subdir=WORK_DIR / "tamil", music_path=music_path
             )
             if tamil_path:
                 print(f"\n☁️  Uploading Tamil video...")
@@ -542,7 +546,7 @@ def main():
                 })
                 print(f"   {'✅' if ok else '❌'} Tamil status saved")
         else:
-            print("⚠️  No Tamil script — skipping Tamil video")
+            print("⚠️  No Tamil script — skipping")
             db_patch("tamil_episodes", EPISODE_NUMBER, {"status": "images_approved"})
 
         # ── English video ──────────────────────────────────
@@ -552,15 +556,10 @@ def main():
         if english_script:
             print(f"\n📝 English script: {len(english_script.split())} words")
             english_path = render_video(
-                script        = english_script,
-                all_scenes    = all_scenes,
-                fonts         = fonts,
-                voice_name    = ENGLISH_VOICE,
-                language_code = "en-US",
-                label         = "English",
-                lang_prefix   = "en",
-                work_subdir   = WORK_DIR / "english",
-                music_path    = music_path
+                script=english_script, all_scenes=all_scenes, fonts=fonts,
+                voice_name=ENGLISH_VOICE, language_code="en-US",
+                label="English", lang_prefix="en",
+                work_subdir=WORK_DIR / "english", music_path=music_path
             )
             if english_path:
                 print(f"\n☁️  Uploading English video...")
@@ -575,11 +574,11 @@ def main():
                 })
                 print(f"   {'✅' if ok else '❌'} English status saved")
         else:
-            print("⚠️  No English script — skipping English video")
+            print("⚠️  No English script — skipping")
 
-        # ── Final summary ──────────────────────────────────
+        # ── Summary ────────────────────────────────────────
         print(f"\n{'='*60}")
-        print(f"✅ Episode {EPISODE_NUMBER} — Video pipeline complete!")
+        print(f"✅ Episode {EPISODE_NUMBER} — Complete!")
         if tamil_url:
             print(f"   🇮🇳 Tamil  : {tamil_url}")
         if english_url:
