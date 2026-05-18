@@ -1,11 +1,12 @@
 """
 I Have a Cause — Video Pipeline
 ================================
-- Vertex AI Chirp3 HD Tamil voice (Callirrhoe, female, 0.89x)
+- Vertex AI Chirp3 HD Tamil voice (Callirrhoe, female, 0.85x)
 - PIL composites text directly onto image frames (no FFmpeg overlay)
 - 4-line centered text, font size 20, adaptive color
+- Character-proportion chunk timing (fixes sync drift)
+- Static image per clip (no pan/zoom shaking)
 - SVG infographic as second-to-last scene
-- FFmpeg pan/zoom + audio assembly
 """
 
 import os
@@ -129,6 +130,15 @@ def split_into_chunks(text, words_per_line=7, lines_per_chunk=4):
             chunks.append('\n'.join(lines))
     return chunks
 
+# ── Character-proportion timing ──────────────────────────────
+def chunk_durations(chunks, audio_dur):
+    """
+    Allocate time proportional to character count per chunk.
+    Longer chunks (more words) get more time — reduces sync drift.
+    """
+    total_chars = sum(len(c) for c in chunks) or 1
+    return [(len(c) / total_chars) * audio_dur for c in chunks]
+
 # ── Image brightness detection ───────────────────────────────
 def detect_brightness(image_path):
     try:
@@ -139,7 +149,6 @@ def detect_brightness(image_path):
 
 # ── Find best available font ─────────────────────────────────
 def find_font(size=20):
-    # Prefer fonts with broad Unicode + Tamil coverage
     candidates = [
         '/usr/share/fonts/truetype/noto/NotoSansTamil-Regular.ttf',
         '/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf',
@@ -162,19 +171,16 @@ def find_font(size=20):
 # ── PIL: composite text directly onto image ──────────────────
 def composite_text_on_image(image_path, chunk, brightness, font):
     """Open image, draw semi-transparent text block in center, return RGB image."""
-    base = Image.open(image_path).convert('RGBA').resize((W, H))
-
-    # Transparent overlay layer
+    base    = Image.open(image_path).convert('RGBA').resize((W, H))
     overlay = Image.new('RGBA', (W, H), (0, 0, 0, 0))
     draw    = ImageDraw.Draw(overlay)
 
     lines    = chunk.split('\n')
     line_gap = 6
-    line_h   = 20 + line_gap   # font size + gap
+    line_h   = 20 + line_gap
     total_h  = len(lines) * line_h
     pad      = 14
 
-    # Measure widths
     widths = []
     for line in lines:
         try:
@@ -184,74 +190,47 @@ def composite_text_on_image(image_path, chunk, brightness, font):
             widths.append(len(line) * 10)
     max_w = max(widths) if widths else 200
 
-    # Background rect (semi-transparent, tighter)
-    cx     = W // 2
-    cy     = H // 2
-    bg_x1  = cx - max_w // 2 - pad
-    bg_y1  = cy - total_h // 2 - pad
-    bg_x2  = cx + max_w // 2 + pad
-    bg_y2  = cy + total_h // 2 + pad
+    cx    = W // 2
+    cy    = H // 2
+    bg_x1 = cx - max_w // 2 - pad
+    bg_y1 = cy - total_h // 2 - pad
+    bg_x2 = cx + max_w // 2 + pad
+    bg_y2 = cy + total_h // 2 + pad
 
     if brightness == 'dark':
-        bg_fill   = (0,   0,   0,   120)   # subtle dark tint
-        text_fill = (255, 255, 255, 255)   # white text
+        bg_fill   = (0,   0,   0,   120)
+        text_fill = (255, 255, 255, 255)
     else:
-        bg_fill   = (255, 255, 255, 120)   # subtle light tint
-        text_fill = (15,  15,  15,  255)   # near-black text
+        bg_fill   = (255, 255, 255, 120)
+        text_fill = (15,  15,  15,  255)
 
     draw.rectangle([bg_x1, bg_y1, bg_x2, bg_y2], fill=bg_fill)
 
-    # Draw each line centered
     y = cy - total_h // 2
     for line, lw in zip(lines, widths):
         x = cx - lw // 2
         draw.text((x, y), line, font=font, fill=text_fill)
         y += line_h
 
-    # Composite onto original image — background fully visible
     result = Image.alpha_composite(base, overlay)
     return result.convert('RGB')
 
-# ── Build one video clip from a PIL image ────────────────────
-def build_clip(pil_image, duration, pan_dir, out_path):
-    """Save PIL image to PNG then create pan/zoom video clip."""
+# ── Build one static video clip from PIL image ───────────────
+def build_clip(pil_image, duration, out_path):
+    """Save PIL image → static video clip (no pan/zoom — eliminates shaking)."""
     png = WORK_DIR / f"_tmp_{out_path.stem}.png"
     pil_image.save(str(png))
 
-    zoom   = 1.06
-    big_w  = int(W * zoom)
-    big_h  = int(H * zoom)
-    pad_x  = big_w - W
-    pad_y  = big_h - H
-    frames = max(int(duration * FPS), 1)
-    xs, ys, xe, ye = pan_dir
-    x0, y0 = int(xs * pad_x), int(ys * pad_y)
-    x1, y1 = int(xe * pad_x), int(ye * pad_y)
-
-    vf = (
-        f"scale={big_w}:{big_h},"
-        f"crop={W}:{H}:"
-        f"'({x0}+({x1}-{x0})*n/{frames})':"
-        f"'({y0}+({y1}-{y0})*n/{frames})'"
-    )
     cmd = [
         "ffmpeg", "-y", "-loop", "1", "-i", str(png),
-        "-vf", vf, "-t", str(duration), "-r", str(FPS),
+        "-vf", f"scale={W}:{H}",       # static — no pan/zoom
+        "-t", str(duration), "-r", str(FPS),
         "-c:v", "libx264", "-preset", "veryfast", "-crf", "26",
         "-pix_fmt", "yuv420p", str(out_path)
     ]
     r = subprocess.run(cmd, capture_output=True, text=True)
-    if r.returncode != 0:
-        # static fallback
-        cmd2 = [
-            "ffmpeg", "-y", "-loop", "1", "-i", str(png),
-            "-vf", f"scale={W}:{H}", "-t", str(duration), "-r", str(FPS),
-            "-c:v", "libx264", "-preset", "veryfast", "-crf", "26",
-            "-pix_fmt", "yuv420p", str(out_path)
-        ]
-        subprocess.run(cmd2, capture_output=True)
     png.unlink(missing_ok=True)
-    return out_path.exists()
+    return r.returncode == 0 and out_path.exists()
 
 # ── Download SVG as PNG ──────────────────────────────────────
 def download_svg(svg_data):
@@ -316,7 +295,7 @@ def with_retry(fn, max_retries=3, wait=15):
 
 # ── Generate Tamil voice ─────────────────────────────────────
 def generate_voice(script_text, output_path):
-    print(f"\n🎙  Generating voice (Callirrhoe, 0.89x)...")
+    print(f"\n🎙  Generating voice (Callirrhoe, 0.85x)...")
     full_text = clean_script(script_text)
     print(f"   Cleaned: {len(full_text)} chars")
 
@@ -338,7 +317,7 @@ def generate_voice(script_text, output_path):
         payload = {
             "input": {"text": chunk},
             "voice": {"languageCode": "ta-IN", "name": "ta-IN-Chirp3-HD-Callirrhoe"},
-            "audioConfig": {"audioEncoding": "MP3", "speakingRate": 0.89}
+            "audioConfig": {"audioEncoding": "MP3", "speakingRate": 0.85}  # slowed for Tamil
         }
 
         def _call(c=chunk):
@@ -365,7 +344,7 @@ def generate_voice(script_text, output_path):
                 cp    = WORK_DIR / f"chunk_{i:03d}.mp3"
                 cp.write_bytes(audio)
                 files.append(str(cp))
-                print(f"   ✅ Chunk {i+1}/{len(chunks)} (WaveNet)")
+                print(f"   ✅ Chunk {i+1}/{len(chunks)} (WaveNet fallback)")
             except Exception as e:
                 print(f"   ⚠️  Chunk {i+1} failed: {e}")
         except Exception as e:
@@ -401,7 +380,7 @@ def assemble_video(image_paths, svg_path, audio_path, script_text, output_path):
     print(f"\n🎬 Assembling video...")
     audio_dur = get_duration(audio_path)
 
-    # Build scene list — SVG as second-to-last
+    # Scene list — SVG second-to-last
     scene_paths = list(image_paths)
     if svg_path:
         scene_paths.insert(-1, svg_path)
@@ -410,11 +389,11 @@ def assemble_video(image_paths, svg_path, audio_path, script_text, output_path):
     num_scenes = len(scene_paths)
     scene_dur  = audio_dur / num_scenes
 
-    # Text chunks
-    cleaned    = clean_script(script_text)
-    chunks     = split_into_chunks(cleaned)
-    chunk_dur  = audio_dur / max(len(chunks), 1)
-    print(f"   {num_scenes} scenes × {scene_dur:.1f}s | {len(chunks)} text chunks × {chunk_dur:.1f}s")
+    # Text chunks + character-proportion timing
+    cleaned   = clean_script(script_text)
+    chunks    = split_into_chunks(cleaned)
+    dur_list  = chunk_durations(chunks, audio_dur)   # proportional timing
+    print(f"   {num_scenes} scenes | {len(chunks)} text chunks (char-proportional timing)")
 
     # Brightness per scene
     brightness_map = {i: detect_brightness(sp) for i, sp in enumerate(scene_paths)}
@@ -422,25 +401,24 @@ def assemble_video(image_paths, svg_path, audio_path, script_text, output_path):
     # Font
     font = find_font(size=20)
 
-    # Pan directions
-    pan_dirs = [
-        (0, 0, 1, 1), (1, 1, 0, 0), (0, 1, 1, 0),
-        (1, 0, 0, 1), (0.5, 0, 0.5, 1),
-    ]
-
-    # ── Create one clip per text chunk ──────────────────────
-    # PIL composites text directly on image — background fully visible
+    # ── One clip per text chunk ──────────────────────────────
+    # PIL composites text on image — background fully visible
+    # Static clip (no pan/zoom) — eliminates shaking
     clip_paths = []
-    for i, chunk in enumerate(chunks):
-        scene_idx  = min(int(i * chunk_dur / scene_dur), num_scenes - 1)
-        scene_img  = scene_paths[scene_idx]
+    elapsed    = 0.0
+    for i, (chunk, dur) in enumerate(zip(chunks, dur_list)):
+        scene_idx  = min(int(elapsed / scene_dur), num_scenes - 1)
         brightness = brightness_map[scene_idx]
 
-        composited = composite_text_on_image(scene_img, chunk, brightness, font)
-        clip_out   = WORK_DIR / f"clip_{i:03d}.mp4"
-        ok         = build_clip(composited, chunk_dur, pan_dirs[i % len(pan_dirs)], clip_out)
+        composited = composite_text_on_image(
+            scene_paths[scene_idx], chunk, brightness, font
+        )
+        clip_out = WORK_DIR / f"clip_{i:03d}.mp4"
+        ok       = build_clip(composited, dur, clip_out)
         if ok:
             clip_paths.append(str(clip_out))
+
+        elapsed += dur
         if (i + 1) % 10 == 0 or (i + 1) == len(chunks):
             print(f"   ✅ Clips: {i+1}/{len(chunks)}")
 
