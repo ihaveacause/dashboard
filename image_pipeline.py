@@ -3,6 +3,7 @@ I Have a Cause — Image Pipeline (Vertex AI)
 ============================================
 Uses Vertex AI Imagen 3 for high quality cosmic/surreal images
 and Gemini for SVG infographic generation.
+RULE: All images must have absolutely NO text, letters or writing.
 """
 
 import os
@@ -11,7 +12,6 @@ import base64
 import requests
 import tempfile
 from google import genai
-from google.genai import types
 from google.oauth2 import service_account
 import google.auth.transport.requests
 from datetime import datetime
@@ -28,18 +28,15 @@ PROJECT_ID = "gen-lang-client-0078128013"
 LOCATION   = "us-central1"
 
 # ── Clients ─────────────────────────────────────────────────
-# Gemini client (for scene descriptions + SVG)
 gemini_client = genai.Client(api_key=GEMINI_API_KEY)
 
-# Vertex AI credentials (for Imagen 3)
-creds_info = json.loads(GCP_CREDS_JSON)
+creds_info  = json.loads(GCP_CREDS_JSON)
 credentials = service_account.Credentials.from_service_account_info(
     creds_info,
     scopes=["https://www.googleapis.com/auth/cloud-platform"]
 )
 
 def get_vertex_token():
-    """Get fresh access token for Vertex AI REST calls."""
     auth_req = google.auth.transport.requests.Request()
     credentials.refresh(auth_req)
     return credentials.token
@@ -101,7 +98,7 @@ def fetch_preferences():
     return "\n".join(f"- {p}" for p in prefs) if prefs else ""
 
 # ── Retry helper ────────────────────────────────────────────
-def call_gemini_with_retry(fn, max_retries=4, wait=30):
+def call_with_retry(fn, max_retries=4, wait=30):
     import time
     for attempt in range(max_retries):
         try:
@@ -133,14 +130,17 @@ VISUAL STYLE:
 - Deep blues, purples, indigo, gold light rays, nebulae, sacred geometry
 - Painterly and cinematic, NOT realistic photography
 
+CRITICAL RULE: Prompts must NOT include any text, letters, words, signs, 
+writing or language of any kind in the image. Pure visual only.
+
 Generate EXACTLY 5 scene prompts for Imagen 3. Return ONLY valid JSON:
 {{
   "scenes": [
-    {{"id": 1, "label": "Hook — Opening Image", "prompt": "detailed prompt"}},
-    {{"id": 2, "label": "Waking State — Vaishvanara", "prompt": "detailed prompt"}},
-    {{"id": 3, "label": "Dream State — Taijasa", "prompt": "detailed prompt"}},
-    {{"id": 4, "label": "Deep Sleep — Prajna", "prompt": "detailed prompt"}},
-    {{"id": 5, "label": "Pure Consciousness — Turiya", "prompt": "detailed prompt"}}
+    {{"id": 1, "label": "Hook — Opening Image", "prompt": "detailed visual prompt, no text"}},
+    {{"id": 2, "label": "Waking State — Vaishvanara", "prompt": "detailed visual prompt, no text"}},
+    {{"id": 3, "label": "Dream State — Taijasa", "prompt": "detailed visual prompt, no text"}},
+    {{"id": 4, "label": "Deep Sleep — Prajna", "prompt": "detailed visual prompt, no text"}},
+    {{"id": 5, "label": "Pure Consciousness — Turiya", "prompt": "detailed visual prompt, no text"}}
   ]
 }}"""
 
@@ -151,20 +151,23 @@ Generate EXACTLY 5 scene prompts for Imagen 3. Return ONLY valid JSON:
         raw = response.text.strip().replace("```json","").replace("```","").strip()
         return json.loads(raw)
 
-    data = call_gemini_with_retry(_call)
+    data = call_with_retry(_call)
     print(f"   ✅ {len(data['scenes'])} scene descriptions generated")
     return data["scenes"]
 
 # ── Step 2: Imagen 3 via Vertex AI REST API ─────────────────
 def generate_image_vertex(prompt, scene_id):
-    """Call Imagen 3 via Vertex AI REST API directly."""
+    """Call Imagen 3 — enforces NO TEXT rule universally."""
     token = get_vertex_token()
 
     full_prompt = (
         f"{prompt} "
         f"Cinematic 16:9, cosmic surreal philosophy art, "
         f"deep space atmosphere, painterly, ethereal glow, "
-        f"ultra detailed, award winning digital art."
+        f"ultra detailed, award winning digital art. "
+        f"Absolutely no text, no letters, no words, no numbers, "   # ← universal no-text rule
+        f"no writing, no watermarks, no labels, no captions, "
+        f"no signs, no symbols with meaning anywhere in the image."
     )
 
     url = (
@@ -176,10 +179,10 @@ def generate_image_vertex(prompt, scene_id):
     payload = {
         "instances": [{"prompt": full_prompt}],
         "parameters": {
-            "sampleCount": 1,
-            "aspectRatio": "16:9",
-            "outputMimeType": "image/jpeg",
-            "safetyFilterLevel": "block_few",
+            "sampleCount":      1,
+            "aspectRatio":      "16:9",
+            "outputMimeType":   "image/jpeg",
+            "safetyFilterLevel":"block_few",
             "personGeneration": "allow_adult"
         }
     }
@@ -188,55 +191,52 @@ def generate_image_vertex(prompt, scene_id):
         url,
         headers={
             "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json"
+            "Content-Type":  "application/json"
         },
-        json=payload,
-        timeout=120
+        json=payload, timeout=120
     )
 
     if r.status_code == 200:
-        data = r.json()
-        b64 = data["predictions"][0]["bytesBase64Encoded"]
+        b64 = r.json()["predictions"][0]["bytesBase64Encoded"]
         return base64.b64decode(b64)
     else:
         print(f"      ❌ Vertex API error {r.status_code}: {r.text[:300]}")
         return None
 
 def generate_images(scenes, existing_urls=None):
+    import time
     print(f"\n🖼  Step 2: Generating images with Imagen 3 (Vertex AI)...")
 
-    # Start with any already-generated images
-    image_urls = existing_urls or []
+    image_urls   = existing_urls or []
     existing_ids = {img["id"] for img in image_urls}
-    missing = [s for s in scenes if s["id"] not in existing_ids]
+    missing      = [s for s in scenes if s["id"] not in existing_ids]
 
     if not missing:
         print(f"   ✅ All {len(scenes)} images already exist — skipping")
         return image_urls
 
-    print(f"   Already have: {sorted(existing_ids)} — Generating missing: {[s['id'] for s in missing]}")
+    print(f"   Have: {sorted(existing_ids)} | Generating: {[s['id'] for s in missing]}")
 
     for scene in missing:
         print(f"   Scene {scene['id']}: {scene['label']}...")
         try:
-            image_bytes = call_gemini_with_retry(
+            image_bytes = call_with_retry(
                 lambda p=scene["prompt"], i=scene["id"]: generate_image_vertex(p, i),
                 max_retries=3, wait=20
             )
             if not image_bytes:
                 continue
 
-            import time
-            time.sleep(10)  # Avoid Vertex AI rate limiting between images
+            time.sleep(10)  # rate limit buffer between Imagen calls
 
             storage_path = f"ep{EPISODE_NUMBER:03d}/scene_{scene['id']}.jpg"
             url = upload_to_storage("episode-images", storage_path, image_bytes)
 
             if url:
                 image_urls.append({
-                    "id": scene["id"],
-                    "label": scene["label"],
-                    "url": url,
+                    "id":     scene["id"],
+                    "label":  scene["label"],
+                    "url":    url,
                     "prompt": scene["prompt"]
                 })
                 print(f"      ✅ Uploaded: {storage_path}")
@@ -272,7 +272,7 @@ Return ONLY the SVG code starting with <svg and ending with </svg>."""
             model="gemini-2.5-flash", contents=prompt
         )
 
-    response = call_gemini_with_retry(_call_svg)
+    response = call_with_retry(_call_svg)
     svg = response.text.strip()
     if "```svg" in svg:
         svg = svg.split("```svg")[1].split("```")[0].strip()
@@ -308,23 +308,26 @@ def main():
     try:
         scenes = generate_scene_descriptions(episode, prefs)
 
-        # Load any already-generated images to avoid regenerating them
         existing = []
         if episode.get("image_urls"):
             try:
                 existing = json.loads(episode["image_urls"]) if isinstance(episode["image_urls"], str) else episode["image_urls"]
                 if existing:
-                    print(f"   📦 Found {len(existing)} existing images — will only generate missing ones")
+                    print(f"   📦 Found {len(existing)} existing images — generating missing only")
             except:
                 existing = []
 
         image_urls = generate_images(scenes, existing)
-        # Only generate SVG if it doesn't already exist
+
         existing_svg = episode.get("infographic_svg")
         if existing_svg:
             print("\n📊 Step 3: SVG already exists — skipping")
-            svg      = json.loads(existing_svg).get("svg","") if isinstance(existing_svg, str) else existing_svg.get("svg","")
-            svg_url  = json.loads(existing_svg).get("url","") if isinstance(existing_svg, str) else existing_svg.get("url","")
+            try:
+                parsed  = json.loads(existing_svg) if isinstance(existing_svg, str) else existing_svg
+                svg     = parsed.get("svg", "")
+                svg_url = parsed.get("url", "")
+            except:
+                svg, svg_url = "", ""
         else:
             svg, svg_url = generate_svg_infographic(episode)
 
@@ -342,7 +345,6 @@ def main():
         if ok:
             print(f"\n{'='*60}")
             print(f"✅ Episode {EPISODE_NUMBER} — {len(image_urls)} images ready!")
-            print(f"   Open dashboard to review and approve.")
             print(f"{'='*60}")
         else:
             print("❌ Failed to save to Supabase")
