@@ -11,6 +11,7 @@ import json
 import base64
 import requests
 import tempfile
+import xml.etree.ElementTree as ET
 from google import genai
 from google.oauth2 import service_account
 import google.auth.transport.requests
@@ -80,6 +81,18 @@ def upload_to_storage(bucket, path, data_bytes, content_type="image/jpeg"):
         return f"{SUPABASE_URL}/storage/v1/object/public/{bucket}/{path}"
     print(f"  ❌ Upload failed {r.status_code}: {r.text[:200]}")
     return None
+
+# ── SVG Validation ──────────────────────────────────────────
+def validate_svg(svg_text):
+    """
+    Validate SVG is well-formed XML.
+    Returns (is_valid, error_message)
+    """
+    try:
+        ET.fromstring(svg_text)
+        return True, None
+    except ET.ParseError as e:
+        return False, str(e)
 
 # ── Fetch episode ───────────────────────────────────────────
 def fetch_episode():
@@ -165,7 +178,7 @@ def generate_image_vertex(prompt, scene_id):
         f"Cinematic 16:9, cosmic surreal philosophy art, "
         f"deep space atmosphere, painterly, ethereal glow, "
         f"ultra detailed, award winning digital art. "
-        f"Absolutely no text, no letters, no words, no numbers, "   # ← universal no-text rule
+        f"Absolutely no text, no letters, no words, no numbers, "
         f"no writing, no watermarks, no labels, no captions, "
         f"no signs, no symbols with meaning anywhere in the image."
     )
@@ -265,27 +278,55 @@ DESIGN:
 - "I Have a Cause" watermark bottom right
 - Feeling: looking at the universe from inside consciousness
 
-Return ONLY the SVG code starting with <svg and ending with </svg>."""
+CRITICAL: Return ONLY valid, well-formed SVG XML code starting with <svg and ending with </svg>.
+No markdown fences. No explanation. The SVG must be 100% valid XML — every attribute must be
+properly quoted, no duplicate attributes, no typos in attribute values."""
 
-    def _call_svg():
-        return gemini_client.models.generate_content(
-            model="gemini-2.5-flash", contents=prompt
+    import time
+    max_svg_attempts = 3
+
+    for attempt in range(1, max_svg_attempts + 1):
+        print(f"   🔄 SVG attempt {attempt}/{max_svg_attempts}...")
+
+        def _call_svg():
+            return gemini_client.models.generate_content(
+                model="gemini-2.5-flash", contents=prompt
+            )
+
+        response = call_with_retry(_call_svg)
+        svg = response.text.strip()
+
+        # Clean markdown fences if present
+        if "```svg" in svg:
+            svg = svg.split("```svg")[1].split("```")[0].strip()
+        elif "```" in svg:
+            svg = svg.split("```")[1].split("```")[0].strip()
+
+        if not svg.startswith("<svg"):
+            print(f"   ❌ Attempt {attempt}: Response does not start with <svg — retrying...")
+            time.sleep(10)
+            continue
+
+        # ── Validate SVG XML ──────────────────────────────
+        is_valid, error = validate_svg(svg)
+        if not is_valid:
+            print(f"   ❌ Attempt {attempt}: Invalid SVG XML — {error}")
+            print(f"   🔄 Retrying SVG generation...")
+            time.sleep(10)
+            continue
+
+        print(f"   ✅ SVG validated (attempt {attempt})")
+
+        storage_path = f"ep{EPISODE_NUMBER:03d}/infographic.svg"
+        url = upload_to_storage(
+            "episode-images", storage_path,
+            svg.encode("utf-8"), "image/svg+xml"
         )
+        print(f"   {'✅' if url else '❌'} Infographic {'uploaded' if url else 'failed'}")
+        return svg, url
 
-    response = call_with_retry(_call_svg)
-    svg = response.text.strip()
-    if "```svg" in svg:
-        svg = svg.split("```svg")[1].split("```")[0].strip()
-    elif "```" in svg:
-        svg = svg.split("```")[1].split("```")[0].strip()
-
-    storage_path = f"ep{EPISODE_NUMBER:03d}/infographic.svg"
-    url = upload_to_storage(
-        "episode-images", storage_path,
-        svg.encode("utf-8"), "image/svg+xml"
-    )
-    print(f"   {'✅' if url else '❌'} Infographic {'uploaded' if url else 'failed'}")
-    return svg, url
+    print(f"   ❌ SVG generation failed after {max_svg_attempts} attempts")
+    return None, None
 
 # ── Main ────────────────────────────────────────────────────
 def main():
@@ -338,7 +379,7 @@ def main():
 
         ok = db_patch("tamil_episodes", EPISODE_NUMBER, {
             "image_urls":      json.dumps(image_urls),
-            "infographic_svg": json.dumps({"svg": svg, "url": svg_url}),
+            "infographic_svg": json.dumps({"svg": svg, "url": svg_url}) if svg else None,
             "status":          "images_ready",
         })
 
