@@ -3,10 +3,10 @@ I Have a Cause — Video Pipeline
 ================================
 - Vertex AI Chirp3 HD Tamil voice (Callirrhoe, female, 0.85x)
 - PIL composites text directly onto image frames (no FFmpeg overlay)
-- 4-line centered text, font size 20, adaptive color
-- Character-proportion chunk timing (fixes sync drift)
-- Static image per clip (no pan/zoom shaking)
+- Three fonts pre-loaded: Tamil, Latin (English), Devanagari (Sanskrit)
+- 4-line centered text, adaptive color (bright/dark image detection)
 - SVG infographic as second-to-last scene
+- FFmpeg assembles final video
 """
 
 import os
@@ -17,6 +17,7 @@ import requests
 import subprocess
 import tempfile
 import shutil
+import unicodedata
 from pathlib import Path
 from datetime import datetime
 from PIL import Image, ImageDraw, ImageFont
@@ -30,7 +31,9 @@ SUPABASE_KEY   = os.environ["SUPABASE_KEY"]
 EPISODE_NUMBER = int(os.environ["EPISODE_NUMBER"])
 GCP_CREDS_JSON = os.environ["GOOGLE_APPLICATION_CREDENTIALS_JSON"]
 
-W, H, FPS = 1280, 720, 24
+W, H, FPS    = 1280, 720, 24
+FONT_SIZE    = 32   # medium readable size
+SPEAK_RATE   = 0.85 # Tamil pacing
 
 SB_HEADERS = {
     "apikey":        SUPABASE_KEY,
@@ -68,453 +71,434 @@ def db_patch(table, n, data):
     )
     return r.status_code in (200, 204)
 
-def upload_video(path, storage_path):
-    mb = Path(path).stat().st_size / 1024 / 1024
-    print(f"   Uploading {mb:.1f} MB...")
-    with open(path, "rb") as f:
-        data = f.read()
+def upload_video(path, data_bytes):
     r = requests.post(
-        f"{SUPABASE_URL}/storage/v1/object/episode-videos/{storage_path}",
+        f"{SUPABASE_URL}/storage/v1/object/episode-videos/ep{EPISODE_NUMBER:03d}/{path}",
         headers={
             "apikey":        SUPABASE_KEY,
             "Authorization": f"Bearer {SUPABASE_KEY}",
             "Content-Type":  "video/mp4",
             "x-upsert":      "true"
         },
-        data=data, timeout=600
+        data=data_bytes, timeout=600
     )
     if r.status_code in (200, 201):
-        return f"{SUPABASE_URL}/storage/v1/object/public/episode-videos/{storage_path}"
-    print(f"   ❌ Upload failed {r.status_code}: {r.text[:200]}")
+        return f"{SUPABASE_URL}/storage/v1/object/public/episode-videos/ep{EPISODE_NUMBER:03d}/{path}"
+    print(f"  ❌ Upload failed {r.status_code}: {r.text[:200]}")
     return None
 
-def fetch_episode():
-    rows = db_get("tamil_episodes", {
-        "episode_number": f"eq.{EPISODE_NUMBER}", "select": "*"
-    })
-    return rows[0] if rows else None
+# ── Font loading (pre-loaded once at startup) ───────────────
+def load_fonts(size):
+    """
+    Load three fonts covering Tamil, Latin (English), and Devanagari (Sanskrit).
+    Falls back gracefully if any font is missing.
+    """
+    fonts = {}
 
-# ── Clean script for TTS ─────────────────────────────────────
+    # Tamil font candidates
+    tamil_candidates = [
+        "/usr/share/fonts/truetype/lohit-tamil/Lohit-Tamil.ttf",
+        "/usr/share/fonts/truetype/noto/NotoSansTamil-Regular.ttf",
+        "/usr/share/fonts/truetype/noto/NotoSerifTamil-Regular.ttf",
+    ]
+    # Latin/English font candidates
+    latin_candidates = [
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+        "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
+        "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
+    ]
+    # Devanagari/Sanskrit font candidates
+    devanagari_candidates = [
+        "/usr/share/fonts/truetype/noto/NotoSansDevanagari-Regular.ttf",
+        "/usr/share/fonts/truetype/lohit-devanagari/Lohit-Devanagari.ttf",
+    ]
+    # Universal fallback — covers multiple scripts
+    universal_candidates = [
+        "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    ]
+
+    def try_load(candidates):
+        for path in candidates:
+            if Path(path).exists():
+                try:
+                    return ImageFont.truetype(path, size)
+                except Exception:
+                    continue
+        return None
+
+    fonts["tamil"]      = try_load(tamil_candidates)
+    fonts["latin"]      = try_load(latin_candidates)
+    fonts["devanagari"] = try_load(devanagari_candidates)
+    fonts["universal"]  = try_load(universal_candidates)
+    fonts["default"]    = ImageFont.load_default()
+
+    # Log what was found
+    for name, font in fonts.items():
+        status = "✅" if font and font != fonts["default"] else "⚠️  fallback"
+        print(f"   Font [{name}]: {status}")
+
+    return fonts
+
+def get_font_for_char(ch, fonts):
+    """Return the best font for a given character."""
+    try:
+        name = unicodedata.name(ch, "")
+    except Exception:
+        name = ""
+
+    if "TAMIL" in name:
+        return fonts["tamil"] or fonts["universal"] or fonts["default"]
+    elif "DEVANAGARI" in name:
+        return fonts["devanagari"] or fonts["universal"] or fonts["default"]
+    elif ch.isascii():
+        return fonts["latin"] or fonts["universal"] or fonts["default"]
+    else:
+        return fonts["universal"] or fonts["default"]
+
+# ── Script cleaning ─────────────────────────────────────────
 def clean_script(text):
-    text = re.sub(r'\*{1,3}([^*]+)\*{1,3}', r'\1', text)
-    text = re.sub(r'_{1,2}([^_]+)_{1,2}',   r'\1', text)
+    """Strip all markdown and formatting before TTS."""
     text = re.sub(r'\*+', '', text)
-    text = re.sub(r'_+',  '', text)
-    text = re.sub(r'\s+[-–—]\s+', ', ', text)
-    text = re.sub(r'^[A-Z][A-Z\s&/]+\s*\(\d+:\d+[^)]*\)\s*:?', '', text, flags=re.MULTILINE)
-    text = re.sub(r'^[A-Z][A-Z\s&/]{2,}:\s*', '', text, flags=re.MULTILINE)
-    text = re.sub(r'^\d+\.\s+', '', text, flags=re.MULTILINE)
-    text = re.sub(r'^[\*\-•]\s+', '', text, flags=re.MULTILINE)
-    text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)
-    text = re.sub(r'^[-=]{3,}$', '', text, flags=re.MULTILINE)
+    text = re.sub(r'#+\s*', '', text)
     text = re.sub(r'\[.*?\]', '', text)
-    text = re.sub(r'\(([^)]{1,30})\)', r'\1', text)
-    text = re.sub(r'\(\d+:\d+(?:\s*[-–]\s*\d+:\d+)?\)', '', text)
-    text = re.sub(r'^:\s*', '', text, flags=re.MULTILINE)
-    text = re.sub(r' {2,}',  ' ',    text)
+    text = re.sub(r'^\d+\.\s+', '', text, flags=re.MULTILINE)
+    text = re.sub(r'^[-•]\s+', '', text, flags=re.MULTILINE)
+    text = re.sub(r'_{2,}', '', text)
     text = re.sub(r'\n{3,}', '\n\n', text)
     return text.strip()
 
-# ── Text chunk splitting ─────────────────────────────────────
-def split_into_chunks(text, words_per_line=7, lines_per_chunk=4):
-    words = text.split()
-    chunks, i = [], 0
-    while i < len(words):
-        lines = []
-        for _ in range(lines_per_chunk):
-            if i >= len(words):
-                break
-            lines.append(' '.join(words[i:i + words_per_line]))
-            i += words_per_line
-        if lines:
-            chunks.append('\n'.join(lines))
+# ── Script chunking ─────────────────────────────────────────
+def chunk_script(script, words_per_chunk=28):
+    """Split script into ~4-line chunks for text overlay."""
+    words  = script.split()
+    chunks = []
+    for i in range(0, len(words), words_per_chunk):
+        chunk = " ".join(words[i:i + words_per_chunk])
+        chunks.append(chunk)
     return chunks
 
-# ── Character-proportion timing ──────────────────────────────
-def chunk_durations(chunks, audio_dur):
-    """
-    Allocate time proportional to character count per chunk.
-    Longer chunks (more words) get more time — reduces sync drift.
-    """
-    total_chars = sum(len(c) for c in chunks) or 1
-    return [(len(c) / total_chars) * audio_dur for c in chunks]
+# ── TTS via Vertex AI Chirp3 HD ─────────────────────────────
+def generate_tts_chunk(text, chunk_idx):
+    """Generate audio for one text chunk. Returns path to .wav file."""
+    token = get_token()
+    url   = "https://us-central1-aiplatform.googleapis.com/v1/projects/gen-lang-client-0078128013/locations/us-central1/publishers/google/models/chirp-3-hd:streamingPredict"
 
-# ── Image brightness detection ───────────────────────────────
-def detect_brightness(image_path):
+    payload = {
+        "inputs": [{
+            "struct_value": {
+                "fields": {
+                    "text": {"string_value": text}
+                }
+            }
+        }],
+        "parameters": {
+            "struct_value": {
+                "fields": {
+                    "voice_name":   {"string_value": "ta-IN-Chirp3-HD-Callirrhoe"},
+                    "language_code":{"string_value": "ta-IN"},
+                    "speaking_rate":{"number_value": SPEAK_RATE}
+                }
+            }
+        }
+    }
+
+    r = requests.post(
+        url,
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        json=payload, timeout=120
+    )
+
+    if r.status_code != 200:
+        print(f"      ❌ TTS error {r.status_code}: {r.text[:200]}")
+        return None
+
+    # Extract audio from response
     try:
-        img = Image.open(image_path).convert('L')
-        return 'dark' if float(np.array(img).mean()) < 128 else 'light'
-    except:
-        return 'dark'
+        responses = r.json()
+        if isinstance(responses, list):
+            audio_b64 = "".join(
+                item.get("outputs", [{}])[0].get("struct_value", {})
+                    .get("fields", {}).get("audio", {}).get("string_value", "")
+                for item in responses
+            )
+        else:
+            audio_b64 = (responses.get("outputs", [{}])[0]
+                         .get("struct_value", {})
+                         .get("fields", {}).get("audio", {})
+                         .get("string_value", ""))
 
-# ── Find best available font ─────────────────────────────────
-def find_font(size=20):
-    candidates = [
-        '/usr/share/fonts/truetype/noto/NotoSansTamil-Regular.ttf',
-        '/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf',
-        '/usr/share/fonts/truetype/noto/NotoSansDevanagari-Regular.ttf',
-        '/usr/share/fonts/truetype/lohit-tamil/Lohit-Tamil.ttf',
-        '/usr/share/fonts/truetype/freefont/FreeSans.ttf',
-        '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
-    ]
-    for path in candidates:
-        if Path(path).exists():
+        if not audio_b64:
+            print(f"      ❌ No audio in TTS response")
+            return None
+
+        audio_bytes = base64.b64decode(audio_b64)
+        chunk_path  = WORK_DIR / f"chunk_{chunk_idx:03d}.wav"
+        chunk_path.write_bytes(audio_bytes)   # ← always write
+        return str(chunk_path)
+
+    except Exception as e:
+        print(f"      ❌ TTS parse error: {e}")
+        return None
+
+def get_audio_duration(path):
+    """Get duration of audio file in seconds using ffprobe."""
+    try:
+        result = subprocess.run(
+            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+             "-of", "default=noprint_wrappers=1:nokey=1", path],
+            capture_output=True, text=True, timeout=30
+        )
+        return float(result.stdout.strip())
+    except Exception:
+        return 12.0  # fallback estimate
+
+# ── Image brightness detection ──────────────────────────────
+def is_dark_image(img):
+    """Return True if image is dark (use light text), False if bright (use dark text)."""
+    arr  = np.array(img.convert("L"))
+    mean = arr.mean()
+    return mean < 128
+
+# ── Text frame rendering ────────────────────────────────────
+def render_text_frame(base_img, text, fonts, duration_secs):
+    """
+    Composite text onto base_img.
+    Returns list of (PIL Image, duration) tuples — one per fade segment.
+    Uses per-character font selection for Tamil/English/Sanskrit.
+    """
+    img      = base_img.copy().convert("RGBA")
+    overlay  = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    draw     = ImageDraw.Draw(overlay)
+
+    dark     = is_dark_image(base_img)
+    text_col = (255, 255, 255, 240) if dark else (20, 20, 20, 240)
+    bg_col   = (0, 0, 0, 100)       if dark else (255, 255, 255, 100)
+
+    # Wrap text into lines of ~40 chars
+    words    = text.split()
+    lines    = []
+    cur_line = []
+    cur_len  = 0
+    for word in words:
+        if cur_len + len(word) + 1 > 40 and cur_line:
+            lines.append(" ".join(cur_line))
+            cur_line = [word]
+            cur_len  = len(word)
+        else:
+            cur_line.append(word)
+            cur_len += len(word) + 1
+    if cur_line:
+        lines.append(" ".join(cur_line))
+    lines = lines[:4]  # max 4 lines
+
+    line_h   = FONT_SIZE + 8
+    total_h  = len(lines) * line_h + 20
+    box_y    = H - total_h - 60
+    box_x    = 80
+
+    # Semi-transparent background box
+    draw.rectangle(
+        [box_x - 10, box_y - 10, W - box_x + 10, box_y + total_h + 10],
+        fill=bg_col
+    )
+
+    # Draw each line with per-character font selection
+    for li, line in enumerate(lines):
+        y   = box_y + li * line_h
+        x   = box_x
+        for ch in line:
+            font = get_font_for_char(ch, fonts)
+            draw.text((x, y), ch, font=font, fill=text_col)
             try:
-                font = ImageFont.truetype(path, size)
-                print(f"   Font: {Path(path).name} @ {size}px")
-                return font
-            except:
-                continue
-    print("   ⚠️  Using default PIL font")
-    return ImageFont.load_default()
+                bbox = font.getbbox(ch)
+                x   += (bbox[2] - bbox[0]) + 1
+            except Exception:
+                x += FONT_SIZE
 
-# ── PIL: composite text directly onto image ──────────────────
-def composite_text_on_image(image_path, chunk, brightness, font):
-    """Open image, draw semi-transparent text block in center, return RGB image."""
-    base    = Image.open(image_path).convert('RGBA').resize((W, H))
-    overlay = Image.new('RGBA', (W, H), (0, 0, 0, 0))
-    draw    = ImageDraw.Draw(overlay)
+    composited = Image.alpha_composite(img, overlay).convert("RGB")
+    return composited, duration_secs
 
-    lines    = chunk.split('\n')
-    line_gap = 6
-    line_h   = 20 + line_gap
-    total_h  = len(lines) * line_h
-    pad      = 14
-
-    widths = []
-    for line in lines:
-        try:
-            bb = draw.textbbox((0, 0), line, font=font)
-            widths.append(bb[2] - bb[0])
-        except:
-            widths.append(len(line) * 10)
-    max_w = max(widths) if widths else 200
-
-    cx    = W // 2
-    cy    = H // 2
-    bg_x1 = cx - max_w // 2 - pad
-    bg_y1 = cy - total_h // 2 - pad
-    bg_x2 = cx + max_w // 2 + pad
-    bg_y2 = cy + total_h // 2 + pad
-
-    if brightness == 'dark':
-        bg_fill   = (0,   0,   0,   120)
-        text_fill = (255, 255, 255, 255)
-    else:
-        bg_fill   = (255, 255, 255, 120)
-        text_fill = (15,  15,  15,  255)
-
-    draw.rectangle([bg_x1, bg_y1, bg_x2, bg_y2], fill=bg_fill)
-
-    y = cy - total_h // 2
-    for line, lw in zip(lines, widths):
-        x = cx - lw // 2
-        draw.text((x, y), line, font=font, fill=text_fill)
-        y += line_h
-
-    result = Image.alpha_composite(base, overlay)
-    return result.convert('RGB')
-
-# ── Build one static video clip from PIL image ───────────────
-def build_clip(pil_image, duration, out_path):
-    """Save PIL image → static video clip (no pan/zoom — eliminates shaking)."""
-    png = WORK_DIR / f"_tmp_{out_path.stem}.png"
-    pil_image.save(str(png))
-
-    cmd = [
-        "ffmpeg", "-y", "-loop", "1", "-i", str(png),
-        "-vf", f"scale={W}:{H}",       # static — no pan/zoom
-        "-t", str(duration), "-r", str(FPS),
-        "-c:v", "libx264", "-preset", "veryfast", "-crf", "26",
-        "-pix_fmt", "yuv420p", str(out_path)
-    ]
-    r = subprocess.run(cmd, capture_output=True, text=True)
-    png.unlink(missing_ok=True)
-    return r.returncode == 0 and out_path.exists()
-
-# ── Download SVG as PNG ──────────────────────────────────────
-def download_svg(svg_data):
-    if not svg_data:
-        return None
-    try:
-        raw = svg_data if isinstance(svg_data, dict) else json.loads(svg_data)
-        url = raw.get('url') if isinstance(raw, dict) else None
-    except:
-        url = svg_data if isinstance(svg_data, str) and svg_data.startswith('http') else None
-    if not url:
-        return None
+# ── Download image ──────────────────────────────────────────
+def download_image(url):
     try:
         r = requests.get(url, timeout=30)
-        if r.status_code != 200:
-            return None
-        out = WORK_DIR / "infographic.png"
-        ct  = r.headers.get('content-type', '')
-        if 'svg' in ct or url.lower().endswith('.svg'):
-            import cairosvg
-            cairosvg.svg2png(bytestring=r.content, write_to=str(out),
-                             output_width=W, output_height=H)
-        else:
-            out.write_bytes(r.content)
-        print(f"   ✅ Infographic downloaded")
-        return str(out)
+        if r.status_code == 200:
+            tmp = WORK_DIR / f"img_{abs(hash(url))}.jpg"
+            tmp.write_bytes(r.content)
+            return Image.open(tmp).convert("RGB").resize((W, H), Image.LANCZOS)
     except Exception as e:
-        print(f"   ⚠️  Infographic failed: {e}")
-        return None
+        print(f"   ❌ Image download failed: {e}")
+    return Image.new("RGB", (W, H), (10, 10, 30))  # dark fallback
 
-# ── Download episode images ──────────────────────────────────
-def download_images(image_urls_json):
-    print(f"\n📥 Downloading images...")
-    imgs = json.loads(image_urls_json) if isinstance(image_urls_json, str) else image_urls_json
-    paths = []
-    for img in sorted(imgs, key=lambda x: x.get('id', 0)):
-        p = WORK_DIR / f"scene_{img['id']:02d}.jpg"
-        try:
-            r = requests.get(img["url"], timeout=60)
-            if r.status_code == 200:
-                p.write_bytes(r.content)
-                paths.append(str(p))
-                print(f"   ✅ Scene {img['id']}: {img.get('label','')}")
-        except Exception as e:
-            print(f"   ❌ Scene {img['id']}: {e}")
-    return paths
-
-# ── Retry helper ─────────────────────────────────────────────
-def with_retry(fn, max_retries=3, wait=15):
-    import time
-    for attempt in range(max_retries):
-        try:
-            return fn()
-        except ValueError:
-            raise
-        except Exception as e:
-            if attempt < max_retries - 1:
-                print(f"   ⚠️  Attempt {attempt+1}: {str(e)[:80]}")
-                time.sleep(wait)
-            else:
-                raise
-
-# ── Generate Tamil voice ─────────────────────────────────────
-def generate_voice(script_text, output_path):
-    print(f"\n🎙  Generating voice (Callirrhoe, 0.85x)...")
-    full_text = clean_script(script_text)
-    print(f"   Cleaned: {len(full_text)} chars")
-
-    chunks, current, current_len = [], [], 0
-    for word in full_text.split():
-        wl = len(word.encode('utf-8')) + 1
-        if current_len + wl >= 4000 and current:
-            chunks.append(' '.join(current))
-            current, current_len = [], 0
-        current.append(word)
-        current_len += wl
-    if current:
-        chunks.append(' '.join(current))
-
-    print(f"   TTS: {len(chunks)} chunks")
-    token, url, files = get_token(), "https://texttospeech.googleapis.com/v1/text:synthesize", []
-
-    for i, chunk in enumerate(chunks):
-        payload = {
-            "input": {"text": chunk},
-            "voice": {"languageCode": "ta-IN", "name": "ta-IN-Chirp3-HD-Callirrhoe"},
-            "audioConfig": {"audioEncoding": "MP3", "speakingRate": 0.85}  # slowed for Tamil
-        }
-
-        def _call(c=chunk):
-            res = requests.post(url, headers={
-                "Authorization": f"Bearer {token}",
-                "Content-Type":  "application/json"
-            }, json=payload, timeout=60)
-            if res.status_code == 200:
-                return base64.b64decode(res.json()["audioContent"])
-            if res.status_code == 400:
-                raise ValueError(f"Config error: {res.text[:200]}")
-            raise Exception(f"TTS {res.status_code}: {res.text[:200]}")
-
-        try:
-            audio = with_retry(_call)
-            cp    = WORK_DIR / f"chunk_{i:03d}.mp3"
-            cp.write_bytes(audio)
-            files.append(str(cp))
-            print(f"   ✅ Chunk {i+1}/{len(chunks)}")
-        except ValueError:
-            payload["voice"] = {"languageCode": "ta-IN", "name": "ta-IN-Wavenet-A", "ssmlGender": "FEMALE"}
-            try:
-                audio = with_retry(_call)
-                cp    = WORK_DIR / f"chunk_{i:03d}.mp3"
-                cp.write_bytes(audio)
-                files.append(str(cp))
-                print(f"   ✅ Chunk {i+1}/{len(chunks)} (WaveNet fallback)")
-            except Exception as e:
-                print(f"   ⚠️  Chunk {i+1} failed: {e}")
-        except Exception as e:
-            print(f"   ⚠️  Chunk {i+1} failed: {e}")
-
-    if not files:
-        return False
-    if len(files) == 1:
-        shutil.copy(files[0], str(output_path))
-    else:
-        lst = WORK_DIR / "audio_list.txt"
-        lst.write_text('\n'.join(f"file '{p}'" for p in files))
-        subprocess.run([
-            "ffmpeg", "-y", "-f", "concat", "-safe", "0",
-            "-i", str(lst), "-c", "copy", str(output_path)
-        ], capture_output=True)
-    print(f"   ✅ Voice ready")
-    return True
-
-# ── Get audio duration ───────────────────────────────────────
-def get_duration(path):
-    r = subprocess.run([
-        "ffprobe", "-v", "error", "-show_entries", "format=duration",
-        "-of", "default=noprint_wrappers=1:nokey=1", str(path)
-    ], capture_output=True, text=True)
+def download_svg_as_image(svg_data):
+    """Convert SVG to PIL Image via cairosvg."""
     try:
-        return float(r.stdout.strip())
-    except:
-        return 600.0
+        import cairosvg
+        png_bytes = cairosvg.svg2png(bytestring=svg_data.encode("utf-8"),
+                                     output_width=W, output_height=H)
+        tmp = WORK_DIR / "infographic.png"
+        tmp.write_bytes(png_bytes)
+        return Image.open(tmp).convert("RGB").resize((W, H), Image.LANCZOS)
+    except Exception as e:
+        print(f"   ❌ SVG conversion failed: {e}")
+        return Image.new("RGB", (W, H), (5, 5, 20))
 
-# ── Assemble video ───────────────────────────────────────────
-def assemble_video(image_paths, svg_path, audio_path, script_text, output_path):
-    print(f"\n🎬 Assembling video...")
-    audio_dur = get_duration(audio_path)
+# ── Build one video clip from frames ───────────────────────
+def frames_to_clip(frames_dir, audio_path, clip_idx, duration):
+    """Create an mp4 clip from a single composited frame + audio."""
+    frame_path = frames_dir / f"frame_{clip_idx:04d}.jpg"
+    clip_path  = WORK_DIR   / f"clip_{clip_idx:04d}.mp4"
 
-    # Scene list — SVG second-to-last
-    scene_paths = list(image_paths)
-    if svg_path:
-        scene_paths.insert(-1, svg_path)
-        print(f"   SVG inserted as scene {len(scene_paths)-1}/{len(scene_paths)}")
+    cmd = [
+        "ffmpeg", "-y", "-loglevel", "error",
+        "-loop", "1", "-i", str(frame_path),
+        "-i", audio_path,
+        "-c:v", "libx264", "-tune", "stillimage",
+        "-c:a", "aac", "-b:a", "128k",
+        "-pix_fmt", "yuv420p",
+        "-shortest",
+        str(clip_path)
+    ]
+    subprocess.run(cmd, check=True, timeout=300)
+    return str(clip_path)
 
-    num_scenes = len(scene_paths)
-    scene_dur  = audio_dur / num_scenes
-
-    # Text chunks + character-proportion timing
-    cleaned   = clean_script(script_text)
-    chunks    = split_into_chunks(cleaned)
-    dur_list  = chunk_durations(chunks, audio_dur)   # proportional timing
-    print(f"   {num_scenes} scenes | {len(chunks)} text chunks (char-proportional timing)")
-
-    # Brightness per scene
-    brightness_map = {i: detect_brightness(sp) for i, sp in enumerate(scene_paths)}
-
-    # Font
-    font = find_font(size=20)
-
-    # ── One clip per text chunk ──────────────────────────────
-    # PIL composites text on image — background fully visible
-    # Static clip (no pan/zoom) — eliminates shaking
-    clip_paths = []
-    elapsed    = 0.0
-    for i, (chunk, dur) in enumerate(zip(chunks, dur_list)):
-        scene_idx  = min(int(elapsed / scene_dur), num_scenes - 1)
-        brightness = brightness_map[scene_idx]
-
-        composited = composite_text_on_image(
-            scene_paths[scene_idx], chunk, brightness, font
-        )
-        clip_out = WORK_DIR / f"clip_{i:03d}.mp4"
-        ok       = build_clip(composited, dur, clip_out)
-        if ok:
-            clip_paths.append(str(clip_out))
-
-        elapsed += dur
-        if (i + 1) % 10 == 0 or (i + 1) == len(chunks):
-            print(f"   ✅ Clips: {i+1}/{len(chunks)}")
-
-    if not clip_paths:
-        return False
-
-    # ── Concatenate clips ────────────────────────────────────
-    print(f"\n   🔗 Concatenating {len(clip_paths)} clips...")
-    concat = WORK_DIR / "clips.txt"
-    concat.write_text('\n'.join(f"file '{p}'" for p in clip_paths))
-    raw = WORK_DIR / "raw.mp4"
-    subprocess.run([
-        "ffmpeg", "-y", "-f", "concat", "-safe", "0",
-        "-i", str(concat), "-c", "copy", str(raw)
-    ], capture_output=True)
-
-    # ── Add audio ────────────────────────────────────────────
-    print(f"   🎵 Adding narration...")
-    r = subprocess.run([
-        "ffmpeg", "-y",
-        "-i", str(raw), "-i", str(audio_path),
-        "-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
-        "-shortest", "-movflags", "+faststart",
-        str(output_path)
-    ], capture_output=True, text=True)
-
-    if r.returncode == 0:
-        mb = Path(output_path).stat().st_size / 1024 / 1024
-        print(f"   ✅ Final video: {mb:.1f} MB")
-        return True
-
-    print(f"   ❌ Assembly failed: {r.stderr[-200:]}")
-    return False
-
-# ── Main ─────────────────────────────────────────────────────
+# ── Main pipeline ───────────────────────────────────────────
 def main():
     print("=" * 60)
     print(f"🎬 Video Pipeline — Episode {EPISODE_NUMBER}")
     print(f"   {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("=" * 60)
 
-    episode = fetch_episode()
-    if not episode:
+    # ── Fetch episode ──────────────────────────────────────
+    rows = db_get("tamil_episodes", {
+        "episode_number": f"eq.{EPISODE_NUMBER}", "select": "*"
+    })
+    if not rows:
         print(f"❌ Episode {EPISODE_NUMBER} not found")
         return
-
+    episode = rows[0]
     print(f"\n📖 {episode['title_english']}")
-
-    if not episode.get("image_urls"):
-        print("❌ No approved images")
-        return
 
     db_patch("tamil_episodes", EPISODE_NUMBER, {"status": "rendering_video"})
 
     try:
-        image_paths = download_images(episode["image_urls"])
-        if not image_paths:
+        # ── Load fonts once ────────────────────────────────
+        print(f"\n🔤 Loading fonts...")
+        fonts = load_fonts(FONT_SIZE)
+
+        # ── Get script ─────────────────────────────────────
+        script_raw = episode.get("script_tamil", "") or ""
+        script     = clean_script(script_raw)
+        if not script:
+            print("❌ No Tamil script found")
+            return
+        print(f"\n📝 Script: {len(script.split())} words")
+
+        # ── Get images ─────────────────────────────────────
+        image_urls_raw = episode.get("image_urls", "[]")
+        image_urls     = json.loads(image_urls_raw) if isinstance(image_urls_raw, str) else image_urls_raw
+        image_urls     = sorted(image_urls, key=lambda x: x["id"])
+
+        # ── Get SVG ────────────────────────────────────────
+        svg_img = None
+        svg_raw = episode.get("infographic_svg")
+        if svg_raw:
+            try:
+                parsed  = json.loads(svg_raw) if isinstance(svg_raw, str) else svg_raw
+                svg_txt = parsed.get("svg", "")
+                if svg_txt:
+                    print(f"\n📊 Converting SVG infographic...")
+                    svg_img = download_svg_as_image(svg_txt)
+                    print(f"   ✅ SVG ready")
+            except Exception as e:
+                print(f"   ⚠️  SVG load failed: {e}")
+
+        # Build scene list: images + SVG second-to-last
+        scene_images = [download_image(s["url"]) for s in image_urls]
+        all_scenes   = scene_images.copy()
+        if svg_img:
+            all_scenes.insert(-1, svg_img)  # second-to-last
+        print(f"\n🖼  Scenes: {len(all_scenes)} total")
+
+        # ── Chunk script ───────────────────────────────────
+        chunks = chunk_script(script)
+        print(f"\n📦 Script chunks: {len(chunks)}")
+
+        # ── Generate TTS + render frames ───────────────────
+        print(f"\n🔊 Generating TTS + rendering frames...")
+        frames_dir = WORK_DIR / "frames"
+        frames_dir.mkdir()
+
+        clip_paths    = []
+        chunks_done   = 0
+        scene_count   = len(all_scenes)
+
+        for i, chunk in enumerate(chunks):
+            # Pick scene image based on chunk position
+            scene_idx = min(int(i / len(chunks) * scene_count), scene_count - 1)
+            base_img  = all_scenes[scene_idx]
+
+            print(f"   Chunk {i+1}/{len(chunks)} (scene {scene_idx+1})...")
+
+            # Generate TTS audio
+            audio_path = generate_tts_chunk(chunk, i)
+            if not audio_path:
+                print(f"      ⚠️  TTS failed for chunk {i} — skipping")
+                continue
+
+            # Get actual audio duration for perfect sync
+            duration = get_audio_duration(audio_path)
+
+            # Render composited frame
+            composited, _ = render_text_frame(base_img, chunk, fonts, duration)
+            frame_path    = frames_dir / f"frame_{i:04d}.jpg"
+            composited.save(str(frame_path), "JPEG", quality=95)
+
+            # Build clip
+            clip_path = frames_to_clip(frames_dir, audio_path, i, duration)
+            clip_paths.append(clip_path)
+            chunks_done += 1
+
+        if not clip_paths:
+            print("❌ No clips generated")
             db_patch("tamil_episodes", EPISODE_NUMBER, {"status": "images_approved"})
             return
 
-        print(f"\n🖼  Checking SVG infographic...")
-        svg_path = download_svg(episode.get("infographic_svg"))
-        if not svg_path:
-            print("   ℹ️  No infographic")
+        print(f"\n   ✅ {chunks_done}/{len(chunks)} clips rendered")
 
-        script     = episode.get("script_tamil") or episode.get("title_tamil", "")
-        audio_path = WORK_DIR / "narration.mp3"
-        ok_voice   = generate_voice(script, audio_path)
+        # ── Concatenate all clips ───────────────────────────
+        print(f"\n🎞  Assembling final video...")
+        concat_list = WORK_DIR / "concat.txt"
+        with open(concat_list, "w") as f:
+            for cp in clip_paths:
+                f.write(f"file '{cp}'\n")
 
-        if not ok_voice or not audio_path.exists():
-            print("❌ Voice generation failed")
-            db_patch("tamil_episodes", EPISODE_NUMBER, {"status": "images_approved"})
-            return
+        output_path = WORK_DIR / f"ep{EPISODE_NUMBER:03d}_tamil.mp4"
+        subprocess.run([
+            "ffmpeg", "-y", "-loglevel", "error",
+            "-f", "concat", "-safe", "0", "-i", str(concat_list),
+            "-c", "copy",
+            str(output_path)
+        ], check=True, timeout=600)
 
-        video_path = WORK_DIR / f"ep{EPISODE_NUMBER:03d}_tamil.mp4"
-        ok_video   = assemble_video(
-            image_paths, svg_path, audio_path, script, video_path
-        )
-
-        if not ok_video:
-            db_patch("tamil_episodes", EPISODE_NUMBER, {"status": "images_approved"})
-            return
-
-        print(f"\n☁️  Uploading...")
-        storage_path = f"ep{EPISODE_NUMBER:03d}/ep{EPISODE_NUMBER:03d}_tamil.mp4"
-        video_url    = upload_video(str(video_path), storage_path)
+        # ── Upload ─────────────────────────────────────────
+        print(f"\n☁️  Uploading video...")
+        video_bytes = output_path.read_bytes()
+        video_url   = upload_video(f"ep{EPISODE_NUMBER:03d}_tamil.mp4", video_bytes)
 
         if video_url:
             db_patch("tamil_episodes", EPISODE_NUMBER, {
-                "video_url": video_url,
-                "status":    "video_ready",
+                "video_url_tamil": video_url,
+                "status":          "video_ready"
             })
             print(f"\n{'='*60}")
             print(f"✅ Episode {EPISODE_NUMBER} — Video ready!")
+            print(f"   {video_url}")
             print(f"{'='*60}")
         else:
+            print("❌ Upload failed")
             db_patch("tamil_episodes", EPISODE_NUMBER, {"status": "images_approved"})
 
     except Exception as e:
