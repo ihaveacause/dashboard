@@ -3,7 +3,9 @@ I Have a Cause — Image Pipeline (Vertex AI)
 ============================================
 Uses Vertex AI Imagen 3 for high quality cosmic/surreal images
 and Gemini for SVG infographic generation.
-RULE: All images must have absolutely NO text, letters or writing.
+- Scene descriptions generated dynamically from each episode's actual script
+- SVG infographic also generated from episode content, not fixed template
+- RULE: All images must have absolutely NO text, letters or writing.
 """
 
 import os
@@ -84,10 +86,6 @@ def upload_to_storage(bucket, path, data_bytes, content_type="image/jpeg"):
 
 # ── SVG Validation ──────────────────────────────────────────
 def validate_svg(svg_text):
-    """
-    Validate SVG is well-formed XML.
-    Returns (is_valid, error_message)
-    """
     try:
         ET.fromstring(svg_text)
         return True, None
@@ -124,36 +122,63 @@ def call_with_retry(fn, max_retries=4, wait=30):
             else:
                 raise
 
-# ── Step 1: Scene descriptions ──────────────────────────────
+# ── Step 1: Scene descriptions from episode script ──────────
 def generate_scene_descriptions(episode, prefs):
-    print(f"\n🎨 Step 1: Generating scene descriptions...")
+    print(f"\n🎨 Step 1: Generating scene descriptions from episode script...")
     pref_block = f"\n\nIMAGE PREFERENCES:\n{prefs}" if prefs else ""
 
+    # Use full script for context — first 2000 chars covers the core themes
+    script_tamil   = str(episode.get("script_tamil",   "") or "")[:2000]
+    script_english = str(episode.get("script_english", "") or "")[:2000]
+    script_context = script_tamil if script_tamil else script_english
+
     prompt = f"""You are a visual director for "I Have a Cause" — a Tamil philosophy YouTube channel.
+
+Read this episode carefully and design 5 unique scene images that VISUALLY REPRESENT
+the specific philosophical concepts, stories, and emotions in THIS episode.
 
 Episode: {episode['episode_number']} — {episode['title_english']}
 Tamil Title: {episode['title_tamil']}
 Module: {episode['module']}
-Bridge: {episode['bridge']}
-Script (first 800 chars): {str(episode.get('script_tamil',''))[:800]}{pref_block}
+Bridge/Angle: {episode['bridge']}
 
-VISUAL STYLE:
-- Cosmic/surreal — human as fragile being inside vast cosmic consciousness
-- Abstract dream states, ethereal light, infinite space
-- Deep blues, purples, indigo, gold light rays, nebulae, sacred geometry
-- Painterly and cinematic, NOT realistic photography
+EPISODE SCRIPT (first 2000 chars):
+{script_context}{pref_block}
 
-CRITICAL RULE: Prompts must NOT include any text, letters, words, signs, 
+YOUR TASK:
+Read the script above and identify:
+1. The core philosophical concept being taught
+2. The key metaphors, stories, or analogies used
+3. The emotional journey — from confusion/question to clarity/wisdom
+4. Any specific imagery mentioned or implied in the script
+
+Then design 5 scene images that follow the NARRATIVE ARC of this specific episode:
+- Scene 1: A striking visual that represents the opening hook/question of THIS episode
+- Scene 2: A visual representing the core philosophical concept being introduced
+- Scene 3: A visual representing the key story, metaphor or analogy used in the script
+- Scene 4: A visual representing the deeper insight or turning point
+- Scene 5: A visual representing the resolution, wisdom or takeaway
+
+VISUAL STYLE (apply to all scenes):
+- Cosmic/surreal — painterly, cinematic, ethereal
+- Deep blues, purples, indigo, gold light, nebulae, sacred geometry
+- Human figures as tiny beings inside vast cosmic consciousness
+- Abstract and symbolic, NOT literal or photographic
+
+CRITICAL RULE: Prompts must NOT include any text, letters, words, signs,
 writing or language of any kind in the image. Pure visual only.
 
-Generate EXACTLY 5 scene prompts for Imagen 3. Return ONLY valid JSON:
+Each prompt must be UNIQUE and SPECIFIC to this episode — not generic philosophy art.
+Someone looking at the 5 images should be able to guess what the episode is about.
+
+Return ONLY valid JSON — no markdown, no explanation:
 {{
   "scenes": [
-    {{"id": 1, "label": "Hook — Opening Image", "prompt": "detailed visual prompt, no text"}},
-    {{"id": 2, "label": "Waking State — Vaishvanara", "prompt": "detailed visual prompt, no text"}},
-    {{"id": 3, "label": "Dream State — Taijasa", "prompt": "detailed visual prompt, no text"}},
-    {{"id": 4, "label": "Deep Sleep — Prajna", "prompt": "detailed visual prompt, no text"}},
-    {{"id": 5, "label": "Pure Consciousness — Turiya", "prompt": "detailed visual prompt, no text"}}
+    {{"id": 1, "label": "short scene label", "prompt": "detailed visual prompt, no text"}},
+    {{"id": 2, "label": "short scene label", "prompt": "detailed visual prompt, no text"}},
+    {{"id": 3, "label": "short scene label", "prompt": "detailed visual prompt, no text"}},
+    {{"id": 4, "label": "short scene label", "prompt": "detailed visual prompt, no text"}},
+    {{"id": 5, "label": "short scene label", "prompt": "detailed visual prompt, no text"}}
   ]
 }}"""
 
@@ -161,11 +186,13 @@ Generate EXACTLY 5 scene prompts for Imagen 3. Return ONLY valid JSON:
         response = gemini_client.models.generate_content(
             model="gemini-2.5-flash", contents=prompt
         )
-        raw = response.text.strip().replace("```json","").replace("```","").strip()
+        raw = response.text.strip().replace("```json", "").replace("```", "").strip()
         return json.loads(raw)
 
     data = call_with_retry(_call)
     print(f"   ✅ {len(data['scenes'])} scene descriptions generated")
+    for s in data["scenes"]:
+        print(f"      Scene {s['id']}: {s['label']}")
     return data["scenes"]
 
 # ── Step 2: Imagen 3 via Vertex AI REST API ─────────────────
@@ -259,28 +286,48 @@ def generate_images(scenes, existing_urls=None):
     print(f"   ✅ {len(image_urls)}/{len(scenes)} images generated")
     return image_urls
 
-# ── Step 3: SVG Infographic ─────────────────────────────────
+# ── Step 3: SVG Infographic from episode content ────────────
 def generate_svg_infographic(episode):
-    print(f"\n📊 Step 3: Generating SVG infographic...")
+    print(f"\n📊 Step 3: Generating SVG infographic from episode content...")
+
+    # Use script to understand what concept to visualize
+    script_tamil   = str(episode.get("script_tamil",   "") or "")[:1500]
+    script_english = str(episode.get("script_english", "") or "")[:1500]
+    script_context = script_tamil if script_tamil else script_english
 
     prompt = f"""Create a stunning SVG infographic (1920x1080px) for this Tamil philosophy episode.
 
 Episode: {episode['episode_number']} — {episode['title_english']}
+Tamil Title: {episode['title_tamil']}
 Bridge: {episode['bridge']}
+Module: {episode['module']}
 
-DESIGN:
-- 4 concentric circles, same plane, superimposed, one inside the other
-- Outermost to innermost: Vaishvanara (Waking), Taijasa (Dream), Prajna (Deep Sleep), Turiya (Pure Consciousness)
-- Deep space black background with star field
-- Rings in gold/amber/indigo/white glow with SVG gradients and filter blur
-- Tamil + English labels for each ring
-- Single pure white light point at center (Turiya)
-- "I Have a Cause" watermark bottom right
-- Feeling: looking at the universe from inside consciousness
+EPISODE SCRIPT (for context):
+{script_context}
 
-CRITICAL: Return ONLY valid, well-formed SVG XML code starting with <svg and ending with </svg>.
-No markdown fences. No explanation. The SVG must be 100% valid XML — every attribute must be
-properly quoted, no duplicate attributes, no typos in attribute values."""
+YOUR TASK:
+Read the script above and design an SVG diagram that VISUALLY EXPLAINS
+the core concept of THIS specific episode. The infographic should:
+
+- Represent the key philosophical model, framework, or concept taught in this episode
+- Use geometric shapes, circles, arrows, or flow diagrams as appropriate
+- Be unique to this episode — not a generic philosophy diagram
+- Deep space black background with subtle star field
+- Color scheme: gold, indigo, deep blue, white — glowing, ethereal
+- Use SVG gradients and feGaussianBlur filters for glow effects
+- "I Have a Cause" watermark bottom-right in small muted text
+- All labels in both Tamil and English where appropriate
+
+Examples of what this could look like depending on the episode:
+- Concentric circles for states of consciousness
+- A tree diagram for cause and effect
+- A spiral for cycles of existence
+- A triangle for the three gunas
+- A lotus unfolding for stages of awakening
+- etc. — choose what FITS THIS EPISODE best
+
+CRITICAL: Return ONLY valid, well-formed SVG XML starting with <svg and ending with </svg>.
+No markdown. No explanation. Every attribute properly quoted. No duplicate attributes."""
 
     import time
     max_svg_attempts = 3
@@ -296,22 +343,20 @@ properly quoted, no duplicate attributes, no typos in attribute values."""
         response = call_with_retry(_call_svg)
         svg = response.text.strip()
 
-        # Clean markdown fences if present
+        # Clean markdown fences
         if "```svg" in svg:
             svg = svg.split("```svg")[1].split("```")[0].strip()
         elif "```" in svg:
             svg = svg.split("```")[1].split("```")[0].strip()
 
         if not svg.startswith("<svg"):
-            print(f"   ❌ Attempt {attempt}: Response does not start with <svg — retrying...")
+            print(f"   ❌ Attempt {attempt}: Does not start with <svg — retrying...")
             time.sleep(10)
             continue
 
-        # ── Validate SVG XML ──────────────────────────────
         is_valid, error = validate_svg(svg)
         if not is_valid:
             print(f"   ❌ Attempt {attempt}: Invalid SVG XML — {error}")
-            print(f"   🔄 Retrying SVG generation...")
             time.sleep(10)
             continue
 
@@ -343,12 +388,19 @@ def main():
     print(f"\n📖 {episode['title_english']}")
     print(f"   Bridge: {episode['bridge']}")
 
+    # Confirm script exists before proceeding
+    if not episode.get("script_tamil") and not episode.get("script_english"):
+        print("❌ No script found — run script generator first")
+        return
+
     db_patch("tamil_episodes", EPISODE_NUMBER, {"status": "generating_images"})
     prefs = fetch_preferences()
 
     try:
+        # Generate scene descriptions from actual episode script
         scenes = generate_scene_descriptions(episode, prefs)
 
+        # Check for existing images
         existing = []
         if episode.get("image_urls"):
             try:
@@ -360,6 +412,7 @@ def main():
 
         image_urls = generate_images(scenes, existing)
 
+        # Generate SVG from episode content
         existing_svg = episode.get("infographic_svg")
         if existing_svg:
             print("\n📊 Step 3: SVG already exists — skipping")
