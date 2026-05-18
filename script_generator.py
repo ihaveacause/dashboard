@@ -5,11 +5,12 @@ Triggered by GitHub Actions with EPISODE_NUMBER input.
 Flow:
   1. Fetch episode details from tamil_episodes
   2. Fetch active channel_preferences
-  3. Vertex AI Gemini → deep research
-  4. Vertex AI Gemini → clean spoken Tamil script (no English, no markdown)
-  5. Vertex AI Gemini → clean spoken English script
-  6. Save both to tamil_episodes + english_episodes
-  7. Update status → script_ready
+  3. Fetch previously completed episodes (to avoid repetition)
+  4. Vertex AI Gemini 2.5 Pro → deep research
+  5. Vertex AI Gemini 2.5 Pro → clean spoken Tamil script (no English, no markdown)
+  6. Vertex AI Gemini 2.5 Pro → clean spoken English script
+  7. Save both to tamil_episodes + english_episodes
+  8. Update status → script_ready
 """
 
 import os
@@ -36,7 +37,7 @@ credentials = service_account.Credentials.from_service_account_info(
     scopes=["https://www.googleapis.com/auth/cloud-platform"]
 )
 vertexai.init(project=PROJECT_ID, location=LOCATION, credentials=credentials)
-model = GenerativeModel("gemini-2.5-pro")   # ← Pro for deep philosophical scripts
+model = GenerativeModel("gemini-2.5-pro")   # Deep reasoning for philosophy
 
 SB_HEADERS = {
     "apikey":        SUPABASE_KEY,
@@ -81,12 +82,40 @@ def fetch_episode():
     })
     return rows[0] if rows else None
 
+# ── Fetch previously completed episodes ──────────────────────
+def fetch_previous_episodes():
+    """
+    Fetch all episodes that have already been scripted/completed.
+    Used to prevent Gemini from repeating themes already covered.
+    """
+    rows = db_get("tamil_episodes", {
+        "episode_number": f"lt.{EPISODE_NUMBER}",
+        "status":         "in.(script_ready,images_ready,images_approved,video_ready,published)",
+        "select":         "episode_number,title_english,title_tamil,bridge,module",
+        "order":          "episode_number.asc"
+    })
+    if not rows:
+        return ""
+
+    lines = ["PREVIOUSLY COVERED EPISODES — do not repeat these themes, angles, or examples:"]
+    for ep in rows:
+        lines.append(
+            f"  Episode {ep['episode_number']}: {ep['title_english']} "
+            f"(Bridge: {ep['bridge']})"
+        )
+    lines.append("")
+    lines.append(
+        "Each new episode must go DEEPER or cover a DIFFERENT angle. "
+        "Never restate what was already said in earlier episodes."
+    )
+    return "\n".join(lines)
+
 # ── Fetch channel preferences ─────────────────────────────────
 def fetch_preferences():
     rows = db_get("channel_preferences", {
         "is_active": "eq.true",
-        "select": "category,preference",
-        "order": "created_at.asc"
+        "select":    "category,preference",
+        "order":     "created_at.asc"
     })
     if not rows:
         return ""
@@ -104,8 +133,11 @@ def fetch_preferences():
     return "\n".join(lines)
 
 # ── Step 1: Deep Research ─────────────────────────────────────
-def deep_research(episode):
+def deep_research(episode, previous_episodes):
     print(f"\n🔍 Step 1: Deep Research for Episode {EPISODE_NUMBER}")
+
+    prev_block = f"\n\n{previous_episodes}" if previous_episodes else ""
+
     prompt = f"""You are a deep research assistant for a Tamil philosophy YouTube channel called "I Have a Cause."
 
 Research this episode topic thoroughly:
@@ -116,7 +148,7 @@ Module: {episode['module']}
 Pillar: {episode['pillar']}
 Bridge/Angle: {episode['bridge']}
 Key Sources: {episode['research_source']}
-Target Duration: {episode['target_duration_min']} minutes
+Target Duration: {episode['target_duration_min']} minutes{prev_block}
 
 Provide comprehensive research covering:
 1. CORE PHILOSOPHY: The main philosophical concept explained deeply (3-4 paragraphs)
@@ -128,6 +160,9 @@ Provide comprehensive research covering:
 7. STORY/ANALOGY: A compelling story or analogy that makes this concept tangible
 8. SOCIAL CONNECTION: How this philosophy applies to social reform and compassion
 
+IMPORTANT: Research must be FRESH — do not cover ground already explored in previous episodes above.
+Go deeper, find new angles, use different examples and stories.
+
 Research deeply. This will power a {episode['target_duration_min']}-minute YouTube video script."""
 
     research = generate(prompt)
@@ -135,9 +170,10 @@ Research deeply. This will power a {episode['target_duration_min']}-minute YouTu
     return research
 
 # ── Step 2: Tamil Script ──────────────────────────────────────
-def generate_tamil_script(episode, research, preferences):
+def generate_tamil_script(episode, research, preferences, previous_episodes):
     print(f"\n✍️  Step 2: Tamil Script")
     pref_block = f"\n\nCHANNEL PREFERENCES (always apply):\n{preferences}" if preferences else ""
+    prev_block = f"\n\n{previous_episodes}" if previous_episodes else ""
 
     target_min   = episode['target_duration_min']
     target_words = target_min * 110  # ~110 Tamil words/min at 0.85x speed
@@ -149,7 +185,7 @@ def generate_tamil_script(episode, research, preferences):
 - தத்துவம் மற்றும் நவீன அறிவியலை இணைக்கும்
 - சமூக சீர்திருத்தத்தை ஆதரிக்கும்
 - Tamil diaspora மற்றும் Tamil Nadu பார்வையாளர்கள்
-- எளிய Tamil பேச்சு வழக்கு — சாதாரண மனிதர்களுக்கு புரியும் வகையில்{pref_block}
+- எளிய Tamil பேச்சு வழக்கு — சாதாரண மனிதர்களுக்கு புரியும் வகையில்{pref_block}{prev_block}
 
 EPISODE விவரங்கள்:
 எண்: {episode['episode_number']}
@@ -199,6 +235,11 @@ RESEARCH:
    கடினமான கருத்துக்களை அன்றாட உதாரணங்களால் புரிய வையுங்கள்.
    ஒவ்வொரு கருத்தையும் படிப்படியாக, தெளிவாக விரிவுபடுத்தவும்.
 
+6. மீண்டும் சொல்லாதீர்கள்: ஒரு கருத்தை ஒரு முறை மட்டுமே சொல்லவும்.
+   அதே கருத்தை வேறு வார்த்தைகளில் திரும்ப சொல்வது கூடாது.
+   ஒவ்வொரு வாக்கியமும் புதிய தகவல் அல்லது புதிய கோணம் தர வேண்டும்.
+   முன்னர் சொன்னதை சுருக்கமாக திரும்ப சொல்வது கூடாது — அதற்கு பதில் ஆழமாக செல்லவும்.
+
 FLOW (labels இல்லாமல்):
 பார்வையாளரை உடனே கட்டிப் போடும் தொடக்கம் → episode அறிமுகம் → core philosophy விரிவாக → examples, stories, modern connections → சமூக மாற்றத்துடன் தொடர்பு → summary, குழுசேருங்கள் கோரிக்கை, அடுத்த அத்தியாயம் preview."""
 
@@ -207,9 +248,10 @@ FLOW (labels இல்லாமல்):
     return script
 
 # ── Step 3: English Script ────────────────────────────────────
-def generate_english_script(episode, research, preferences):
+def generate_english_script(episode, research, preferences, previous_episodes):
     print(f"\n✍️  Step 3: English Script")
-    eng_prefs = f"\n\nCHANNEL PREFERENCES (always apply):\n{preferences}" if preferences else ""
+    eng_prefs  = f"\n\nCHANNEL PREFERENCES (always apply):\n{preferences}" if preferences else ""
+    prev_block = f"\n\n{previous_episodes}" if previous_episodes else ""
 
     target_min   = episode['target_duration_min']
     target_words = target_min * 130  # ~130 English words/min at 0.85x speed
@@ -222,7 +264,7 @@ Channel voice:
 - Champions social reform and animal consciousness
 - Audience: Tamil diaspora (UK, USA, Canada, Singapore) + global seekers
 - Think: Alan Watts meets Sadhguru in English
-- Explain complex philosophy in simple, everyday language anyone can understand{eng_prefs}
+- Explain complex philosophy in simple, everyday language anyone can understand{eng_prefs}{prev_block}
 
 EPISODE DETAILS:
 Number: {episode['episode_number']}
@@ -245,9 +287,15 @@ CRITICAL RULES — follow exactly:
 6. Start directly with the hook — no labels, no preamble.
 7. Minimum {target_words} words — rich, layered, profound.
 8. Break down every complex idea with simple analogies and real-life examples.
+9. NO REPETITION: State each idea exactly once. Never restate the same concept
+   in different words. Every sentence must introduce something NEW — a fresh
+   insight, a new example, or a deeper layer. Forward momentum only.
+   If you find yourself summarizing what you just said, delete it and go deeper instead.
 
 FLOW (no headings):
-Powerful hook → ease into episode → unpack core philosophy with examples, analogies, science, stories → connect to social reform and compassion → meaningful summary + subscribe ask + next episode teaser."""
+Powerful hook → ease into episode → unpack core philosophy with examples, analogies,
+science, stories → connect to social reform and compassion → meaningful summary +
+subscribe ask + next episode teaser."""
 
     script = generate(prompt)
     print(f"   ✅ English script complete ({len(script)} chars)")
@@ -315,14 +363,19 @@ def main():
     db_patch("tamil_episodes",   "episode_number", EPISODE_NUMBER, {"status": "generating"})
     db_patch("english_episodes", "episode_number", EPISODE_NUMBER, {"status": "generating"})
 
-    preferences = fetch_preferences()
+    preferences        = fetch_preferences()
+    previous_episodes  = fetch_previous_episodes()
+
     if preferences:
         print(f"\n📋 Channel preferences loaded")
+    if previous_episodes:
+        prev_count = previous_episodes.count("Episode ")
+        print(f"📚 {prev_count} previous episodes loaded as context")
 
     try:
-        research       = deep_research(episode)
-        tamil_script   = generate_tamil_script(episode, research, preferences)
-        english_script = generate_english_script(episode, research, preferences)
+        research       = deep_research(episode, previous_episodes)
+        tamil_script   = generate_tamil_script(episode, research, preferences, previous_episodes)
+        english_script = generate_english_script(episode, research, preferences, previous_episodes)
         success        = save_scripts(tamil_script, english_script)
 
         if success:
