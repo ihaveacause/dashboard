@@ -8,6 +8,7 @@ Triggered separately from image pipeline.
 import os
 import json
 import requests
+import xml.etree.ElementTree as ET
 from google import genai
 from datetime import datetime
 
@@ -58,6 +59,18 @@ def upload_svg(path, data_bytes):
     print(f"  ❌ Upload failed: {r.text[:200]}")
     return None
 
+# ── SVG Validation ──────────────────────────────────────────
+def validate_svg(svg_text):
+    """
+    Validate SVG is well-formed XML.
+    Returns (is_valid, error_message)
+    """
+    try:
+        ET.fromstring(svg_text)
+        return True, None
+    except ET.ParseError as e:
+        return False, str(e)
+
 def call_with_retry(fn, max_retries=4, wait=30):
     import time
     for attempt in range(max_retries):
@@ -72,6 +85,7 @@ def call_with_retry(fn, max_retries=4, wait=30):
                 raise
 
 def generate_svg(episode):
+    import time
     print(f"\n📊 Generating SVG infographic...")
     pref_note = f"\n\nSPECIFIC REQUEST: {REGEN_NOTE}" if REGEN_NOTE else ""
 
@@ -93,33 +107,54 @@ DESIGN MANDATE:
 - All text readable, good contrast
 - Use SVG <defs> with <radialGradient> and <filter> for glows
 
-Return ONLY valid SVG code starting with <svg and ending with </svg>. No markdown."""
+CRITICAL: Return ONLY valid, well-formed SVG XML code starting with <svg and ending with </svg>.
+No markdown fences. No explanation. The SVG must be 100% valid XML — every attribute must be
+properly quoted, no duplicate attributes, no typos in attribute values."""
 
-    def _call():
-        r = gemini_client.models.generate_content(
-            model="gemini-2.5-flash", contents=prompt
-        )
-        return r.text.strip()
+    max_svg_attempts = 3
 
-    svg = call_with_retry(_call)
+    for attempt in range(1, max_svg_attempts + 1):
+        print(f"  🔄 SVG attempt {attempt}/{max_svg_attempts}...")
 
-    # Clean markdown if present
-    if "```svg" in svg:
-        svg = svg.split("```svg")[1].split("```")[0].strip()
-    elif "```" in svg:
-        svg = svg.split("```")[1].split("```")[0].strip()
+        def _call():
+            r = gemini_client.models.generate_content(
+                model="gemini-2.5-flash", contents=prompt
+            )
+            return r.text.strip()
 
-    if not svg.startswith("<svg"):
-        print("  ❌ Invalid SVG returned")
-        return None, None
+        svg = call_with_retry(_call)
 
-    # Upload
-    path = f"ep{EPISODE_NUMBER:03d}/infographic.svg"
-    url  = upload_svg(path, svg.encode("utf-8"))
+        # Clean markdown fences if present
+        if "```svg" in svg:
+            svg = svg.split("```svg")[1].split("```")[0].strip()
+        elif "```" in svg:
+            svg = svg.split("```")[1].split("```")[0].strip()
 
-    if url:
-        print(f"  ✅ SVG uploaded: {path}")
-    return svg, url
+        if not svg.startswith("<svg"):
+            print(f"  ❌ Attempt {attempt}: Response does not start with <svg — retrying...")
+            time.sleep(10)
+            continue
+
+        # ── Validate SVG XML ──────────────────────────────
+        is_valid, error = validate_svg(svg)
+        if not is_valid:
+            print(f"  ❌ Attempt {attempt}: Invalid SVG XML — {error}")
+            print(f"  🔄 Retrying SVG generation...")
+            time.sleep(10)
+            continue
+
+        print(f"  ✅ SVG validated (attempt {attempt})")
+
+        # Upload
+        path = f"ep{EPISODE_NUMBER:03d}/infographic.svg"
+        url  = upload_svg(path, svg.encode("utf-8"))
+
+        if url:
+            print(f"  ✅ SVG uploaded: {path}")
+        return svg, url
+
+    print(f"  ❌ SVG generation failed after {max_svg_attempts} attempts — all invalid XML")
+    return None, None
 
 def main():
     print("=" * 60)
@@ -143,7 +178,6 @@ def main():
         svg, url = generate_svg(episode)
 
         if svg and url:
-            # Save SVG only — preserve existing image_urls and status
             ok = db_patch("tamil_episodes", EPISODE_NUMBER, {
                 "infographic_svg": json.dumps({"svg": svg, "url": url}),
                 "regenerate_note": None
