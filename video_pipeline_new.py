@@ -5,12 +5,15 @@ I Have a Cause — Video Pipeline
     Tamil  : ta-IN-Chirp3-HD-Callirrhoe (female, 0.85x)
     English: en-US-Chirp3-HD-Charon     (male,   0.85x)
 - PIL composites text directly onto image frames (no FFmpeg overlay)
-- Three fonts pre-loaded: Tamil, Latin (English), Devanagari (Sanskrit)
+- Three fonts pre-loaded: Tamil (NotoSansTamil), Latin, Devanagari
 - Per-character font selection — no boxes for any script
-- 4-line centered text, adaptive color (bright/dark image detection)
+- 20 words per chunk — tight sync, no dropped words
+- Line wrap: 60 chars for English, 40 for Tamil
+- clean_script() strips markdown AND parenthetical stage directions
+- Background music mixed at 8% volume, full duration, 3s fade in/out
 - SVG infographic as second-to-last scene
+- Saves video_url correctly to both tamil_episodes and english_episodes
 - FFmpeg assembles final video
-- Generates BOTH Tamil and English videos in one run
 """
 
 import os
@@ -39,12 +42,16 @@ W, H, FPS  = 1280, 720, 24
 FONT_SIZE  = 32
 SPEAK_RATE = 0.85
 
-# TTS voices
+# TTS
 TAMIL_VOICE   = "ta-IN-Chirp3-HD-Callirrhoe"
 ENGLISH_VOICE = "en-US-Chirp3-HD-Charon"
 TTS_ENDPOINT  = "https://texttospeech.googleapis.com/v1beta1/text:synthesize"
+PROJECT_ID    = "gen-lang-client-0078128013"
 
-PROJECT_ID = "gen-lang-client-0078128013"
+# Background music
+MUSIC_URL     = "https://alfuvzlmatfkgdrkeqgk.supabase.co/storage/v1/object/public/episode-music/background.mp3"
+MUSIC_VOLUME  = 0.08   # 8% — felt but never heard over voice
+MUSIC_FADE    = 3      # seconds fade in / fade out
 
 SB_HEADERS = {
     "apikey":        SUPABASE_KEY,
@@ -55,7 +62,7 @@ SB_HEADERS = {
 REST     = f"{SUPABASE_URL}/rest/v1"
 WORK_DIR = Path(tempfile.mkdtemp(prefix="ihac_video_"))
 
-# ── Vertex AI / GCP auth ────────────────────────────────────
+# ── GCP auth ────────────────────────────────────────────────
 creds_info  = json.loads(GCP_CREDS_JSON)
 credentials = service_account.Credentials.from_service_account_info(
     creds_info, scopes=["https://www.googleapis.com/auth/cloud-platform"]
@@ -80,7 +87,10 @@ def db_patch(table, n, data):
         f"{REST}/{table}?episode_number=eq.{n}",
         headers=SB_HEADERS, json=data, timeout=15
     )
-    return r.status_code in (200, 204)
+    ok = r.status_code in (200, 204)
+    if not ok:
+        print(f"   ⚠️  db_patch failed on {table}: {r.status_code} {r.text[:200]}")
+    return ok
 
 def upload_video(filename, data_bytes):
     r = requests.post(
@@ -98,13 +108,31 @@ def upload_video(filename, data_bytes):
     print(f"  ❌ Upload failed {r.status_code}: {r.text[:200]}")
     return None
 
-# ── Font loading (pre-loaded once at startup) ───────────────
+# ── Download background music ───────────────────────────────
+def download_music():
+    """Download background music track to local file. Returns path or None."""
+    try:
+        print(f"\n🎵 Downloading background music...")
+        r = requests.get(MUSIC_URL, timeout=60)
+        if r.status_code == 200:
+            music_path = WORK_DIR / "background.mp3"
+            music_path.write_bytes(r.content)
+            print(f"   ✅ Music downloaded ({len(r.content)//1024} KB)")
+            return str(music_path)
+        else:
+            print(f"   ❌ Music download failed: {r.status_code}")
+            return None
+    except Exception as e:
+        print(f"   ❌ Music download error: {e}")
+        return None
+
+# ── Font loading ────────────────────────────────────────────
 def load_fonts(size):
-    """Load Tamil, Latin, Devanagari fonts. Falls back gracefully."""
+    """Load Tamil (NotoSansTamil preferred), Latin, Devanagari fonts."""
     tamil_candidates = [
-        "/usr/share/fonts/truetype/lohit-tamil/Lohit-Tamil.ttf",
         "/usr/share/fonts/truetype/noto/NotoSansTamil-Regular.ttf",
         "/usr/share/fonts/truetype/noto/NotoSerifTamil-Regular.ttf",
+        "/usr/share/fonts/truetype/lohit-tamil/Lohit-Tamil.ttf",
     ]
     latin_candidates = [
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
@@ -125,32 +153,32 @@ def load_fonts(size):
         for path in candidates:
             if Path(path).exists():
                 try:
-                    return ImageFont.truetype(path, size)
+                    return ImageFont.truetype(path, size), path
                 except Exception:
                     continue
-        return None
+        return None, None
 
-    fonts = {
-        "tamil":      try_load(tamil_candidates),
-        "latin":      try_load(latin_candidates),
-        "devanagari": try_load(devanagari_candidates),
-        "universal":  try_load(universal_candidates),
-        "default":    ImageFont.load_default()
-    }
+    results = {}
+    for name, candidates in [
+        ("tamil",      tamil_candidates),
+        ("latin",      latin_candidates),
+        ("devanagari", devanagari_candidates),
+        ("universal",  universal_candidates),
+    ]:
+        font, path = try_load(candidates)
+        results[name] = font
+        short = Path(path).name if path else "default fallback"
+        print(f"   Font [{name}]: {'✅' if font else '⚠️ '} {short}")
 
-    for name, font in fonts.items():
-        loaded = font is not None and font != fonts["default"]
-        print(f"   Font [{name}]: {'✅' if loaded else '⚠️  fallback'}")
-
-    return fonts
+    results["default"] = ImageFont.load_default()
+    return results
 
 def get_font_for_char(ch, fonts):
-    """Return the best font for a character based on its Unicode block."""
+    """Return best font for a character based on Unicode block."""
     try:
         name = unicodedata.name(ch, "")
     except Exception:
         name = ""
-
     if "TAMIL" in name:
         return fonts["tamil"] or fonts["universal"] or fonts["default"]
     elif "DEVANAGARI" in name:
@@ -162,77 +190,67 @@ def get_font_for_char(ch, fonts):
 
 # ── Script cleaning ─────────────────────────────────────────
 def clean_script(text):
-    """Strip all markdown and formatting before TTS."""
+    """
+    Strip all markdown, stage directions, and formatting before TTS.
+    Handles: (parentheticals), [brackets], **bold**, *italic*,
+    #headers, numbered lists, bullets, underscores.
+    """
+    text = re.sub(r'\(.*?\)', ' ', text)
+    text = re.sub(r'\[.*?\]', ' ', text)
     text = re.sub(r'\*+', '', text)
     text = re.sub(r'#+\s*', '', text)
-    text = re.sub(r'\[.*?\]', '', text)
     text = re.sub(r'^\d+\.\s+', '', text, flags=re.MULTILINE)
     text = re.sub(r'^[-•]\s+', '', text, flags=re.MULTILINE)
     text = re.sub(r'_{2,}', '', text)
     text = re.sub(r'\n{3,}', '\n\n', text)
+    text = re.sub(r' {2,}', ' ', text)
     return text.strip()
 
 # ── Script chunking ─────────────────────────────────────────
-def chunk_script(script, words_per_chunk=28):
-    """Split script into ~4-line display chunks."""
-    words  = script.split()
-    chunks = []
-    for i in range(0, len(words), words_per_chunk):
-        chunks.append(" ".join(words[i:i + words_per_chunk]))
-    return chunks
+def chunk_script(script, words_per_chunk=20):
+    """Split into ~20 word chunks — tight sync, no dropped words."""
+    words = script.split()
+    return [" ".join(words[i:i + words_per_chunk])
+            for i in range(0, len(words), words_per_chunk)]
 
 # ── Cloud TTS ───────────────────────────────────────────────
 def generate_tts_chunk(text, chunk_idx, voice_name, language_code):
-    """
-    Call Cloud Text-to-Speech API (Chirp3 HD).
-    Returns path to saved .wav file or None on failure.
-    """
+    """Call Cloud TTS API (Chirp3 HD). Returns wav path or None."""
     token = get_token()
-
     payload = {
         "input": {"text": text},
-        "voice": {
-            "languageCode": language_code,
-            "name":         voice_name
-        },
+        "voice": {"languageCode": language_code, "name": voice_name},
         "audioConfig": {
             "audioEncoding": "LINEAR16",
             "speakingRate":  SPEAK_RATE
         }
     }
-
     r = requests.post(
         TTS_ENDPOINT,
         headers={
-            "Authorization":      f"Bearer {token}",
+            "Authorization":       f"Bearer {token}",
             "x-goog-user-project": PROJECT_ID,
             "Content-Type":        "application/json"
         },
-        json=payload,
-        timeout=120
+        json=payload, timeout=120
     )
-
     if r.status_code != 200:
         print(f"      ❌ TTS error {r.status_code}: {r.text[:300]}")
         return None
-
     try:
-        audio_b64  = r.json().get("audioContent", "")
+        audio_b64 = r.json().get("audioContent", "")
         if not audio_b64:
             print(f"      ❌ No audioContent in TTS response")
             return None
-
-        audio_bytes = base64.b64decode(audio_b64)
-        chunk_path  = WORK_DIR / f"chunk_{chunk_idx:04d}.wav"
-        chunk_path.write_bytes(audio_bytes)   # always write
+        chunk_path = WORK_DIR / f"chunk_{chunk_idx:04d}.wav"
+        chunk_path.write_bytes(base64.b64decode(audio_b64))
         return str(chunk_path)
-
     except Exception as e:
         print(f"      ❌ TTS parse error: {e}")
         return None
 
 def get_audio_duration(path):
-    """Get duration of audio file using ffprobe."""
+    """Get audio duration in seconds using ffprobe."""
     try:
         result = subprocess.run(
             ["ffprobe", "-v", "error", "-show_entries", "format=duration",
@@ -241,12 +259,11 @@ def get_audio_duration(path):
         )
         return float(result.stdout.strip())
     except Exception:
-        return 12.0
+        return 8.0
 
 # ── Image helpers ───────────────────────────────────────────
 def is_dark_image(img):
-    arr = np.array(img.convert("L"))
-    return arr.mean() < 128
+    return np.array(img.convert("L")).mean() < 128
 
 def download_image(url):
     try:
@@ -274,20 +291,21 @@ def download_svg_as_image(svg_text):
         return Image.new("RGB", (W, H), (5, 5, 20))
 
 # ── Text frame rendering ────────────────────────────────────
-def render_text_frame(base_img, text, fonts):
-    """Composite text directly onto base_img using per-character font selection."""
+def render_text_frame(base_img, text, fonts, is_tamil=True):
+    """Composite text onto image with per-character font selection."""
     img     = base_img.copy().convert("RGBA")
     overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
     draw    = ImageDraw.Draw(overlay)
 
-    dark    = is_dark_image(base_img)
+    dark     = is_dark_image(base_img)
     text_col = (255, 255, 255, 240) if dark else (20, 20, 20, 240)
-    bg_col   = (0,   0,   0,   100) if dark else (255, 255, 255, 100)
+    bg_col   = (0,   0,   0,   110) if dark else (255, 255, 255, 110)
 
-    # Wrap into max 4 lines of ~40 chars
-    words, lines, cur, cur_len = text.split(), [], [], 0
+    max_chars = 40 if is_tamil else 60
+    words     = text.split()
+    lines, cur, cur_len = [], [], 0
     for word in words:
-        if cur_len + len(word) + 1 > 40 and cur:
+        if cur_len + len(word) + 1 > max_chars and cur:
             lines.append(" ".join(cur))
             cur, cur_len = [word], len(word)
         else:
@@ -297,18 +315,16 @@ def render_text_frame(base_img, text, fonts):
         lines.append(" ".join(cur))
     lines = lines[:4]
 
-    line_h  = FONT_SIZE + 8
-    total_h = len(lines) * line_h + 20
+    line_h  = FONT_SIZE + 10
+    total_h = len(lines) * line_h + 24
     box_y   = H - total_h - 60
-    box_x   = 80
+    box_x   = 60
 
-    # Background box
     draw.rectangle(
-        [box_x - 10, box_y - 10, W - box_x + 10, box_y + total_h + 10],
+        [box_x - 12, box_y - 12, W - box_x + 12, box_y + total_h + 12],
         fill=bg_col
     )
 
-    # Draw text char-by-char with correct font
     for li, line in enumerate(lines):
         y, x = box_y + li * line_h, box_x
         for ch in line:
@@ -323,8 +339,8 @@ def render_text_frame(base_img, text, fonts):
     return Image.alpha_composite(img, overlay).convert("RGB")
 
 # ── Build one video clip ────────────────────────────────────
-def frames_to_clip(frame_path, audio_path, clip_idx):
-    clip_path = WORK_DIR / f"clip_{clip_idx:04d}.mp4"
+def frames_to_clip(frame_path, audio_path, clip_idx, lang_prefix):
+    clip_path = WORK_DIR / f"clip_{lang_prefix}_{clip_idx:04d}.mp4"
     subprocess.run([
         "ffmpeg", "-y", "-loglevel", "error",
         "-loop", "1", "-i", str(frame_path),
@@ -337,18 +353,58 @@ def frames_to_clip(frame_path, audio_path, clip_idx):
     ], check=True, timeout=300)
     return str(clip_path)
 
+# ── Mix background music into final video ──────────────────
+def mix_music(video_path, music_path, output_path):
+    """
+    Mix background music under voice audio.
+    - Music loops to full video duration
+    - Volume: 8%
+    - Fade in: 3s, Fade out: 3s
+    - Falls back to original video if music mixing fails
+    """
+    try:
+        # Get video duration
+        duration = get_audio_duration(video_path)
+        print(f"   🎵 Mixing music (video: {duration:.1f}s, vol: {MUSIC_VOLUME*100:.0f}%)...")
+
+        subprocess.run([
+            "ffmpeg", "-y", "-loglevel", "error",
+            "-i", video_path,
+            "-stream_loop", "-1", "-i", music_path,   # loop music
+            "-filter_complex",
+            (
+                f"[1:a]volume={MUSIC_VOLUME},"
+                f"afade=t=in:st=0:d={MUSIC_FADE},"
+                f"afade=t=out:st={max(0, duration - MUSIC_FADE)}:d={MUSIC_FADE},"
+                f"atrim=0:{duration}[music];"
+                f"[0:a][music]amix=inputs=2:duration=first:dropout_transition=2[aout]"
+            ),
+            "-map", "0:v",
+            "-map", "[aout]",
+            "-c:v", "copy",
+            "-c:a", "aac", "-b:a", "192k",
+            output_path
+        ], check=True, timeout=600)
+
+        print(f"   ✅ Music mixed successfully")
+        return output_path
+
+    except Exception as e:
+        print(f"   ⚠️  Music mixing failed: {e} — using video without music")
+        return video_path   # fallback to original
+
 # ── Single language render ──────────────────────────────────
-def render_video(script, all_scenes, fonts, voice_name, language_code, label, work_subdir):
-    """Render a full video for one language. Returns path to mp4 or None."""
+def render_video(script, all_scenes, fonts, voice_name, language_code,
+                 label, lang_prefix, work_subdir, music_path):
+    """Render full video for one language. Returns path to final mp4 or None."""
     print(f"\n{'─'*50}")
     print(f"🎬 Rendering {label} video...")
     print(f"   Voice: {voice_name} | Rate: {SPEAK_RATE}x")
 
-    subdir = work_subdir
-    subdir.mkdir(exist_ok=True)
-
-    chunks     = chunk_script(script)
-    clip_paths = []
+    work_subdir.mkdir(exist_ok=True)
+    is_tamil    = language_code.startswith("ta")
+    chunks      = chunk_script(script, words_per_chunk=20)
+    clip_paths  = []
     scene_count = len(all_scenes)
 
     print(f"   Chunks: {len(chunks)} | Scenes: {scene_count}")
@@ -357,21 +413,16 @@ def render_video(script, all_scenes, fonts, voice_name, language_code, label, wo
         scene_idx = min(int(i / len(chunks) * scene_count), scene_count - 1)
         base_img  = all_scenes[scene_idx]
 
-        # TTS
         audio_path = generate_tts_chunk(chunk, i, voice_name, language_code)
         if not audio_path:
             print(f"   ⚠️  Chunk {i+1} TTS failed — skipping")
             continue
 
-        duration = get_audio_duration(audio_path)
-
-        # Render frame with text
-        composited = render_text_frame(base_img, chunk, fonts)
-        frame_path = subdir / f"frame_{i:04d}.jpg"
+        composited = render_text_frame(base_img, chunk, fonts, is_tamil=is_tamil)
+        frame_path = work_subdir / f"frame_{i:04d}.jpg"
         composited.save(str(frame_path), "JPEG", quality=95)
 
-        # Build clip
-        clip_path = frames_to_clip(frame_path, audio_path, i)
+        clip_path = frames_to_clip(frame_path, audio_path, i, lang_prefix)
         clip_paths.append(clip_path)
 
         if (i + 1) % 10 == 0:
@@ -381,22 +432,28 @@ def render_video(script, all_scenes, fonts, voice_name, language_code, label, wo
         print(f"   ❌ No clips generated for {label}")
         return None
 
-    # Concatenate
-    concat_file = subdir / "concat.txt"
+    # Concatenate clips
+    concat_file = work_subdir / "concat.txt"
     with open(concat_file, "w") as f:
         for cp in clip_paths:
             f.write(f"file '{cp}'\n")
 
-    output_path = subdir / f"output_{label.lower()}.mp4"
+    raw_video = work_subdir / f"raw_{lang_prefix}.mp4"
     subprocess.run([
         "ffmpeg", "-y", "-loglevel", "error",
         "-f", "concat", "-safe", "0", "-i", str(concat_file),
-        "-c", "copy",
-        str(output_path)
+        "-c", "copy", str(raw_video)
     ], check=True, timeout=600)
 
     print(f"   ✅ {label} video assembled — {len(clip_paths)}/{len(chunks)} clips")
-    return str(output_path)
+
+    # Mix background music
+    final_video = work_subdir / f"final_{lang_prefix}.mp4"
+    if music_path:
+        result = mix_music(str(raw_video), music_path, str(final_video))
+        return result
+    else:
+        return str(raw_video)
 
 # ── Main ────────────────────────────────────────────────────
 def main():
@@ -405,13 +462,8 @@ def main():
     print(f"   {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("=" * 60)
 
-    # ── Fetch episodes ─────────────────────────────────────
-    tamil_rows = db_get("tamil_episodes", {
-        "episode_number": f"eq.{EPISODE_NUMBER}", "select": "*"
-    })
-    english_rows = db_get("english_episodes", {
-        "episode_number": f"eq.{EPISODE_NUMBER}", "select": "*"
-    })
+    tamil_rows   = db_get("tamil_episodes",   {"episode_number": f"eq.{EPISODE_NUMBER}", "select": "*"})
+    english_rows = db_get("english_episodes", {"episode_number": f"eq.{EPISODE_NUMBER}", "select": "*"})
 
     if not tamil_rows:
         print(f"❌ Episode {EPISODE_NUMBER} not found")
@@ -419,23 +471,26 @@ def main():
 
     tamil_ep   = tamil_rows[0]
     english_ep = english_rows[0] if english_rows else None
-
     print(f"\n📖 {tamil_ep['title_english']}")
+
     db_patch("tamil_episodes", EPISODE_NUMBER, {"status": "rendering_video"})
 
     try:
-        # ── Load fonts once ────────────────────────────────
+        # Load fonts once — shared by both videos
         print(f"\n🔤 Loading fonts...")
         fonts = load_fonts(FONT_SIZE)
 
-        # ── Get images ─────────────────────────────────────
+        # Download background music once — shared by both videos
+        music_path = download_music()
+
+        # Download scene images from tamil_episodes (shared)
         image_urls_raw = tamil_ep.get("image_urls", "[]")
         image_urls     = json.loads(image_urls_raw) if isinstance(image_urls_raw, str) else image_urls_raw
         image_urls     = sorted(image_urls, key=lambda x: x["id"])
         scene_images   = [download_image(s["url"]) for s in image_urls]
         print(f"\n🖼  Downloaded {len(scene_images)} scene images")
 
-        # ── Get SVG ────────────────────────────────────────
+        # SVG infographic
         svg_img = None
         svg_raw = tamil_ep.get("infographic_svg")
         if svg_raw:
@@ -458,9 +513,8 @@ def main():
         print(f"   Total scenes: {len(all_scenes)}")
 
         # ── Tamil video ────────────────────────────────────
-        tamil_script_raw = tamil_ep.get("script_tamil", "") or ""
-        tamil_script     = clean_script(tamil_script_raw)
-        tamil_url        = None
+        tamil_url    = None
+        tamil_script = clean_script(tamil_ep.get("script_tamil", "") or "")
 
         if tamil_script:
             print(f"\n📝 Tamil script: {len(tamil_script.split())} words")
@@ -471,7 +525,9 @@ def main():
                 voice_name    = TAMIL_VOICE,
                 language_code = "ta-IN",
                 label         = "Tamil",
-                work_subdir   = WORK_DIR / "tamil"
+                lang_prefix   = "ta",
+                work_subdir   = WORK_DIR / "tamil",
+                music_path    = music_path
             )
             if tamil_path:
                 print(f"\n☁️  Uploading Tamil video...")
@@ -480,48 +536,48 @@ def main():
                     Path(tamil_path).read_bytes()
                 )
                 print(f"   {'✅' if tamil_url else '❌'} Tamil upload")
+                ok = db_patch("tamil_episodes", EPISODE_NUMBER, {
+                    "video_url": tamil_url,
+                    "status":    "video_ready"
+                })
+                print(f"   {'✅' if ok else '❌'} Tamil status saved")
         else:
-            print("⚠️  No Tamil script found — skipping Tamil video")
+            print("⚠️  No Tamil script — skipping Tamil video")
+            db_patch("tamil_episodes", EPISODE_NUMBER, {"status": "images_approved"})
 
         # ── English video ──────────────────────────────────
-        english_url = None
-        if english_ep:
-            english_script_raw = english_ep.get("script_english", "") or ""
-            english_script     = clean_script(english_script_raw)
+        english_url    = None
+        english_script = clean_script(english_ep.get("script_english", "") or "") if english_ep else ""
 
-            if english_script:
-                print(f"\n📝 English script: {len(english_script.split())} words")
-                english_path = render_video(
-                    script        = english_script,
-                    all_scenes    = all_scenes,
-                    fonts         = fonts,
-                    voice_name    = ENGLISH_VOICE,
-                    language_code = "en-US",
-                    label         = "English",
-                    work_subdir   = WORK_DIR / "english"
+        if english_script:
+            print(f"\n📝 English script: {len(english_script.split())} words")
+            english_path = render_video(
+                script        = english_script,
+                all_scenes    = all_scenes,
+                fonts         = fonts,
+                voice_name    = ENGLISH_VOICE,
+                language_code = "en-US",
+                label         = "English",
+                lang_prefix   = "en",
+                work_subdir   = WORK_DIR / "english",
+                music_path    = music_path
+            )
+            if english_path:
+                print(f"\n☁️  Uploading English video...")
+                english_url = upload_video(
+                    f"ep{EPISODE_NUMBER:03d}_english.mp4",
+                    Path(english_path).read_bytes()
                 )
-                if english_path:
-                    print(f"\n☁️  Uploading English video...")
-                    english_url = upload_video(
-                        f"ep{EPISODE_NUMBER:03d}_english.mp4",
-                        Path(english_path).read_bytes()
-                    )
-                    print(f"   {'✅' if english_url else '❌'} English upload")
-            else:
-                print("⚠️  No English script found — skipping English video")
+                print(f"   {'✅' if english_url else '❌'} English upload")
+                ok = db_patch("english_episodes", EPISODE_NUMBER, {
+                    "video_url": english_url,
+                    "status":    "video_ready"
+                })
+                print(f"   {'✅' if ok else '❌'} English status saved")
+        else:
+            print("⚠️  No English script — skipping English video")
 
-        # ── Save results ───────────────────────────────────
-        update_data = {"status": "video_ready"}
-        if tamil_url:
-            update_data["video_url_tamil"] = tamil_url
-        db_patch("tamil_episodes", EPISODE_NUMBER, update_data)
-
-        if english_url and english_ep:
-            db_patch("english_episodes", EPISODE_NUMBER, {
-                "video_url_english": english_url,
-                "status":            "video_ready"
-            })
-
+        # ── Final summary ──────────────────────────────────
         print(f"\n{'='*60}")
         print(f"✅ Episode {EPISODE_NUMBER} — Video pipeline complete!")
         if tamil_url:
