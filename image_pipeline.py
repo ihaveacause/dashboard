@@ -1,7 +1,7 @@
 """
 I Have a Cause — Image Pipeline (Vertex AI)
 ============================================
-Uses Vertex AI Imagen 3 for high quality cosmic/surreal images
+Uses Vertex AI Imagen 3 Fast for high quality cosmic/surreal images
 and Gemini for SVG infographic generation.
 - Scene descriptions generated dynamically from each episode's actual script
 - SVG infographic also generated from episode content, not fixed template
@@ -27,8 +27,10 @@ GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
 EPISODE_NUMBER = int(os.environ["EPISODE_NUMBER"])
 GCP_CREDS_JSON = os.environ["GOOGLE_APPLICATION_CREDENTIALS_JSON"]
 
-PROJECT_ID = "gen-lang-client-0078128013"
-LOCATION   = "us-central1"
+PROJECT_ID     = "gen-lang-client-0078128013"
+LOCATION       = "us-central1"
+IMAGEN_MODEL   = "imagen-3.0-fast-generate-001"   # fast variant — higher quota
+IMAGEN_SLEEP   = 20                                # seconds between Imagen calls
 
 # ── Clients ─────────────────────────────────────────────────
 gemini_client = genai.Client(api_key=GEMINI_API_KEY)
@@ -195,9 +197,9 @@ Return ONLY valid JSON — no markdown, no explanation:
         print(f"      Scene {s['id']}: {s['label']}")
     return data["scenes"]
 
-# ── Step 2: Imagen 3 via Vertex AI REST API ─────────────────
+# ── Step 2: Imagen 3 Fast via Vertex AI REST API ────────────
 def generate_image_vertex(prompt, scene_id):
-    """Call Imagen 3 — enforces NO TEXT rule universally."""
+    """Call Imagen 3 Fast — enforces NO TEXT rule universally."""
     token = get_vertex_token()
 
     full_prompt = (
@@ -213,7 +215,7 @@ def generate_image_vertex(prompt, scene_id):
     url = (
         f"https://{LOCATION}-aiplatform.googleapis.com/v1/"
         f"projects/{PROJECT_ID}/locations/{LOCATION}/"
-        f"publishers/google/models/imagen-3.0-generate-001:predict"
+        f"publishers/google/models/{IMAGEN_MODEL}:predict"
     )
 
     payload = {
@@ -245,7 +247,7 @@ def generate_image_vertex(prompt, scene_id):
 
 def generate_images(scenes, existing_urls=None):
     import time
-    print(f"\n🖼  Step 2: Generating images with Imagen 3 (Vertex AI)...")
+    print(f"\n🖼  Step 2: Generating images with {IMAGEN_MODEL}...")
 
     image_urls   = existing_urls or []
     existing_ids = {img["id"] for img in image_urls}
@@ -262,12 +264,12 @@ def generate_images(scenes, existing_urls=None):
         try:
             image_bytes = call_with_retry(
                 lambda p=scene["prompt"], i=scene["id"]: generate_image_vertex(p, i),
-                max_retries=3, wait=20
+                max_retries=3, wait=25
             )
             if not image_bytes:
                 continue
 
-            time.sleep(10)  # rate limit buffer between Imagen calls
+            time.sleep(IMAGEN_SLEEP)  # rate limit buffer between Imagen calls
 
             storage_path = f"ep{EPISODE_NUMBER:03d}/scene_{scene['id']}.jpg"
             url = upload_to_storage("episode-images", storage_path, image_bytes)
@@ -290,7 +292,6 @@ def generate_images(scenes, existing_urls=None):
 def generate_svg_infographic(episode):
     print(f"\n📊 Step 3: Generating SVG infographic from episode content...")
 
-    # Use script to understand what concept to visualize
     script_tamil   = str(episode.get("script_tamil",   "") or "")[:1500]
     script_english = str(episode.get("script_english", "") or "")[:1500]
     script_context = script_tamil if script_tamil else script_english
@@ -343,7 +344,6 @@ No markdown. No explanation. Every attribute properly quoted. No duplicate attri
         response = call_with_retry(_call_svg)
         svg = response.text.strip()
 
-        # Clean markdown fences
         if "```svg" in svg:
             svg = svg.split("```svg")[1].split("```")[0].strip()
         elif "```" in svg:
@@ -376,7 +376,8 @@ No markdown. No explanation. Every attribute properly quoted. No duplicate attri
 # ── Main ────────────────────────────────────────────────────
 def main():
     print("=" * 60)
-    print(f"🖼  Image Pipeline (Vertex AI) — Episode {EPISODE_NUMBER}")
+    print(f"🖼  Image Pipeline — Episode {EPISODE_NUMBER}")
+    print(f"   Model: {IMAGEN_MODEL}")
     print(f"   {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("=" * 60)
 
@@ -397,10 +398,8 @@ def main():
     prefs = fetch_preferences()
 
     try:
-        # Generate scene descriptions from actual episode script
         scenes = generate_scene_descriptions(episode, prefs)
 
-        # Check for existing images
         existing = []
         if episode.get("image_urls"):
             try:
@@ -412,7 +411,6 @@ def main():
 
         image_urls = generate_images(scenes, existing)
 
-        # Generate SVG from episode content
         existing_svg = episode.get("infographic_svg")
         if existing_svg:
             print("\n📊 Step 3: SVG already exists — skipping")
