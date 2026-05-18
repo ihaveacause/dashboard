@@ -36,7 +36,7 @@ credentials = service_account.Credentials.from_service_account_info(
     scopes=["https://www.googleapis.com/auth/cloud-platform"]
 )
 vertexai.init(project=PROJECT_ID, location=LOCATION, credentials=credentials)
-model = GenerativeModel("gemini-2.5-flash")
+model = GenerativeModel("gemini-2.5-pro")   # ← Pro for deep philosophical scripts
 
 SB_HEADERS = {
     "apikey":        SUPABASE_KEY,
@@ -140,7 +140,7 @@ def generate_tamil_script(episode, research, preferences):
     pref_block = f"\n\nCHANNEL PREFERENCES (always apply):\n{preferences}" if preferences else ""
 
     target_min   = episode['target_duration_min']
-    target_words = target_min * 110  # ~110 Tamil words/min at 0.89x speed
+    target_words = target_min * 110  # ~110 Tamil words/min at 0.85x speed
 
     prompt = f"""நீங்கள் "I Have a Cause" YouTube சேனலுக்கான expert Tamil script writer.
 
@@ -149,7 +149,7 @@ def generate_tamil_script(episode, research, preferences):
 - தத்துவம் மற்றும் நவீன அறிவியலை இணைக்கும்
 - சமூக சீர்திருத்தத்தை ஆதரிக்கும்
 - Tamil diaspora மற்றும் Tamil Nadu பார்வையாளர்கள்
-- எளிய Tamil பேச்சு வழக்கு{pref_block}
+- எளிய Tamil பேச்சு வழக்கு — சாதாரண மனிதர்களுக்கு புரியும் வகையில்{pref_block}
 
 EPISODE விவரங்கள்:
 எண்: {episode['episode_number']}
@@ -195,6 +195,10 @@ RESEARCH:
 
 4. நீளம்: குறைந்தது {target_words} words எழுதவும்.
 
+5. ஆழம்: தத்துவத்தை எளிய வார்த்தைகளில் விளக்கவும்.
+   கடினமான கருத்துக்களை அன்றாட உதாரணங்களால் புரிய வையுங்கள்.
+   ஒவ்வொரு கருத்தையும் படிப்படியாக, தெளிவாக விரிவுபடுத்தவும்.
+
 FLOW (labels இல்லாமல்):
 பார்வையாளரை உடனே கட்டிப் போடும் தொடக்கம் → episode அறிமுகம் → core philosophy விரிவாக → examples, stories, modern connections → சமூக மாற்றத்துடன் தொடர்பு → summary, குழுசேருங்கள் கோரிக்கை, அடுத்த அத்தியாயம் preview."""
 
@@ -208,7 +212,7 @@ def generate_english_script(episode, research, preferences):
     eng_prefs = f"\n\nCHANNEL PREFERENCES (always apply):\n{preferences}" if preferences else ""
 
     target_min   = episode['target_duration_min']
-    target_words = target_min * 130  # ~130 English words/min at 0.89x speed
+    target_words = target_min * 130  # ~130 English words/min at 0.85x speed
 
     prompt = f"""You are an expert English script writer for "I Have a Cause" — a Tamil philosophy YouTube channel.
 
@@ -217,7 +221,8 @@ Channel voice:
 - Bridges ancient Vedic wisdom with modern science
 - Champions social reform and animal consciousness
 - Audience: Tamil diaspora (UK, USA, Canada, Singapore) + global seekers
-- Think: Alan Watts meets Sadhguru in English{eng_prefs}
+- Think: Alan Watts meets Sadhguru in English
+- Explain complex philosophy in simple, everyday language anyone can understand{eng_prefs}
 
 EPISODE DETAILS:
 Number: {episode['episode_number']}
@@ -239,6 +244,7 @@ CRITICAL RULES — follow exactly:
 5. Write exactly as you would speak to a camera — natural, warm, intelligent.
 6. Start directly with the hook — no labels, no preamble.
 7. Minimum {target_words} words — rich, layered, profound.
+8. Break down every complex idea with simple analogies and real-life examples.
 
 FLOW (no headings):
 Powerful hook → ease into episode → unpack core philosophy with examples, analogies, science, stories → connect to social reform and compassion → meaningful summary + subscribe ask + next episode teaser."""
