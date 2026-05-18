@@ -231,12 +231,14 @@ RESEARCH:
 {research}
 
 CRITICAL RULES — follow exactly:
-1. Write the entire script as continuous flowing spoken prose
-2. NO section headings, NO timestamps, NO markdown formatting
-3. NO bullet points, NO numbered lists, NO bold/italic
-4. Write exactly as you would speak to a camera — natural, warm, intelligent
-5. Start directly with the hook — no labels, no preamble
-6. Minimum {target_words} words — rich, layered, profound
+1. LANGUAGE: Write the ENTIRE script in English only. Not a single word in Tamil, Hindi,
+   or any other language. Every word must be English.
+2. Write the entire script as continuous flowing spoken prose.
+3. NO section headings, NO timestamps, NO markdown formatting.
+4. NO bullet points, NO numbered lists, NO bold/italic.
+5. Write exactly as you would speak to a camera — natural, warm, intelligent.
+6. Start directly with the hook — no labels, no preamble.
+7. Minimum {target_words} words — rich, layered, profound.
 
 FLOW (no headings):
 Powerful hook → ease into episode → unpack core philosophy with examples, analogies, science, stories → connect to social reform and compassion → meaningful summary + subscribe ask + next episode teaser."""
