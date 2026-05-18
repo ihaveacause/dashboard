@@ -64,8 +64,14 @@ def db_patch(table, match_col, match_val, data):
     return r.status_code in (200, 204)
 
 def generate(prompt):
+    """Call Gemini via Vertex AI and safely extract text from any response shape."""
     response = model.generate_content(prompt)
-    return response.text
+    parts = []
+    for candidate in response.candidates:
+        for part in candidate.content.parts:
+            if hasattr(part, "text") and part.text:
+                parts.append(part.text)
+    return "\n".join(parts)
 
 # ── Fetch episode ─────────────────────────────────────────────
 def fetch_episode():
@@ -168,7 +174,7 @@ RESEARCH:
    - Share → பகிருங்கள்
    - Module → தொகுதி
    - Episode → அத்தியாயம்
-   - Channel → சேனல் (or சேவை)
+   - Channel → சேவை
    - Notification → அறிவிப்பு
    - Bell → மணி
    - Science → அறிவியல்
@@ -298,8 +304,8 @@ def main():
         print(f"   🔄 Regen: {episode['regenerate_note']}")
         save_preference_if_noted(episode)
 
-    db_patch("tamil_episodes",  "episode_number", EPISODE_NUMBER, {"status": "generating"})
-    db_patch("english_episodes","episode_number", EPISODE_NUMBER, {"status": "generating"})
+    db_patch("tamil_episodes",   "episode_number", EPISODE_NUMBER, {"status": "generating"})
+    db_patch("english_episodes", "episode_number", EPISODE_NUMBER, {"status": "generating"})
 
     preferences = fetch_preferences()
     if preferences:
@@ -317,15 +323,15 @@ def main():
             print(f"{'='*60}")
         else:
             print(f"\n❌ Save failed")
-            db_patch("tamil_episodes",  "episode_number", EPISODE_NUMBER, {"status": "pending"})
-            db_patch("english_episodes","episode_number", EPISODE_NUMBER, {"status": "pending"})
+            db_patch("tamil_episodes",   "episode_number", EPISODE_NUMBER, {"status": "pending"})
+            db_patch("english_episodes", "episode_number", EPISODE_NUMBER, {"status": "pending"})
 
     except Exception as e:
         import traceback
         print(f"\n❌ Error: {e}")
         traceback.print_exc()
-        db_patch("tamil_episodes",  "episode_number", EPISODE_NUMBER, {"status": "pending"})
-        db_patch("english_episodes","episode_number", EPISODE_NUMBER, {"status": "pending"})
+        db_patch("tamil_episodes",   "episode_number", EPISODE_NUMBER, {"status": "pending"})
+        db_patch("english_episodes", "episode_number", EPISODE_NUMBER, {"status": "pending"})
 
 if __name__ == "__main__":
     main()
