@@ -107,7 +107,11 @@ jobs:
           photo_file = "photo_tamil.jpg" if language == "tamil" else "photo_english.jpg"
           photo_url  = f"{base_url}/{photo_file}"
 
-          title      = ep.get("title") or ep.get("episode_title", "")
+          language_val = language
+          if language_val == "tamil":
+              title = ep.get("title_tamil") or ep.get("title") or ep.get("episode_title", "")
+          else:
+              title = ep.get("title_english") or ep.get("title") or ep.get("episode_title", "")
           ep_num     = ep["episode_number"]
 
           import subprocess
