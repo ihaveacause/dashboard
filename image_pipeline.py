@@ -5,10 +5,12 @@ Uses Vertex AI Imagen 3 Fast for high quality cosmic/surreal images
 and Gemini for SVG infographic generation.
 - Scene descriptions generated dynamically from each episode's actual script
 - SVG infographic also generated from episode content, not fixed template
+- regenerate_note support: "Regenerate scene 3: <direction>" regenerates only that scene
 - RULE: All images must have absolutely NO text, letters or writing.
 """
 
 import os
+import re
 import json
 import base64
 import requests
@@ -27,10 +29,10 @@ GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
 EPISODE_NUMBER = int(os.environ["EPISODE_NUMBER"])
 GCP_CREDS_JSON = os.environ["GOOGLE_APPLICATION_CREDENTIALS_JSON"]
 
-PROJECT_ID     = "gen-lang-client-0078128013"
-LOCATION       = "us-central1"
-IMAGEN_MODEL   = "imagen-3.0-fast-generate-001"   # fast variant — higher quota
-IMAGEN_SLEEP   = 20                                # seconds between Imagen calls
+PROJECT_ID   = "gen-lang-client-0078128013"
+LOCATION     = "us-central1"
+IMAGEN_MODEL = "imagen-3.0-fast-generate-001"   # fast variant — higher quota
+IMAGEN_SLEEP = 20                                # seconds between Imagen calls
 
 # ── Clients ─────────────────────────────────────────────────
 gemini_client = genai.Client(api_key=GEMINI_API_KEY)
@@ -110,6 +112,22 @@ def fetch_preferences():
     prefs = [r["preference"] for r in rows if r["category"] == "image"]
     return "\n".join(f"- {p}" for p in prefs) if prefs else ""
 
+# ── Parse regenerate note ───────────────────────────────────
+def parse_regen_note(note):
+    """
+    Parse regenerate_note to extract scene ID and direction.
+    Expected format: "Regenerate scene 3: more abstract, less human figure"
+    Returns (scene_id, direction) or (None, None) if not a scene regen note.
+    """
+    if not note:
+        return None, None
+    match = re.search(r'[Rr]egenerate\s+scene\s+(\d+)[:\-]?\s*(.*)', note, re.IGNORECASE)
+    if match:
+        scene_id  = int(match.group(1))
+        direction = match.group(2).strip()
+        return scene_id, direction
+    return None, None
+
 # ── Retry helper ────────────────────────────────────────────
 def call_with_retry(fn, max_retries=4, wait=30):
     import time
@@ -129,7 +147,6 @@ def generate_scene_descriptions(episode, prefs):
     print(f"\n🎨 Step 1: Generating scene descriptions from episode script...")
     pref_block = f"\n\nIMAGE PREFERENCES:\n{prefs}" if prefs else ""
 
-    # Use full script for context — first 2000 chars covers the core themes
     script_tamil   = str(episode.get("script_tamil",   "") or "")[:2000]
     script_english = str(episode.get("script_english", "") or "")[:2000]
     script_context = script_tamil if script_tamil else script_english
@@ -245,13 +262,25 @@ def generate_image_vertex(prompt, scene_id):
         print(f"      ❌ Vertex API error {r.status_code}: {r.text[:300]}")
         return None
 
-def generate_images(scenes, existing_urls=None):
+def generate_images(scenes, existing_urls=None, regen_scene_id=None, regen_direction=None):
+    """
+    Generate images for all scenes.
+    regen_scene_id: if set, force-regenerate that specific scene
+                    even if it already exists, using regen_direction as extra prompt.
+    """
     import time
     print(f"\n🖼  Step 2: Generating images with {IMAGEN_MODEL}...")
 
     image_urls   = existing_urls or []
     existing_ids = {img["id"] for img in image_urls}
-    missing      = [s for s in scenes if s["id"] not in existing_ids]
+
+    # If regenerating a specific scene — remove it from existing so it regenerates
+    if regen_scene_id and regen_scene_id in existing_ids:
+        image_urls   = [img for img in image_urls if img["id"] != regen_scene_id]
+        existing_ids = {img["id"] for img in image_urls}
+        print(f"   🔄 Force-regenerating Scene {regen_scene_id}: {regen_direction or 'no direction'}")
+
+    missing = [s for s in scenes if s["id"] not in existing_ids]
 
     if not missing:
         print(f"   ✅ All {len(scenes)} images already exist — skipping")
@@ -261,15 +290,22 @@ def generate_images(scenes, existing_urls=None):
 
     for scene in missing:
         print(f"   Scene {scene['id']}: {scene['label']}...")
+
+        # If this is the scene being regenerated — append user's direction to prompt
+        scene_prompt = scene["prompt"]
+        if regen_scene_id and scene["id"] == regen_scene_id and regen_direction:
+            scene_prompt = f"{scene_prompt} SPECIFIC DIRECTION: {regen_direction}"
+            print(f"      📝 Direction applied: {regen_direction}")
+
         try:
             image_bytes = call_with_retry(
-                lambda p=scene["prompt"], i=scene["id"]: generate_image_vertex(p, i),
+                lambda p=scene_prompt, i=scene["id"]: generate_image_vertex(p, i),
                 max_retries=3, wait=25
             )
             if not image_bytes:
                 continue
 
-            time.sleep(IMAGEN_SLEEP)  # rate limit buffer between Imagen calls
+            time.sleep(IMAGEN_SLEEP)
 
             storage_path = f"ep{EPISODE_NUMBER:03d}/scene_{scene['id']}.jpg"
             url = upload_to_storage("episode-images", storage_path, image_bytes)
@@ -279,7 +315,7 @@ def generate_images(scenes, existing_urls=None):
                     "id":     scene["id"],
                     "label":  scene["label"],
                     "url":    url,
-                    "prompt": scene["prompt"]
+                    "prompt": scene_prompt
                 })
                 print(f"      ✅ Uploaded: {storage_path}")
         except Exception as e:
@@ -289,12 +325,14 @@ def generate_images(scenes, existing_urls=None):
     return image_urls
 
 # ── Step 3: SVG Infographic from episode content ────────────
-def generate_svg_infographic(episode):
+def generate_svg_infographic(episode, regen_direction=None):
     print(f"\n📊 Step 3: Generating SVG infographic from episode content...")
 
     script_tamil   = str(episode.get("script_tamil",   "") or "")[:1500]
     script_english = str(episode.get("script_english", "") or "")[:1500]
     script_context = script_tamil if script_tamil else script_english
+
+    direction_block = f"\n\nSPECIFIC DIRECTION FROM CREATOR: {regen_direction}" if regen_direction else ""
 
     prompt = f"""Create a stunning SVG infographic (1920x1080px) for this Tamil philosophy episode.
 
@@ -304,7 +342,7 @@ Bridge: {episode['bridge']}
 Module: {episode['module']}
 
 EPISODE SCRIPT (for context):
-{script_context}
+{script_context}{direction_block}
 
 YOUR TASK:
 Read the script above and design an SVG diagram that VISUALLY EXPLAINS
@@ -389,10 +427,31 @@ def main():
     print(f"\n📖 {episode['title_english']}")
     print(f"   Bridge: {episode['bridge']}")
 
-    # Confirm script exists before proceeding
+    # Confirm script exists
     if not episode.get("script_tamil") and not episode.get("script_english"):
         print("❌ No script found — run script generator first")
         return
+
+    # ── Parse regenerate note ──────────────────────────────
+    regen_note      = episode.get("regenerate_note", "") or ""
+    regen_scene_id  = None
+    regen_direction = None
+    regen_svg       = False
+
+    if regen_note:
+        print(f"\n🔄 Regen note: {regen_note}")
+        scene_id, direction = parse_regen_note(regen_note)
+        if scene_id:
+            regen_scene_id  = scene_id
+            regen_direction = direction
+            print(f"   🎯 Targeting Scene {regen_scene_id}: {regen_direction or 'no direction'}")
+        elif any(w in regen_note.lower() for w in ["svg", "infographic", "diagram", "chart"]):
+            regen_svg = True
+            regen_direction = regen_note
+            print(f"   🎯 Targeting SVG infographic")
+
+        # Clear note after reading
+        db_patch("tamil_episodes", EPISODE_NUMBER, {"regenerate_note": None})
 
     db_patch("tamil_episodes", EPISODE_NUMBER, {"status": "generating_images"})
     prefs = fetch_preferences()
@@ -400,19 +459,30 @@ def main():
     try:
         scenes = generate_scene_descriptions(episode, prefs)
 
+        # Load existing images
         existing = []
         if episode.get("image_urls"):
             try:
                 existing = json.loads(episode["image_urls"]) if isinstance(episode["image_urls"], str) else episode["image_urls"]
                 if existing:
-                    print(f"   📦 Found {len(existing)} existing images — generating missing only")
+                    print(f"   📦 Found {len(existing)} existing images")
             except:
                 existing = []
 
-        image_urls = generate_images(scenes, existing)
+        # Generate images — passes regen info if a specific scene is targeted
+        image_urls = generate_images(
+            scenes,
+            existing_urls   = existing,
+            regen_scene_id  = regen_scene_id,
+            regen_direction = regen_direction
+        )
 
+        # SVG — regenerate if targeted, skip if exists and not targeted
         existing_svg = episode.get("infographic_svg")
-        if existing_svg:
+        if regen_svg:
+            print("\n📊 Step 3: Regenerating SVG with direction...")
+            svg, svg_url = generate_svg_infographic(episode, regen_direction=regen_direction)
+        elif existing_svg:
             print("\n📊 Step 3: SVG already exists — skipping")
             try:
                 parsed  = json.loads(existing_svg) if isinstance(existing_svg, str) else existing_svg
