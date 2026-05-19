@@ -1,0 +1,126 @@
+<svg width="400" height="400" viewBox="0 0 400 400" xmlns="http://www.w3.org/2000/svg">
+<title>I Have a Cause — Symbol</title>
+<desc>Pink lotus, concentric flames, Shiva third eye — transparent background</desc>
+
+<defs>
+  <radialGradient id="petalSheen" cx="38%" cy="25%" r="65%">
+    <stop offset="0%" stop-color="#ffb3cc"/>
+    <stop offset="100%" stop-color="#b5003a"/>
+  </radialGradient>
+  <radialGradient id="innerPetal" cx="38%" cy="25%" r="65%">
+    <stop offset="0%" stop-color="#ffd6e7"/>
+    <stop offset="100%" stop-color="#d81b60"/>
+  </radialGradient>
+  <radialGradient id="fireGlow" cx="50%" cy="50%" r="50%">
+    <stop offset="0%" stop-color="#ff6f00" stop-opacity="0.6"/>
+    <stop offset="100%" stop-color="#ff6f00" stop-opacity="0"/>
+  </radialGradient>
+  <radialGradient id="irisGrad" cx="50%" cy="40%" r="55%">
+    <stop offset="0%" stop-color="#bf360c"/>
+    <stop offset="50%" stop-color="#6a0000"/>
+    <stop offset="100%" stop-color="#1a0000"/>
+  </radialGradient>
+  <radialGradient id="scleraGrad" cx="45%" cy="35%" r="60%">
+    <stop offset="0%" stop-color="#fffde7"/>
+    <stop offset="100%" stop-color="#ffe082"/>
+  </radialGradient>
+  <radialGradient id="haloGlow" cx="50%" cy="50%" r="50%">
+    <stop offset="0%" stop-color="#ffffff" stop-opacity="0.25"/>
+    <stop offset="70%" stop-color="#ffffff" stop-opacity="0.06"/>
+    <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+  </radialGradient>
+</defs>
+
+<circle cx="200" cy="200" r="175" fill="url(#haloGlow)"/>
+<circle cx="200" cy="200" r="168" fill="none" stroke="#ffffff" stroke-width="0.5" opacity="0.15"/>
+<circle cx="200" cy="200" r="163" fill="none" stroke="#ffffff" stroke-width="1"   opacity="0.25"/>
+<circle cx="200" cy="200" r="158" fill="none" stroke="#ffffff" stroke-width="2.5" opacity="0.5"/>
+<circle cx="200" cy="200" r="152" fill="none" stroke="#ffffff" stroke-width="6"   opacity="0.15"/>
+<circle cx="200" cy="200" r="145" fill="none" stroke="#ffffff" stroke-width="1"   opacity="0.1"/>
+
+<g transform="translate(200,200)">
+  <g transform="rotate(22.5)"> <path d="M0,-8 C-22,-32 -24,-78 0,-112 C24,-78 22,-32 0,-8 Z" fill="#880e30" opacity="0.5"/></g>
+  <g transform="rotate(67.5)"> <path d="M0,-8 C-22,-32 -24,-78 0,-112 C24,-78 22,-32 0,-8 Z" fill="#880e30" opacity="0.5"/></g>
+  <g transform="rotate(112.5)"><path d="M0,-8 C-22,-32 -24,-78 0,-112 C24,-78 22,-32 0,-8 Z" fill="#880e30" opacity="0.5"/></g>
+  <g transform="rotate(157.5)"><path d="M0,-8 C-22,-32 -24,-78 0,-112 C24,-78 22,-32 0,-8 Z" fill="#880e30" opacity="0.5"/></g>
+  <g transform="rotate(202.5)"><path d="M0,-8 C-22,-32 -24,-78 0,-112 C24,-78 22,-32 0,-8 Z" fill="#880e30" opacity="0.5"/></g>
+  <g transform="rotate(247.5)"><path d="M0,-8 C-22,-32 -24,-78 0,-112 C24,-78 22,-32 0,-8 Z" fill="#880e30" opacity="0.5"/></g>
+  <g transform="rotate(292.5)"><path d="M0,-8 C-22,-32 -24,-78 0,-112 C24,-78 22,-32 0,-8 Z" fill="#880e30" opacity="0.5"/></g>
+  <g transform="rotate(337.5)"><path d="M0,-8 C-22,-32 -24,-78 0,-112 C24,-78 22,-32 0,-8 Z" fill="#880e30" opacity="0.5"/></g>
+</g>
+
+<g transform="translate(200,200)">
+  <g transform="rotate(0)">
+    <path d="M0,-10 C-25,-36 -27,-82 0,-118 C27,-82 25,-36 0,-10 Z" fill="url(#petalSheen)" opacity="0.95"/>
+    <path d="M0,-22 C-10,-46 -12,-86 0,-115 C12,-86 10,-46 0,-22 Z" fill="#fce4ec" opacity="0.25"/>
+  </g>
+  <g transform="rotate(45)">
+    <path d="M0,-10 C-25,-36 -27,-82 0,-118 C27,-82 25,-36 0,-10 Z" fill="url(#petalSheen)" opacity="0.95"/>
+    <path d="M0,-22 C-10,-46 -12,-86 0,-115 C12,-86 10,-46 0,-22 Z" fill="#fce4ec" opacity="0.25"/>
+  </g>
+  <g transform="rotate(90)">
+    <path d="M0,-10 C-25,-36 -27,-82 0,-118 C27,-82 25,-36 0,-10 Z" fill="url(#petalSheen)" opacity="0.95"/>
+    <path d="M0,-22 C-10,-46 -12,-86 0,-115 C12,-86 10,-46 0,-22 Z" fill="#fce4ec" opacity="0.25"/>
+  </g>
+  <g transform="rotate(135)">
+    <path d="M0,-10 C-25,-36 -27,-82 0,-118 C27,-82 25,-36 0,-10 Z" fill="url(#petalSheen)" opacity="0.95"/>
+    <path d="M0,-22 C-10,-46 -12,-86 0,-115 C12,-86 10,-46 0,-22 Z" fill="#fce4ec" opacity="0.25"/>
+  </g>
+  <g transform="rotate(180)">
+    <path d="M0,-10 C-25,-36 -27,-82 0,-118 C27,-82 25,-36 0,-10 Z" fill="url(#petalSheen)" opacity="0.95"/>
+    <path d="M0,-22 C-10,-46 -12,-86 0,-115 C12,-86 10,-46 0,-22 Z" fill="#fce4ec" opacity="0.25"/>
+  </g>
+  <g transform="rotate(225)">
+    <path d="M0,-10 C-25,-36 -27,-82 0,-118 C27,-82 25,-36 0,-10 Z" fill="url(#petalSheen)" opacity="0.95"/>
+    <path d="M0,-22 C-10,-46 -12,-86 0,-115 C12,-86 10,-46 0,-22 Z" fill="#fce4ec" opacity="0.25"/>
+  </g>
+  <g transform="rotate(270)">
+    <path d="M0,-10 C-25,-36 -27,-82 0,-118 C27,-82 25,-36 0,-10 Z" fill="url(#petalSheen)" opacity="0.95"/>
+    <path d="M0,-22 C-10,-46 -12,-86 0,-115 C12,-86 10,-46 0,-22 Z" fill="#fce4ec" opacity="0.25"/>
+  </g>
+  <g transform="rotate(315)">
+    <path d="M0,-10 C-25,-36 -27,-82 0,-118 C27,-82 25,-36 0,-10 Z" fill="url(#petalSheen)" opacity="0.95"/>
+    <path d="M0,-22 C-10,-46 -12,-86 0,-115 C12,-86 10,-46 0,-22 Z" fill="#fce4ec" opacity="0.25"/>
+  </g>
+</g>
+
+<g transform="translate(200,200)">
+  <g transform="rotate(0)">  <path d="M0,-12 C-15,-30 -17,-60 0,-80 C17,-60 15,-30 0,-12 Z" fill="url(#innerPetal)" opacity="0.95"/></g>
+  <g transform="rotate(60)"> <path d="M0,-12 C-15,-30 -17,-60 0,-80 C17,-60 15,-30 0,-12 Z" fill="url(#innerPetal)" opacity="0.95"/></g>
+  <g transform="rotate(120)"><path d="M0,-12 C-15,-30 -17,-60 0,-80 C17,-60 15,-30 0,-12 Z" fill="url(#innerPetal)" opacity="0.95"/></g>
+  <g transform="rotate(180)"><path d="M0,-12 C-15,-30 -17,-60 0,-80 C17,-60 15,-30 0,-12 Z" fill="url(#innerPetal)" opacity="0.95"/></g>
+  <g transform="rotate(240)"><path d="M0,-12 C-15,-30 -17,-60 0,-80 C17,-60 15,-30 0,-12 Z" fill="url(#innerPetal)" opacity="0.95"/></g>
+  <g transform="rotate(300)"><path d="M0,-12 C-15,-30 -17,-60 0,-80 C17,-60 15,-30 0,-12 Z" fill="url(#innerPetal)" opacity="0.95"/></g>
+</g>
+
+<circle cx="200" cy="200" r="34" fill="#0a0008"/>
+<path d="M200,168 C206,162 215,164 218,170 C224,166 230,168 228,175 C234,174 236,180 232,184 C236,188 234,195 228,194 C230,200 226,206 220,204 C218,210 212,212 208,208 C204,214 196,214 192,208 C188,212 182,210 180,204 C174,206 170,200 172,194 C166,195 164,188 168,184 C164,180 166,174 172,175 C170,168 176,166 182,170 C185,164 194,162 200,168 Z" fill="#7f0000" opacity="0.55"/>
+<circle cx="200" cy="200" r="29" fill="#b71c1c" opacity="0.9"/>
+<circle cx="200" cy="200" r="23" fill="#e64a19" opacity="0.95"/>
+<circle cx="200" cy="200" r="17" fill="#ffb300" opacity="0.95"/>
+<circle cx="200" cy="200" r="11" fill="#fff176" opacity="1"/>
+
+<g transform="translate(200,200)">
+  <ellipse cx="0" cy="-26" rx="4" ry="10" fill="#e64a19" opacity="0.5" transform="rotate(0)"/>
+  <ellipse cx="0" cy="-26" rx="4" ry="10" fill="#e64a19" opacity="0.5" transform="rotate(45)"/>
+  <ellipse cx="0" cy="-26" rx="4" ry="10" fill="#e64a19" opacity="0.5" transform="rotate(90)"/>
+  <ellipse cx="0" cy="-26" rx="4" ry="10" fill="#e64a19" opacity="0.5" transform="rotate(135)"/>
+  <ellipse cx="0" cy="-26" rx="4" ry="10" fill="#e64a19" opacity="0.5" transform="rotate(180)"/>
+  <ellipse cx="0" cy="-26" rx="4" ry="10" fill="#e64a19" opacity="0.5" transform="rotate(225)"/>
+  <ellipse cx="0" cy="-26" rx="4" ry="10" fill="#e64a19" opacity="0.5" transform="rotate(270)"/>
+  <ellipse cx="0" cy="-26" rx="4" ry="10" fill="#e64a19" opacity="0.5" transform="rotate(315)"/>
+</g>
+<circle cx="200" cy="200" r="38" fill="url(#fireGlow)" opacity="0.6"/>
+
+<path d="M200,189 C207,193 210,200 208,207 C206,212 200,214 200,214 C200,214 194,212 192,207 C190,200 193,193 200,189 Z" fill="#0d1b4a" opacity="0.95"/>
+<path d="M200,191 C206,195 208,200 206,206 C204,210 200,212 200,212 C200,212 196,210 194,206 C192,200 194,195 200,191 Z" fill="url(#scleraGrad)"/>
+<path d="M200,191 C205,195 207,200 205,205" fill="none" stroke="#0d1b4a" stroke-width="1.2" opacity="0.8"/>
+<path d="M200,212 C196,209 194,204 195,199" fill="none" stroke="#0d1b4a" stroke-width="1.2" opacity="0.8"/>
+<ellipse cx="200" cy="201" rx="5" ry="7" fill="url(#irisGrad)"/>
+<ellipse cx="200" cy="201" rx="5" ry="7" fill="none" stroke="#0d1b4a" stroke-width="0.8" opacity="0.9"/>
+<ellipse cx="200" cy="201" rx="2.5" ry="3.5" fill="#050010"/>
+<ellipse cx="198.5" cy="199" rx="1.2" ry="1.5" fill="#ffffff" opacity="0.75"/>
+<path d="M200,191 C197,188 196,186 197,184" fill="none" stroke="#0d1b4a" stroke-width="1" opacity="0.7" stroke-linecap="round"/>
+<path d="M200,191 C203,188 204,186 203,184" fill="none" stroke="#0d1b4a" stroke-width="1" opacity="0.7" stroke-linecap="round"/>
+
+</svg>

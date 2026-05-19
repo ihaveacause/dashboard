@@ -1,0 +1,175 @@
+<svg width="800" height="800" viewBox="0 0 680 680" xmlns="http://www.w3.org/2000/svg">
+<title>I Have a Cause — Logo</title>
+<desc>Pink lotus, concentric top-view flames, Shiva third eye with dark outline in yellow centre, white light ring, deep universe</desc>
+
+<defs>
+  <radialGradient id="universe" cx="50%" cy="50%" r="50%">
+    <stop offset="0%" stop-color="#080818"/>
+    <stop offset="70%" stop-color="#04040f"/>
+    <stop offset="100%" stop-color="#020208"/>
+  </radialGradient>
+  <radialGradient id="nebula" cx="50%" cy="50%" r="50%">
+    <stop offset="0%" stop-color="#2a0535" stop-opacity="0.35"/>
+    <stop offset="60%" stop-color="#12022a" stop-opacity="0.15"/>
+    <stop offset="100%" stop-color="#000000" stop-opacity="0"/>
+  </radialGradient>
+  <radialGradient id="haloGlow" cx="50%" cy="50%" r="50%">
+    <stop offset="0%" stop-color="#ffffff" stop-opacity="0.2"/>
+    <stop offset="70%" stop-color="#ffffff" stop-opacity="0.04"/>
+    <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+  </radialGradient>
+  <radialGradient id="petalSheen" cx="38%" cy="25%" r="65%">
+    <stop offset="0%" stop-color="#ffb3cc"/>
+    <stop offset="100%" stop-color="#b5003a"/>
+  </radialGradient>
+  <radialGradient id="innerPetal" cx="38%" cy="25%" r="65%">
+    <stop offset="0%" stop-color="#ffd6e7"/>
+    <stop offset="100%" stop-color="#d81b60"/>
+  </radialGradient>
+  <radialGradient id="fireGlow" cx="50%" cy="50%" r="50%">
+    <stop offset="0%" stop-color="#ff6f00" stop-opacity="0.7"/>
+    <stop offset="100%" stop-color="#ff6f00" stop-opacity="0"/>
+  </radialGradient>
+  <radialGradient id="irisGrad" cx="50%" cy="40%" r="55%">
+    <stop offset="0%" stop-color="#bf360c"/>
+    <stop offset="50%" stop-color="#6a0000"/>
+    <stop offset="100%" stop-color="#1a0000"/>
+  </radialGradient>
+  <radialGradient id="scleraGrad" cx="45%" cy="35%" r="60%">
+    <stop offset="0%" stop-color="#fffde7"/>
+    <stop offset="100%" stop-color="#ffe082"/>
+  </radialGradient>
+</defs>
+
+<!-- Universe -->
+<rect width="680" height="680" fill="url(#universe)"/>
+<circle cx="340" cy="310" r="250" fill="url(#nebula)"/>
+
+<!-- Stars -->
+<circle cx="72"  cy="52"  r="1.1" fill="#fff" opacity="0.7"/>
+<circle cx="188" cy="36"  r="0.7" fill="#fff" opacity="0.5"/>
+<circle cx="592" cy="72"  r="1.3" fill="#fff" opacity="0.8"/>
+<circle cx="628" cy="198" r="0.8" fill="#fff" opacity="0.5"/>
+<circle cx="44"  cy="292" r="1.0" fill="#fff" opacity="0.6"/>
+<circle cx="650" cy="412" r="1.1" fill="#fff" opacity="0.6"/>
+<circle cx="112" cy="558" r="0.8" fill="#fff" opacity="0.4"/>
+<circle cx="568" cy="572" r="1.0" fill="#fff" opacity="0.5"/>
+<circle cx="342" cy="42"  r="0.7" fill="#fff" opacity="0.5"/>
+<circle cx="464" cy="86"  r="1.0" fill="#fff" opacity="0.6"/>
+<circle cx="152" cy="152" r="0.6" fill="#fff" opacity="0.4"/>
+<circle cx="528" cy="148" r="0.9" fill="#fff" opacity="0.5"/>
+<circle cx="86"  cy="418" r="0.9" fill="#fff" opacity="0.5"/>
+<circle cx="608" cy="336" r="0.7" fill="#fff" opacity="0.4"/>
+<circle cx="408" cy="628" r="1.0" fill="#fff" opacity="0.5"/>
+<circle cx="252" cy="612" r="0.8" fill="#fff" opacity="0.4"/>
+<circle cx="296" cy="118" r="0.6" fill="#fff" opacity="0.4"/>
+<circle cx="490" cy="482" r="0.7" fill="#fff" opacity="0.4"/>
+
+<!-- Halo -->
+<circle cx="340" cy="310" r="215" fill="url(#haloGlow)"/>
+
+<!-- White light rings -->
+<circle cx="340" cy="310" r="168" fill="none" stroke="#ffffff" stroke-width="0.5" opacity="0.1"/>
+<circle cx="340" cy="310" r="163" fill="none" stroke="#ffffff" stroke-width="1"   opacity="0.2"/>
+<circle cx="340" cy="310" r="158" fill="none" stroke="#ffffff" stroke-width="2.5" opacity="0.38"/>
+<circle cx="340" cy="310" r="152" fill="none" stroke="#ffffff" stroke-width="6"   opacity="0.11"/>
+<circle cx="340" cy="310" r="144" fill="none" stroke="#ffffff" stroke-width="1"   opacity="0.07"/>
+
+<!-- OUTER LOTUS PETALS back 8 -->
+<g transform="translate(340,310)">
+  <g transform="rotate(22.5)"> <path d="M0,-8 C-22,-32 -24,-78 0,-112 C24,-78 22,-32 0,-8 Z" fill="#880e30" opacity="0.45"/></g>
+  <g transform="rotate(67.5)"> <path d="M0,-8 C-22,-32 -24,-78 0,-112 C24,-78 22,-32 0,-8 Z" fill="#880e30" opacity="0.45"/></g>
+  <g transform="rotate(112.5)"><path d="M0,-8 C-22,-32 -24,-78 0,-112 C24,-78 22,-32 0,-8 Z" fill="#880e30" opacity="0.45"/></g>
+  <g transform="rotate(157.5)"><path d="M0,-8 C-22,-32 -24,-78 0,-112 C24,-78 22,-32 0,-8 Z" fill="#880e30" opacity="0.45"/></g>
+  <g transform="rotate(202.5)"><path d="M0,-8 C-22,-32 -24,-78 0,-112 C24,-78 22,-32 0,-8 Z" fill="#880e30" opacity="0.45"/></g>
+  <g transform="rotate(247.5)"><path d="M0,-8 C-22,-32 -24,-78 0,-112 C24,-78 22,-32 0,-8 Z" fill="#880e30" opacity="0.45"/></g>
+  <g transform="rotate(292.5)"><path d="M0,-8 C-22,-32 -24,-78 0,-112 C24,-78 22,-32 0,-8 Z" fill="#880e30" opacity="0.45"/></g>
+  <g transform="rotate(337.5)"><path d="M0,-8 C-22,-32 -24,-78 0,-112 C24,-78 22,-32 0,-8 Z" fill="#880e30" opacity="0.45"/></g>
+</g>
+
+<!-- OUTER LOTUS PETALS front 8 -->
+<g transform="translate(340,310)">
+  <g transform="rotate(0)">
+    <path d="M0,-10 C-25,-36 -27,-82 0,-118 C27,-82 25,-36 0,-10 Z" fill="url(#petalSheen)" opacity="0.93"/>
+    <path d="M0,-22 C-10,-46 -12,-86 0,-115 C12,-86 10,-46 0,-22 Z" fill="#fce4ec" opacity="0.22"/>
+  </g>
+  <g transform="rotate(45)">
+    <path d="M0,-10 C-25,-36 -27,-82 0,-118 C27,-82 25,-36 0,-10 Z" fill="url(#petalSheen)" opacity="0.93"/>
+    <path d="M0,-22 C-10,-46 -12,-86 0,-115 C12,-86 10,-46 0,-22 Z" fill="#fce4ec" opacity="0.22"/>
+  </g>
+  <g transform="rotate(90)">
+    <path d="M0,-10 C-25,-36 -27,-82 0,-118 C27,-82 25,-36 0,-10 Z" fill="url(#petalSheen)" opacity="0.93"/>
+    <path d="M0,-22 C-10,-46 -12,-86 0,-115 C12,-86 10,-46 0,-22 Z" fill="#fce4ec" opacity="0.22"/>
+  </g>
+  <g transform="rotate(135)">
+    <path d="M0,-10 C-25,-36 -27,-82 0,-118 C27,-82 25,-36 0,-10 Z" fill="url(#petalSheen)" opacity="0.93"/>
+    <path d="M0,-22 C-10,-46 -12,-86 0,-115 C12,-86 10,-46 0,-22 Z" fill="#fce4ec" opacity="0.22"/>
+  </g>
+  <g transform="rotate(180)">
+    <path d="M0,-10 C-25,-36 -27,-82 0,-118 C27,-82 25,-36 0,-10 Z" fill="url(#petalSheen)" opacity="0.93"/>
+    <path d="M0,-22 C-10,-46 -12,-86 0,-115 C12,-86 10,-46 0,-22 Z" fill="#fce4ec" opacity="0.22"/>
+  </g>
+  <g transform="rotate(225)">
+    <path d="M0,-10 C-25,-36 -27,-82 0,-118 C27,-82 25,-36 0,-10 Z" fill="url(#petalSheen)" opacity="0.93"/>
+    <path d="M0,-22 C-10,-46 -12,-86 0,-115 C12,-86 10,-46 0,-22 Z" fill="#fce4ec" opacity="0.22"/>
+  </g>
+  <g transform="rotate(270)">
+    <path d="M0,-10 C-25,-36 -27,-82 0,-118 C27,-82 25,-36 0,-10 Z" fill="url(#petalSheen)" opacity="0.93"/>
+    <path d="M0,-22 C-10,-46 -12,-86 0,-115 C12,-86 10,-46 0,-22 Z" fill="#fce4ec" opacity="0.22"/>
+  </g>
+  <g transform="rotate(315)">
+    <path d="M0,-10 C-25,-36 -27,-82 0,-118 C27,-82 25,-36 0,-10 Z" fill="url(#petalSheen)" opacity="0.93"/>
+    <path d="M0,-22 C-10,-46 -12,-86 0,-115 C12,-86 10,-46 0,-22 Z" fill="#fce4ec" opacity="0.22"/>
+  </g>
+</g>
+
+<!-- INNER PETALS 6 -->
+<g transform="translate(340,310)">
+  <g transform="rotate(0)">  <path d="M0,-12 C-15,-30 -17,-60 0,-80 C17,-60 15,-30 0,-12 Z" fill="url(#innerPetal)" opacity="0.95"/></g>
+  <g transform="rotate(60)"> <path d="M0,-12 C-15,-30 -17,-60 0,-80 C17,-60 15,-30 0,-12 Z" fill="url(#innerPetal)" opacity="0.95"/></g>
+  <g transform="rotate(120)"><path d="M0,-12 C-15,-30 -17,-60 0,-80 C17,-60 15,-30 0,-12 Z" fill="url(#innerPetal)" opacity="0.95"/></g>
+  <g transform="rotate(180)"><path d="M0,-12 C-15,-30 -17,-60 0,-80 C17,-60 15,-30 0,-12 Z" fill="url(#innerPetal)" opacity="0.95"/></g>
+  <g transform="rotate(240)"><path d="M0,-12 C-15,-30 -17,-60 0,-80 C17,-60 15,-30 0,-12 Z" fill="url(#innerPetal)" opacity="0.95"/></g>
+  <g transform="rotate(300)"><path d="M0,-12 C-15,-30 -17,-60 0,-80 C17,-60 15,-30 0,-12 Z" fill="url(#innerPetal)" opacity="0.95"/></g>
+</g>
+
+<!-- Centre dark base -->
+<circle cx="340" cy="310" r="34" fill="#0a0008"/>
+
+<!-- TOP VIEW FIRE RINGS -->
+<path d="M340,278 C346,272 355,274 358,280 C364,276 370,278 368,285 C374,284 376,290 372,294 C376,298 374,305 368,304 C370,310 366,316 360,314 C358,320 352,322 348,318 C344,324 336,324 332,318 C328,322 322,320 320,314 C314,316 310,310 312,304 C306,305 304,298 308,294 C304,290 306,284 312,285 C310,278 316,276 322,280 C325,274 334,272 340,278 Z" fill="#7f0000" opacity="0.55"/>
+<circle cx="340" cy="310" r="29" fill="#b71c1c" opacity="0.9"/>
+<circle cx="340" cy="310" r="23" fill="#e64a19" opacity="0.95"/>
+<circle cx="340" cy="310" r="17" fill="#ffb300" opacity="0.95"/>
+<circle cx="340" cy="310" r="11" fill="#fff176" opacity="1"/>
+
+<!-- Flame tongues -->
+<g transform="translate(340,310)">
+  <ellipse cx="0" cy="-26" rx="4" ry="10" fill="#e64a19" opacity="0.5" transform="rotate(0)"/>
+  <ellipse cx="0" cy="-26" rx="4" ry="10" fill="#e64a19" opacity="0.5" transform="rotate(45)"/>
+  <ellipse cx="0" cy="-26" rx="4" ry="10" fill="#e64a19" opacity="0.5" transform="rotate(90)"/>
+  <ellipse cx="0" cy="-26" rx="4" ry="10" fill="#e64a19" opacity="0.5" transform="rotate(135)"/>
+  <ellipse cx="0" cy="-26" rx="4" ry="10" fill="#e64a19" opacity="0.5" transform="rotate(180)"/>
+  <ellipse cx="0" cy="-26" rx="4" ry="10" fill="#e64a19" opacity="0.5" transform="rotate(225)"/>
+  <ellipse cx="0" cy="-26" rx="4" ry="10" fill="#e64a19" opacity="0.5" transform="rotate(270)"/>
+  <ellipse cx="0" cy="-26" rx="4" ry="10" fill="#e64a19" opacity="0.5" transform="rotate(315)"/>
+</g>
+<circle cx="340" cy="310" r="38" fill="url(#fireGlow)" opacity="0.6"/>
+
+<!-- SHIVA THIRD EYE -->
+<path d="M340,299 C347,303 350,310 348,317 C346,322 340,324 340,324 C340,324 334,322 332,317 C330,310 333,303 340,299 Z" fill="#0d1b4a" opacity="0.95"/>
+<path d="M340,301 C346,305 348,310 346,316 C344,320 340,322 340,322 C340,322 336,320 334,316 C332,310 334,305 340,301 Z" fill="url(#scleraGrad)"/>
+<path d="M340,301 C345,305 347,310 345,315" fill="none" stroke="#0d1b4a" stroke-width="1.2" opacity="0.8"/>
+<path d="M340,322 C336,319 334,314 335,309" fill="none" stroke="#0d1b4a" stroke-width="1.2" opacity="0.8"/>
+<ellipse cx="340" cy="311" rx="5" ry="7" fill="url(#irisGrad)"/>
+<ellipse cx="340" cy="311" rx="5" ry="7" fill="none" stroke="#0d1b4a" stroke-width="0.8" opacity="0.9"/>
+<ellipse cx="340" cy="311" rx="2.5" ry="3.5" fill="#050010"/>
+<ellipse cx="338.5" cy="309" rx="1.2" ry="1.5" fill="#ffffff" opacity="0.75"/>
+<path d="M340,301 C337,298 336,296 337,294" fill="none" stroke="#0d1b4a" stroke-width="1" opacity="0.7" stroke-linecap="round"/>
+<path d="M340,301 C343,298 344,296 343,294" fill="none" stroke="#0d1b4a" stroke-width="1" opacity="0.7" stroke-linecap="round"/>
+
+<!-- Text -->
+<text x="340" y="526" text-anchor="middle" font-family="Georgia, serif" font-size="20" font-weight="400" fill="#ffffff" opacity="0.95" letter-spacing="4">I HAVE A CAUSE</text>
+<line x1="268" y1="536" x2="412" y2="536" stroke="#e91e8c" stroke-width="0.5" opacity="0.45"/>
+
+</svg>
