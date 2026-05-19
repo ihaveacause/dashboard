@@ -6,6 +6,7 @@ and Gemini for SVG infographic generation.
 - Scene descriptions generated dynamically from each episode's actual script
 - SVG infographic also generated from episode content, not fixed template
 - regenerate_note support: "Regenerate scene 3: <direction>" regenerates only that scene
+- When regenerating: user direction REPLACES original prompt entirely for full control
 - RULE: All images must have absolutely NO text, letters or writing.
 """
 
@@ -31,8 +32,8 @@ GCP_CREDS_JSON = os.environ["GOOGLE_APPLICATION_CREDENTIALS_JSON"]
 
 PROJECT_ID   = "gen-lang-client-0078128013"
 LOCATION     = "us-central1"
-IMAGEN_MODEL = "imagen-3.0-fast-generate-001"   # fast variant — higher quota
-IMAGEN_SLEEP = 20                                # seconds between Imagen calls
+IMAGEN_MODEL = "imagen-3.0-fast-generate-001"
+IMAGEN_SLEEP = 20
 
 # ── Clients ─────────────────────────────────────────────────
 gemini_client = genai.Client(api_key=GEMINI_API_KEY)
@@ -116,16 +117,14 @@ def fetch_preferences():
 def parse_regen_note(note):
     """
     Parse regenerate_note to extract scene ID and direction.
-    Expected format: "Regenerate scene 3: more abstract, less human figure"
-    Returns (scene_id, direction) or (None, None) if not a scene regen note.
+    Format: "Regenerate scene 3: more abstract, less human figure"
+    Returns (scene_id, direction) or (None, None).
     """
     if not note:
         return None, None
     match = re.search(r'[Rr]egenerate\s+scene\s+(\d+)[:\-]?\s*(.*)', note, re.IGNORECASE)
     if match:
-        scene_id  = int(match.group(1))
-        direction = match.group(2).strip()
-        return scene_id, direction
+        return int(match.group(1)), match.group(2).strip()
     return None, None
 
 # ── Retry helper ────────────────────────────────────────────
@@ -188,7 +187,6 @@ CRITICAL RULE: Prompts must NOT include any text, letters, words, signs,
 writing or language of any kind in the image. Pure visual only.
 
 Each prompt must be UNIQUE and SPECIFIC to this episode — not generic philosophy art.
-Someone looking at the 5 images should be able to guess what the episode is about.
 
 Return ONLY valid JSON — no markdown, no explanation:
 {{
@@ -265,8 +263,10 @@ def generate_image_vertex(prompt, scene_id):
 def generate_images(scenes, existing_urls=None, regen_scene_id=None, regen_direction=None):
     """
     Generate images for all scenes.
-    regen_scene_id: if set, force-regenerate that specific scene
-                    even if it already exists, using regen_direction as extra prompt.
+    When regen_scene_id is set:
+    - removes that scene from existing
+    - REPLACES the original prompt entirely with regen_direction
+      so Imagen follows the user's instruction with no competing context
     """
     import time
     print(f"\n🖼  Step 2: Generating images with {IMAGEN_MODEL}...")
@@ -274,11 +274,13 @@ def generate_images(scenes, existing_urls=None, regen_scene_id=None, regen_direc
     image_urls   = existing_urls or []
     existing_ids = {img["id"] for img in image_urls}
 
-    # If regenerating a specific scene — remove it from existing so it regenerates
+    # Remove target scene from existing so it regenerates
     if regen_scene_id and regen_scene_id in existing_ids:
         image_urls   = [img for img in image_urls if img["id"] != regen_scene_id]
         existing_ids = {img["id"] for img in image_urls}
-        print(f"   🔄 Force-regenerating Scene {regen_scene_id}: {regen_direction or 'no direction'}")
+        print(f"   🔄 Force-regenerating Scene {regen_scene_id}")
+        if regen_direction:
+            print(f"   📝 User direction: {regen_direction}")
 
     missing = [s for s in scenes if s["id"] not in existing_ids]
 
@@ -291,11 +293,12 @@ def generate_images(scenes, existing_urls=None, regen_scene_id=None, regen_direc
     for scene in missing:
         print(f"   Scene {scene['id']}: {scene['label']}...")
 
-        # If this is the scene being regenerated — append user's direction to prompt
-        scene_prompt = scene["prompt"]
+        # ── KEY FIX: replace prompt entirely with user direction ──
         if regen_scene_id and scene["id"] == regen_scene_id and regen_direction:
-            scene_prompt = f"{scene_prompt} SPECIFIC DIRECTION: {regen_direction}"
-            print(f"      📝 Direction applied: {regen_direction}")
+            scene_prompt = regen_direction   # user's exact instruction — no original prompt competing
+            print(f"      🎯 Using user direction as full prompt")
+        else:
+            scene_prompt = scene["prompt"]
 
         try:
             image_bytes = call_with_retry(
@@ -332,8 +335,6 @@ def generate_svg_infographic(episode, regen_direction=None):
     script_english = str(episode.get("script_english", "") or "")[:1500]
     script_context = script_tamil if script_tamil else script_english
 
-    direction_block = f"\n\nSPECIFIC DIRECTION FROM CREATOR: {regen_direction}" if regen_direction else ""
-
     prompt = f"""Create a stunning SVG infographic (1920x1080px) for this Tamil philosophy episode.
 
 Episode: {episode['episode_number']} — {episode['title_english']}
@@ -342,7 +343,7 @@ Bridge: {episode['bridge']}
 Module: {episode['module']}
 
 EPISODE SCRIPT (for context):
-{script_context}{direction_block}
+{script_context}
 
 YOUR TASK:
 Read the script above and design an SVG diagram that VISUALLY EXPLAINS
@@ -427,7 +428,6 @@ def main():
     print(f"\n📖 {episode['title_english']}")
     print(f"   Bridge: {episode['bridge']}")
 
-    # Confirm script exists
     if not episode.get("script_tamil") and not episode.get("script_english"):
         print("❌ No script found — run script generator first")
         return
@@ -444,9 +444,9 @@ def main():
         if scene_id:
             regen_scene_id  = scene_id
             regen_direction = direction
-            print(f"   🎯 Targeting Scene {regen_scene_id}: {regen_direction or 'no direction'}")
+            print(f"   🎯 Targeting Scene {regen_scene_id}")
         elif any(w in regen_note.lower() for w in ["svg", "infographic", "diagram", "chart"]):
-            regen_svg = True
+            regen_svg       = True
             regen_direction = regen_note
             print(f"   🎯 Targeting SVG infographic")
 
@@ -459,7 +459,6 @@ def main():
     try:
         scenes = generate_scene_descriptions(episode, prefs)
 
-        # Load existing images
         existing = []
         if episode.get("image_urls"):
             try:
@@ -469,7 +468,6 @@ def main():
             except:
                 existing = []
 
-        # Generate images — passes regen info if a specific scene is targeted
         image_urls = generate_images(
             scenes,
             existing_urls   = existing,
@@ -477,10 +475,10 @@ def main():
             regen_direction = regen_direction
         )
 
-        # SVG — regenerate if targeted, skip if exists and not targeted
+        # SVG
         existing_svg = episode.get("infographic_svg")
         if regen_svg:
-            print("\n📊 Step 3: Regenerating SVG with direction...")
+            print("\n📊 Step 3: Regenerating SVG with user direction...")
             svg, svg_url = generate_svg_infographic(episode, regen_direction=regen_direction)
         elif existing_svg:
             print("\n📊 Step 3: SVG already exists — skipping")
