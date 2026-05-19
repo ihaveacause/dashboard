@@ -285,12 +285,15 @@ Exploring consciousness, Tamil philosophy, and the wisdom of the Mandukya Upanis
     video_id = response["id"]
     print(f"✅ Uploaded video ID: {video_id}")
 
-    # Set thumbnail
-    youtube.thumbnails().set(
-        videoId=video_id,
-        media_body=MediaFileUpload(thumbnail_path, mimetype="image/jpeg"),
-    ).execute()
-    print(f"✅ Thumbnail set")
+    # Set thumbnail (requires verified channel — skips gracefully if not verified)
+    try:
+        youtube.thumbnails().set(
+            videoId=video_id,
+            media_body=MediaFileUpload(thumbnail_path, mimetype="image/jpeg"),
+        ).execute()
+        print(f"✅ Thumbnail set")
+    except HttpError as e:
+        print(f"⚠️  Thumbnail skipped — verify your YouTube channel to enable custom thumbnails: {e}")
 
     return video_id
 
