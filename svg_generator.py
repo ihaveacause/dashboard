@@ -2,7 +2,8 @@
 I Have a Cause — SVG Infographic Generator (standalone)
 ========================================================
 Only regenerates the SVG infographic — does NOT touch images.
-Triggered separately from image pipeline.
+Triggered separately from image pipeline via trigger-svg-gen edge function.
+KEY FIX: User's regeneration direction placed at TOP of prompt for highest weight.
 """
 
 import os
@@ -59,12 +60,7 @@ def upload_svg(path, data_bytes):
     print(f"  ❌ Upload failed: {r.text[:200]}")
     return None
 
-# ── SVG Validation ──────────────────────────────────────────
 def validate_svg(svg_text):
-    """
-    Validate SVG is well-formed XML.
-    Returns (is_valid, error_message)
-    """
     try:
         ET.fromstring(svg_text)
         return True, None
@@ -87,29 +83,53 @@ def call_with_retry(fn, max_retries=4, wait=30):
 def generate_svg(episode):
     import time
     print(f"\n📊 Generating SVG infographic...")
-    pref_note = f"\n\nSPECIFIC REQUEST: {REGEN_NOTE}" if REGEN_NOTE else ""
 
-    prompt = f"""Create a stunning SVG infographic (1920x1080px) for this Tamil philosophy episode.
+    script_tamil   = str(episode.get("script_tamil",   "") or "")[:1500]
+    script_english = str(episode.get("script_english", "") or "")[:1500]
+    script_context = script_tamil if script_tamil else script_english
+
+    # ── KEY FIX: user direction goes to the TOP ────────────
+    # When REGEN_NOTE is set, it appears first so Gemini
+    # weights it highest — not buried after long instructions.
+    if REGEN_NOTE:
+        direction_block = f"""CREATOR'S EXACT INSTRUCTION — FOLLOW THIS PRECISELY:
+{REGEN_NOTE}
+
+This is the most important instruction. Everything below supports it.
+Do not default to generic philosophy diagrams. Follow the creator's direction exactly.
+
+"""
+    else:
+        direction_block = ""
+
+    prompt = f"""{direction_block}Create a stunning SVG infographic (1920x1080px) for this Tamil philosophy episode.
 
 Episode: {episode['episode_number']} — {episode['title_english']}
 Tamil Title: {episode['title_tamil']}
-Bridge: {episode['bridge']}{pref_note}
+Bridge: {episode['bridge']}
+Module: {episode['module']}
 
-DESIGN MANDATE:
-- 4 concentric circles, same plane, superimposed — like ripples from one point
-- Outermost → innermost: Vaishvanara (விழிப்பு), Taijasa (கனவு), Prajna (உறக்கம்), Turiya (துரியம்)
+EPISODE SCRIPT (for context):
+{script_context}
+
+DESIGN REQUIREMENTS:
+- Represent the key philosophical concept of this episode visually
 - Deep space black background with subtle star field (small white dots)
-- Each ring: gradient stroke, glow filter (feGaussianBlur), semi-transparent fill
-- Color scheme: Vaishvanara=amber/gold, Taijasa=indigo, Prajna=deep blue, Turiya=pure white
-- Tamil label INSIDE each ring + English label outside
-- Single bright white point at exact center (Turiya — pure consciousness)
+- Color scheme: gold, indigo, deep blue, white — glowing, ethereal
+- Use SVG gradients and feGaussianBlur filters for glow effects
 - "I Have a Cause" watermark bottom-right in small muted text
-- All text readable, good contrast
-- Use SVG <defs> with <radialGradient> and <filter> for glows
+- Labels in both Tamil and English where appropriate
+- Use SVG <defs> with <radialGradient> and <filter> elements
 
-CRITICAL: Return ONLY valid, well-formed SVG XML code starting with <svg and ending with </svg>.
-No markdown fences. No explanation. The SVG must be 100% valid XML — every attribute must be
-properly quoted, no duplicate attributes, no typos in attribute values."""
+{"If no specific direction was given above, choose the diagram type that best fits this episode:" if not REGEN_NOTE else ""}
+{"- Concentric circles for states of consciousness" if not REGEN_NOTE else ""}
+{"- Tree diagram for cause and effect" if not REGEN_NOTE else ""}
+{"- Spiral for cycles of existence" if not REGEN_NOTE else ""}
+{"- Triangle for the three gunas" if not REGEN_NOTE else ""}
+{"- Lotus for stages of awakening" if not REGEN_NOTE else ""}
+
+CRITICAL: Return ONLY valid, well-formed SVG XML starting with <svg and ending with </svg>.
+No markdown. No explanation. Every attribute properly quoted. No duplicate attributes."""
 
     max_svg_attempts = 3
 
@@ -124,36 +144,31 @@ properly quoted, no duplicate attributes, no typos in attribute values."""
 
         svg = call_with_retry(_call)
 
-        # Clean markdown fences if present
         if "```svg" in svg:
             svg = svg.split("```svg")[1].split("```")[0].strip()
         elif "```" in svg:
             svg = svg.split("```")[1].split("```")[0].strip()
 
         if not svg.startswith("<svg"):
-            print(f"  ❌ Attempt {attempt}: Response does not start with <svg — retrying...")
+            print(f"  ❌ Attempt {attempt}: Does not start with <svg — retrying...")
             time.sleep(10)
             continue
 
-        # ── Validate SVG XML ──────────────────────────────
         is_valid, error = validate_svg(svg)
         if not is_valid:
             print(f"  ❌ Attempt {attempt}: Invalid SVG XML — {error}")
-            print(f"  🔄 Retrying SVG generation...")
             time.sleep(10)
             continue
 
         print(f"  ✅ SVG validated (attempt {attempt})")
 
-        # Upload
         path = f"ep{EPISODE_NUMBER:03d}/infographic.svg"
         url  = upload_svg(path, svg.encode("utf-8"))
-
         if url:
             print(f"  ✅ SVG uploaded: {path}")
         return svg, url
 
-    print(f"  ❌ SVG generation failed after {max_svg_attempts} attempts — all invalid XML")
+    print(f"  ❌ SVG generation failed after {max_svg_attempts} attempts")
     return None, None
 
 def main():
@@ -161,7 +176,7 @@ def main():
     print(f"📊 SVG Generator — Episode {EPISODE_NUMBER}")
     print(f"   {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     if REGEN_NOTE:
-        print(f"   Note: {REGEN_NOTE}")
+        print(f"   Direction: {REGEN_NOTE}")
     print("=" * 60)
 
     rows = db_get("tamil_episodes", {
