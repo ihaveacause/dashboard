@@ -211,7 +211,11 @@ def upload_video(
     publish_time: datetime,
 ) -> str:
     ep_num     = episode["episode_number"]
-    title_text = episode.get("title") or episode.get("episode_title", "")
+    # Use correct title column based on language
+    if language == "tamil":
+        title_text = episode.get("title_tamil") or episode.get("title") or episode.get("episode_title", "")
+    else:
+        title_text = episode.get("title_english") or episode.get("title") or episode.get("episode_title", "")
     module     = episode.get("module_name", "I Have a Cause")
 
     # Build YouTube title
