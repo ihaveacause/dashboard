@@ -113,38 +113,26 @@ def calculate_publish_time(language: str) -> datetime:
 # ── YouTube Auth ──────────────────────────────────────────────────────────────
 
 def get_youtube_service(client_secret_path: str, token_path: str):
-    creds = None
+    import google.oauth2.credentials
 
-    if os.path.exists(token_path):
-        with open(token_path, "rb") as f:
-            creds = pickle.load(f)
+    token_json_env = os.environ.get("YOUTUBE_TOKEN_JSON")
+    if not token_json_env:
+        raise ValueError("YOUTUBE_TOKEN_JSON environment variable not set")
 
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
-            flow = InstalledAppFlow.from_client_secrets_file(
-                client_secret_path, SCOPES
-            )
-            # In GitHub Actions: use token from env var (pre-authorised)
-            token_json_env = os.environ.get("YOUTUBE_TOKEN_JSON")
-            if token_json_env:
-                import google.oauth2.credentials
-                token_data = json.loads(token_json_env)
-                creds = google.oauth2.credentials.Credentials(
-                    token=token_data.get("token"),
-                    refresh_token=token_data.get("refresh_token"),
-                    token_uri=token_data.get("token_uri",
-                                             "https://oauth2.googleapis.com/token"),
-                    client_id=token_data.get("client_id"),
-                    client_secret=token_data.get("client_secret"),
-                    scopes=SCOPES,
-                )
-            else:
-                creds = flow.run_local_server(port=0)
+    token_data = json.loads(token_json_env)
 
-        with open(token_path, "wb") as f:
-            pickle.dump(creds, f)
+    creds = google.oauth2.credentials.Credentials(
+        token=token_data.get("token"),
+        refresh_token=token_data.get("refresh_token"),
+        token_uri=token_data.get("token_uri", "https://oauth2.googleapis.com/token"),
+        client_id=token_data.get("client_id"),
+        client_secret=token_data.get("client_secret"),
+        scopes=SCOPES,
+    )
+
+    if not creds.valid:
+        creds.refresh(Request())
+        print("✅ Token refreshed")
 
     return build("youtube", "v3", credentials=creds)
 
