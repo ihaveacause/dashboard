@@ -1,0 +1,151 @@
+name: Upload to YouTube
+
+on:
+  workflow_dispatch:
+    inputs:
+      episode_id:
+        description: "Supabase episode UUID"
+        required: true
+      language:
+        description: "tamil or english"
+        required: true
+        default: "tamil"
+        type: choice
+        options:
+          - tamil
+          - english
+
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      # ── Checkout ──────────────────────────────────────────────────────────
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      # ── Python ────────────────────────────────────────────────────────────
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # ── System deps (fonts + cairosvg) ────────────────────────────────────
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y \
+            libcairo2-dev \
+            fonts-noto \
+            fonts-noto-cjk \
+            fonts-noto-color-emoji \
+            pkg-config \
+            python3-dev
+
+      # ── Python deps ───────────────────────────────────────────────────────
+      - name: Install Python dependencies
+        run: |
+          pip install --upgrade pip
+          pip install \
+            pillow \
+            cairosvg \
+            google-api-python-client \
+            google-auth-httplib2 \
+            google-auth-oauthlib \
+            supabase
+
+      # ── Write credentials to temp files ───────────────────────────────────
+      - name: Write credential files
+        run: |
+          echo '${{ secrets.YOUTUBE_CLIENT_SECRET_JSON }}' > /tmp/client_secret.json
+          echo '${{ secrets.YOUTUBE_TOKEN_JSON }}'         > /tmp/yt_token.json
+
+      # ── Download video from Supabase Storage ──────────────────────────────
+      - name: Download video file
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          EPISODE_ID: ${{ github.event.inputs.episode_id }}
+          LANGUAGE: ${{ github.event.inputs.language }}
+        run: |
+          python - <<'EOF'
+          import os, urllib.request
+          from supabase import create_client
+          sb = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_SERVICE_ROLE_KEY"])
+          table = "tamil_episodes" if os.environ["LANGUAGE"] == "tamil" else "english_episodes"
+          ep = sb.table(table).select("video_url").eq("id", os.environ["EPISODE_ID"]).single().execute().data
+          video_url = ep["video_url"]
+          print(f"Downloading video: {video_url}")
+          urllib.request.urlretrieve(video_url, "/tmp/episode.mp4")
+          print("✅ Video downloaded")
+          EOF
+
+      # ── Generate thumbnail ─────────────────────────────────────────────────
+      - name: Generate thumbnail
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          EPISODE_ID: ${{ github.event.inputs.episode_id }}
+          LANGUAGE: ${{ github.event.inputs.language }}
+        run: |
+          python - <<'EOF'
+          import os
+          from supabase import create_client
+
+          sb       = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_SERVICE_ROLE_KEY"])
+          language = os.environ["LANGUAGE"]
+          table    = "tamil_episodes" if language == "tamil" else "english_episodes"
+          ep       = sb.table(table).select("*").eq("id", os.environ["EPISODE_ID"]).single().execute().data
+
+          base_url = os.environ["SUPABASE_URL"] + "/storage/v1/object/public/channel-assets"
+
+          # Module background (use module-specific if exists, else default)
+          bg_url = f"{base_url}/module_default_bg.png"
+
+          # Person photo
+          photo_file = "photo_tamil.jpg" if language == "tamil" else "photo_english.jpg"
+          photo_url  = f"{base_url}/{photo_file}"
+
+          title      = ep.get("title") or ep.get("episode_title", "")
+          ep_num     = ep["episode_number"]
+
+          import subprocess
+          result = subprocess.run([
+            "python", "scripts/generate_thumbnail.py",
+            "--bg_url",      bg_url,
+            "--photo_url",   photo_url,
+            "--logo_svg",    "assets/ihaveacause_symbol.svg",
+            "--episode_num", str(ep_num),
+            "--title",       title,
+            "--language",    language,
+            "--output",      "/tmp/thumbnail.jpg",
+          ], capture_output=True, text=True)
+          print(result.stdout)
+          if result.returncode != 0:
+            print(result.stderr)
+            raise Exception("Thumbnail generation failed")
+          EOF
+
+      # ── Upload to YouTube ──────────────────────────────────────────────────
+      - name: Upload to YouTube
+        env:
+          SUPABASE_URL:             ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          YOUTUBE_CHANNEL_ID:       ${{ secrets.YOUTUBE_CHANNEL_ID }}
+          YOUTUBE_TOKEN_JSON:       ${{ secrets.YOUTUBE_TOKEN_JSON }}
+          GH_YOUTUBE_TOKEN:         ${{ secrets.GH_YOUTUBE_TOKEN }}
+        run: |
+          python scripts/upload_to_youtube.py \
+            --episode_id        "${{ github.event.inputs.episode_id }}" \
+            --language          "${{ github.event.inputs.language }}" \
+            --video_path        "/tmp/episode.mp4" \
+            --thumbnail_path    "/tmp/thumbnail.jpg" \
+            --client_secret_json "/tmp/client_secret.json" \
+            --token_json         "/tmp/yt_token.json"
+
+      # ── Done ──────────────────────────────────────────────────────────────
+      - name: Summary
+        run: |
+          echo "✅ Episode ${{ github.event.inputs.episode_id }} uploaded to YouTube"
+          echo "Language: ${{ github.event.inputs.language }}"
