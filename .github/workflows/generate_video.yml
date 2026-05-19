@@ -9,7 +9,7 @@ on:
 jobs:
   render-video:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 120
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
@@ -33,11 +33,15 @@ jobs:
             libgdk-pixbuf2.0-dev \
             libffi-dev
 
-      - name: Find Tamil fonts
-        run: find /usr/share/fonts -name "*Tamil*" -o -name "*tamil*" 2>/dev/null
-
       - name: Install Python dependencies
-        run: pip install requests google-auth Pillow numpy cairosvg
+        run: |
+          pip install \
+            requests \
+            google-auth \
+            Pillow \
+            numpy \
+            cairosvg \
+            faster-whisper
 
       - name: Render video
         env:
