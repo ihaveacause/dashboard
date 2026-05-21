@@ -24,10 +24,17 @@ from supabase import create_client, Client
 # ── Config ────────────────────────────────────────────────────
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or os.environ["SUPABASE_KEY"]
-GEMINI_KEY   = os.environ["GEMINI_API_KEY"]
 IDEA_ID      = os.environ["IDEA_ID"]
 
-genai.configure(api_key=GEMINI_KEY)
+# Write Google credentials to temp file (same pattern as script_generator.py)
+import tempfile
+_creds_json = os.environ["GOOGLE_APPLICATION_CREDENTIALS_JSON"]
+_creds_file = tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False)
+_creds_file.write(_creds_json)
+_creds_file.close()
+os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = _creds_file.name
+
+
 model = genai.GenerativeModel("gemini-2.5-pro-preview-05-06")
 
 YOUTUBE_CHANNEL_URL = "https://www.youtube.com/@IHaveACause"
