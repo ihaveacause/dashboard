@@ -395,9 +395,9 @@ let modalPlatform  = 'youtube';
 
 // ── Platform config ───────────────────────────────────────────
 const PLATFORMS = {
-  youtube: { label:'YouTube Long',   statusCol:'status',              color:'var(--yt)',     scriptColTa:'script_tamil',       scriptColEn:'script_english' },
-  shorts:  { label:'Shorts / Reels', statusCol:'shorts_reels_status', color:'var(--shorts)', scriptColTa:'script_short_tamil', scriptColEn:'script_short_english' },
-  x:       { label:'X / Twitter',    statusCol:'x_status',            color:'var(--xc)',     scriptColTa:'script_x_tamil',     scriptColEn:'script_x_english' }
+  youtube: { label:'YouTube Long',   statusCol:'status',         color:'var(--yt)',     scriptColTa:'script_tamil',            scriptColEn:'script_english' },
+  shorts:  { label:'Shorts / Reels', statusCol:'status_shorts',  color:'var(--shorts)', scriptColTa:'script_shorts_tamil',     scriptColEn:'script_shorts_english' },
+  x:       { label:'X / Twitter',    statusCol:'status_x',       color:'var(--xc)',     scriptColTa:'script_x_thread_tamil',   scriptColEn:'script_x_thread_english' }
 };
 
 // Statuses shown per platform (X has no video steps)
@@ -495,9 +495,9 @@ async function loadStats() {
   showLoader(true);
   try {
     const [ta, en, id] = await Promise.all([
-      fetch(`${SB_URL}/rest/v1/tamil_episodes?select=status,shorts_reels_status,x_status&limit=200`,{headers:H}).then(r=>r.json()),
-      fetch(`${SB_URL}/rest/v1/english_episodes?select=status,shorts_reels_status,x_status&limit=200`,{headers:H}).then(r=>r.json()),
-      fetch(`${SB_URL}/rest/v1/ideas?select=yt_long_status,shorts_reels_status,x_status&limit=200`,{headers:H}).then(r=>r.json()),
+      fetch(`${SB_URL}/rest/v1/tamil_episodes?select=status,status_shorts,status_x&limit=200`,{headers:H}).then(r=>r.json()),
+      fetch(`${SB_URL}/rest/v1/english_episodes?select=status,status_shorts,status_x&limit=200`,{headers:H}).then(r=>r.json()),
+      fetch(`${SB_URL}/rest/v1/ideas?select=status,status_shorts,status_x&limit=200`,{headers:H}).then(r=>r.json()),
     ]);
     renderStats(ta, en, id);
   } catch(e) {
@@ -519,7 +519,7 @@ function updatePlatformCounts() {
 
 function updatePlatformCountsIdeas() {
   ['youtube','shorts','x'].forEach(p => {
-    const col = p==='youtube' ? 'yt_long_status' : PLATFORMS[p].statusCol;
+    const col = p==='youtube' ? 'status' : PLATFORMS[p].statusCol;
     const active = ideas.filter(i => (i[col]||'pending') !== 'pending').length;
     document.getElementById(`cnt-${p}`).textContent = active > 0 ? `${active} active` : '—';
   });
@@ -538,7 +538,7 @@ function getEpStatus(ep) {
 }
 
 function getIdeaStatus(idea) {
-  const col = activePlatform === 'youtube' ? 'yt_long_status' : PLATFORMS[activePlatform].statusCol;
+  const col = activePlatform === 'youtube' ? 'status' : PLATFORMS[activePlatform].statusCol;
   return (idea[col] || 'pending');
 }
 
@@ -647,9 +647,9 @@ function buildIdeaCard(idea) {
 }
 
 function buildPlatformMarkers(idea) {
-  const ytS  = idea.yt_long_status || 'pending';
-  const shS  = idea.shorts_reels_status || 'pending';
-  const xS   = idea.x_status || 'pending';
+  const ytS  = idea.status || 'pending';
+  const shS  = idea.status_shorts || 'pending';
+  const xS   = idea.status_x || 'pending';
   const m = (label,s) => `<span style="font-family:'JetBrains Mono',monospace;font-size:9px;padding:2px 6px;border-radius:4px;background:${s==='published'?'var(--green-dim)':'var(--surface2)'};color:${s==='published'?'var(--green)':'var(--muted)'}">${label}</span>`;
   return `<div style="display:flex;gap:4px;margin-left:auto">${m('YT',ytS)}${m('S/R',shS)}${m('X',xS)}</div>`;
 }
@@ -711,12 +711,12 @@ function buildActions(item, status, isIdea) {
               <button class="btn btn-preview" onclick="generateImages(${n},${isIdea},'vertical')">🖼 Generate Vertical Images</button>`;
     if (status === 'images_ready')
       return `<button class="btn btn-review" onclick="openImagesModal(${n},${isIdea},'vertical')">🖼 Review Images</button>
-              <button class="btn btn-approve" onclick="quickApprove(${n},'images_approved',${isIdea},'shorts_reels_status')">✓ Approve Images</button>`;
+              <button class="btn btn-approve" onclick="quickApprove(${n},'images_approved',${isIdea},'status_shorts')">✓ Approve Images</button>`;
     if (status === 'images_approved')
       return `<button class="btn btn-shorts" onclick="generateShortVideo(${n},${isIdea})">🎬 Generate Short Video (AI voice)</button>`;
     if (status === 'video_ready')
       return `<button class="btn btn-preview" onclick="previewVideo(${n},${isIdea},'short')">▶ Preview</button>
-              <button class="btn btn-approve" onclick="quickApprove(${n},'video_approved',${isIdea},'shorts_reels_status')">✓ Approve</button>`;
+              <button class="btn btn-approve" onclick="quickApprove(${n},'video_approved',${isIdea},'status_shorts')">✓ Approve</button>`;
     if (status === 'video_approved')
       return `<button class="btn btn-shorts" onclick="publishShortsReels(${n},${isIdea})">▲ Publish to Shorts & Reels</button>
               <button class="btn btn-preview" onclick="previewVideo(${n},${isIdea},'short')">▶ Preview</button>`;
@@ -735,7 +735,7 @@ function buildActions(item, status, isIdea) {
       return `<div class="waiting-banner">⏳ Generate scripts from YouTube tab first</div>`;
     if (status === 'script_ready')
       return `<button class="btn btn-review" onclick="openModal(${n},${isIdea},'x')">𝕏 Review X Thread</button>
-              <button class="btn btn-approve" onclick="quickApprove(${n},'script_approved',${isIdea},'x_status')">✓ Approve Thread</button>`;
+              <button class="btn btn-approve" onclick="quickApprove(${n},'script_approved',${isIdea},'status_x')">✓ Approve Thread</button>`;
     if (status === 'script_approved')
       return `<button class="btn btn-review" onclick="openModal(${n},${isIdea},'x')">𝕏 View Thread</button>
               <button class="btn btn-x" onclick="postToX(${n},${isIdea})">▲ Post to X</button>`;
@@ -754,9 +754,9 @@ function buildActions(item, status, isIdea) {
 function renderStats(ta, en, id) {
   const count = (arr, col, val) => arr.filter(r => (r[col]||'pending') === val).length;
   const ytPub  = count(ta,'status','published');
-  const shPub  = count(ta,'shorts_reels_status','published');
-  const xPub   = count(ta,'x_status','published');
-  const idPub  = id.filter(i => i.yt_long_status==='published'||i.shorts_reels_status==='published'||i.x_status==='published').length;
+  const shPub  = count(ta,'status_shorts','published');
+  const xPub   = count(ta,'status_x','published');
+  const idPub  = id.filter(i => i.status==='published'||i.status_shorts==='published'||i.status_x==='published').length;
 
   const inPipe = ta.filter(e => !['pending','published'].includes(e.status||'pending')).length;
   const pending = count(ta,'status','pending');
@@ -884,7 +884,7 @@ async function generateAll() {
 async function quickApprove(n, newStatus, isIdea=false, col=null) {
   try {
     if (isIdea) {
-      const statusCol = col || (activePlatform==='youtube'?'yt_long_status':PLATFORMS[activePlatform].statusCol);
+      const statusCol = col || (activePlatform==='youtube'?'status':PLATFORMS[activePlatform].statusCol);
       await patchIdea(n,{[statusCol]:newStatus});
       showToast(`Idea → ${STATUS_LABELS[newStatus]}`,'success');
       loadIdeas();
@@ -901,7 +901,7 @@ async function quickApprove(n, newStatus, isIdea=false, col=null) {
 }
 
 async function quickApproveShorts(n, isIdea=false) {
-  await quickApprove(n,'script_approved',isIdea,'shorts_reels_status');
+  await quickApprove(n,'script_approved',isIdea,'status_shorts');
 }
 
 // ── Image & Video Actions ─────────────────────────────────────
@@ -969,15 +969,22 @@ async function submitIdea() {
   const angle = document.getElementById('idea-angle').value.trim();
   if (!title) { showToast('Please enter an idea title','error'); return; }
   try {
+    // 1. Save idea to Supabase
     const r = await fetch(`${SB_URL}/rest/v1/ideas`,{
       method:'POST', headers:{...H,'Prefer':'return=representation'},
-      body:JSON.stringify({title,description:desc,research_angle:angle,yt_long_status:'pending',shorts_reels_status:'pending',x_status:'pending'})
+      body:JSON.stringify({title,description:desc,research_angle:angle,status:'pending',status_shorts:'pending',status_reels:'pending',status_x:'pending'})
     });
     if (!r.ok) throw new Error(`Supabase error ${r.status}`);
     const [newIdea] = await r.json();
-    // Trigger generation
-    await fetch(EDGE_IDEA_FN,{method:'POST',headers:EDGE_H,body:JSON.stringify({idea_id:newIdea.id})});
-    await patchIdea(newIdea.id,{yt_long_status:'generating',shorts_reels_status:'generating',x_status:'generating'});
+
+    // 2. Trigger GitHub Actions via edge function
+    const ef = await fetch(EDGE_IDEA_FN,{method:'POST',headers:EDGE_H,body:JSON.stringify({idea_id:newIdea.id})});
+    const efData = await ef.json();
+    if (!efData.success) throw new Error(efData.error || 'Edge function failed');
+
+    // 3. Flip all statuses to generating
+    await patchIdea(newIdea.id,{status:'generating',status_shorts:'generating',status_reels:'generating',status_x:'generating'});
+
     showToast('Idea saved — Gemini generating all scripts','success');
     closeIdeaModal();
     setL1('ideas');
@@ -985,7 +992,36 @@ async function submitIdea() {
 }
 
 async function generateIdeaScript(id) {
-  showToast('Regenerating idea scripts...','info');
+  const card = document.getElementById(`idea-card-${id}`);
+  const btn  = card?.querySelector('.btn-generate');
+  if (btn) { btn.disabled=true; btn.textContent='⚙️ Triggering...'; }
+  try {
+    // Update all platform statuses to generating immediately
+    await patchIdea(id, {
+      status:        'generating',
+      status_shorts: 'generating',
+      status_reels:  'generating',
+      status_x:      'generating',
+    });
+    // Trigger GitHub Actions via edge function
+    const r = await fetch(EDGE_IDEA_FN, {
+      method: 'POST',
+      headers: EDGE_H,
+      body: JSON.stringify({ idea_id: id })
+    });
+    const data = await r.json();
+    if (data.success) {
+      showToast('Gemini is generating all format scripts — check back in a few minutes', 'success');
+      setTimeout(loadIdeas, 1500);
+    } else {
+      throw new Error(data.error || 'Edge function error');
+    }
+  } catch(e) {
+    showToast(`Error: ${e.message}`, 'error');
+    // Revert status on failure
+    await patchIdea(id, { status:'pending', status_shorts:'pending', status_reels:'pending', status_x:'pending' });
+    if (btn) { btn.disabled=false; btn.textContent='⚡ Generate All Scripts'; }
+  }
 }
 
 // ── Script Modal ──────────────────────────────────────────────
@@ -1018,7 +1054,7 @@ function openModal(n, isIdea=false, platform=null) {
   document.getElementById('regen-ta').classList.remove('open');
   document.getElementById('regen-en').classList.remove('open');
 
-  const statusCol = isIdea ? (p==='youtube'?'yt_long_status':cfg.statusCol) : cfg.statusCol;
+  const statusCol = isIdea ? (p==='youtube'?'status':cfg.statusCol) : cfg.statusCol;
   const status = item[statusCol]||'pending';
   document.getElementById('modal-status-note').textContent = `status: ${STATUS_LABELS[status]||status}`;
   document.getElementById('modal-approve-btn').textContent = status==='script_ready'?'✓ Approve Script':'✓ Approved ✅';
