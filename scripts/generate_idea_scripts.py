@@ -63,8 +63,10 @@ def db_patch_idea(data):
     r = requests.patch(
         f"{REST}/ideas?id=eq.{IDEA_ID}",
         headers=SB_HEADERS,
-        json=data, timeout=15
+        json=data, timeout=30
     )
+    if r.status_code not in (200, 204):
+        print(f"   ❌ Supabase error {r.status_code}: {r.text[:500]}")
     return r.status_code in (200, 204)
 
 # ── Gemini call ───────────────────────────────────────────────
@@ -265,10 +267,15 @@ def main():
         english_p      = generate_platform_scripts(idea, english_script, "english")
 
         print(f"\n💾 Saving to Supabase...")
-        ok = db_patch_idea({
-            "script_tamil":            tamil_script,
-            "script_english":          english_script,
-            "research_brief":          research,
+        # Save in two calls to avoid payload size issues
+        ok1 = db_patch_idea({
+            "script_tamil":   tamil_script,
+            "script_english": english_script,
+            "research_brief": research,
+        })
+        print(f"   Long scripts: {'✅' if ok1 else '❌'}")
+
+        ok2 = db_patch_idea({
             "script_shorts_tamil":     tamil_p["shorts"],
             "script_reels_tamil":      tamil_p["reels"],
             "script_x_post_tamil":     tamil_p["x_post"],
@@ -282,6 +289,8 @@ def main():
             "status_reels":  "script_ready",
             "status_x":      "script_ready",
         })
+        print(f"   Platform scripts + statuses: {'✅' if ok2 else '❌'}")
+        ok = ok1 and ok2
 
         if ok:
             print(f"\n{'='*60}")
