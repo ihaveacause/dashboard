@@ -1,35 +1,36 @@
 """
 generate_idea_scripts.py — Sprint 7
 Triggered by generate_idea_scripts.yml via trigger-idea-gen edge function.
-Reads one idea by IDEA_ID env var, generates all scripts, saves to ideas table.
-
-Generates:
-  - Research brief (from title + description + research_angle)
-  - Tamil long script + English long script
-  - Shorts teaser Tamil + English  (60 sec)
-  - Reels script  Tamil + English  (30-45 sec)
-  - X post + thread Tamil + English
-Sets status, status_shorts, status_reels, status_x → script_ready on success.
+Auth: GOOGLE_APPLICATION_CREDENTIALS_JSON (same as generate_script.yml)
+Library: google.genai via google-cloud-aiplatform (already installed)
 """
 
 import json
 import os
 import signal
 import sys
+import tempfile
 import time
 
-from google import genai
-from google.genai import types
 from supabase import create_client, Client
+
+# ── Credentials (mirrors generate_script.yml pattern) ────────
+_creds_json = os.environ["GOOGLE_APPLICATION_CREDENTIALS_JSON"]
+_tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False)
+_tmp.write(_creds_json)
+_tmp.close()
+os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = _tmp.name
+
+# ── Gemini via google.genai with ADC (no API key needed) ──────
+from google import genai
+
+client = genai.Client()  # Uses GOOGLE_APPLICATION_CREDENTIALS automatically
+MODEL  = "gemini-2.5-pro-preview-05-06"
 
 # ── Config ────────────────────────────────────────────────────
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or os.environ["SUPABASE_KEY"]
-GEMINI_KEY   = os.environ["GEMINI_API_KEY"]
 IDEA_ID      = os.environ["IDEA_ID"]
-
-client = genai.Client(api_key=GEMINI_KEY)
-MODEL  = "gemini-2.5-pro-preview-05-06"
 
 YOUTUBE_CHANNEL_URL = "https://www.youtube.com/@IHaveACause"
 MIN_WORDS_LONG      = 1200
@@ -42,8 +43,7 @@ def get_supabase() -> Client:
     return create_client(SUPABASE_URL, SUPABASE_KEY)
 
 def fetch_idea(idea_id: str) -> dict:
-    sb  = get_supabase()
-    res = sb.table("ideas").select("*").eq("id", idea_id).single().execute()
+    res = get_supabase().table("ideas").select("*").eq("id", idea_id).single().execute()
     if not res.data:
         raise ValueError(f"Idea not found: {idea_id}")
     return res.data
@@ -51,20 +51,12 @@ def fetch_idea(idea_id: str) -> dict:
 def update_idea(idea_id: str, updates: dict):
     get_supabase().table("ideas").update(updates).eq("id", idea_id).execute()
 
-def set_generating(idea_id: str):
+def set_all_statuses(idea_id: str, status: str):
     update_idea(idea_id, {
-        "status":        "generating",
-        "status_shorts": "generating",
-        "status_reels":  "generating",
-        "status_x":      "generating",
-    })
-
-def set_failed(idea_id: str):
-    update_idea(idea_id, {
-        "status":        "pending",
-        "status_shorts": "pending",
-        "status_reels":  "pending",
-        "status_x":      "pending",
+        "status":        status,
+        "status_shorts": status,
+        "status_reels":  status,
+        "status_x":      status,
     })
 
 # ── Generation helpers ────────────────────────────────────────
@@ -113,8 +105,7 @@ def generate_research(idea: dict) -> str:
     title          = idea.get("title", "")
     description    = idea.get("description", "")
     research_angle = idea.get("research_angle", "")
-
-    angle_section = f"\nResearch angle: {research_angle}" if research_angle else ""
+    angle_section  = f"\nResearch angle: {research_angle}" if research_angle else ""
 
     prompt = f"""You are a Tamil philosophy and social reform researcher writing for "I Have a Cause" — a YouTube channel for the Tamil diaspora.
 
@@ -140,13 +131,10 @@ Be thorough — this research will power Tamil + English scripts and social medi
 # ── Long scripts ──────────────────────────────────────────────
 
 def generate_tamil_script(idea: dict, research: str) -> str:
-    title          = idea.get("title", "")
-    description    = idea.get("description", "")
-
     prompt = f"""You are writing a Tamil YouTube script for "I Have a Cause" — a philosophy and social reform channel for the Tamil diaspora.
 
-Video title: {title}
-Concept: {description}
+Video title: {idea.get("title", "")}
+Concept: {idea.get("description", "")}
 
 RESEARCH TO USE:
 {research}
@@ -154,13 +142,9 @@ RESEARCH TO USE:
 SCRIPT REQUIREMENTS:
 - Write entirely in Tamil (Unicode — no transliteration)
 - Target: 12 minutes spoken aloud (~1560 Tamil words)
-- Opening hook: a powerful question, story, or fact that grabs attention in first 20 seconds
-- Natural conversational tone — like an intelligent friend explaining, not a lecture
-- Use analogies from the research but make them feel fresh and organic
-- Include moments of emotion, clarity, and practical wisdom
-- Each idea must build naturally on the previous one
-- Add [PAUSE] markers where the speaker should pause for effect
-- Add [EMPHASIS] markers on key Tamil terms
+- Opening hook: a powerful question, story, or fact in first 20 seconds
+- Natural conversational tone — like an intelligent friend explaining
+- Add [PAUSE] markers for effect, [EMPHASIS] on key Tamil terms
 - Closing: meaningful summary with a call to think, act, or share
 
 Write the COMPLETE script now. Do not truncate."""
@@ -168,28 +152,23 @@ Write the COMPLETE script now. Do not truncate."""
     print("  📝 Generating Tamil long script...")
     return generate_with_retry(prompt, MIN_WORDS_LONG, "Tamil script")
 
-
 def generate_english_script(idea: dict, research: str, tamil_script: str) -> str:
-    title       = idea.get("title", "")
-    description = idea.get("description", "")
+    prompt = f"""You are writing an English YouTube script for "I Have a Cause" — a Tamil philosophy channel for the global diaspora.
 
-    prompt = f"""You are writing an English YouTube script for "I Have a Cause" — a Tamil philosophy and social reform channel for the global diaspora.
-
-Video title: {title}
-Concept: {description}
+Video title: {idea.get("title", "")}
+Concept: {idea.get("description", "")}
 
 RESEARCH TO USE:
 {research}
 
-TAMIL SCRIPT THEMES (already written — align but do NOT copy):
+TAMIL SCRIPT THEMES (align but do NOT copy):
 {tamil_script[:800]}...
 
 SCRIPT REQUIREMENTS:
 - Write entirely in English
-- Target: 12 minutes spoken aloud (~1680 English words)
-- Adapt for global Tamil diaspora — use Tamil terms with brief English explanations in brackets
-- Same philosophical and emotional depth — different cultural entry points where relevant
-- Opening hook must be DIFFERENT from Tamil version — find a fresh entry angle
+- Target: 12 minutes (~1680 English words)
+- Opening hook must be DIFFERENT from Tamil version
+- Use Tamil terms with brief English explanations in brackets
 - Add [PAUSE] and [EMPHASIS] markers
 - Closing: drive viewers to subscribe, mention Tamil version exists
 
@@ -200,14 +179,10 @@ Write the COMPLETE script now. Do not truncate."""
 
 # ── Platform scripts ──────────────────────────────────────────
 
-def generate_platform_scripts(idea: dict, research: str, long_script: str, language: str) -> dict:
-    """
-    Generate Shorts + Reels + X post + X thread in one Gemini call.
-    Mirrors the same function in script_generator.py.
-    """
+def generate_platform_scripts(idea: dict, long_script: str, language: str) -> dict:
     title     = idea.get("title", "")
-    yt_url    = YOUTUBE_CHANNEL_URL
     lang_note = "Tamil" if language == "tamil" else "English"
+    yt_url    = YOUTUBE_CHANNEL_URL
 
     prompt = f"""You are a social media content writer for "I Have a Cause" — a Tamil philosophy YouTube channel.
 
@@ -218,31 +193,25 @@ YouTube channel: {yt_url}
 EPISODE SUMMARY (base all content on this):
 {long_script[:1500]}
 
-Generate ALL FOUR of the following in {lang_note}. Return as valid JSON only — no markdown, no preamble.
+Generate ALL FOUR in {lang_note}. Return as valid JSON only — no markdown, no preamble.
 
 {{
-  "shorts": "<60-second TEASER script — hook in first 5 seconds, reveal just enough to make them want the full video, end with 'Full video on YouTube: {yt_url}'. Natural spoken {lang_note}. 80-120 words.>",
-
-  "reels": "<30-45 second VERTICAL REEL script — punchy opening question or shocking fact, one core insight, strong CTA: 'Watch the full video — link in bio'. Written for vertical short-form. 60-90 words.>",
-
-  "x_post": "<Single X/Twitter post — one powerful insight as a thought-provoking statement or question. Max 240 characters. Include hashtags: #IHaveACause #TamilPhilosophy #Consciousness. Include YouTube link.>",
-
-  "x_thread": "<5-tweet thread. Tweet 1: hook question. Tweets 2-4: one insight per tweet (each under 240 chars). Tweet 5: CTA with YouTube link. Format: TWEET_1: ... | TWEET_2: ... | TWEET_3: ... | TWEET_4: ... | TWEET_5: ...>"
+  "shorts": "<60-second TEASER script — hook in 5 seconds, reveal just enough, end with 'Full video on YouTube: {yt_url}'. 80-120 words.>",
+  "reels": "<30-45 second VERTICAL REEL — punchy opening, one core insight, CTA 'Watch the full video — link in bio'. 60-90 words.>",
+  "x_post": "<Single X post — one powerful insight, max 240 chars. Include #IHaveACause #TamilPhilosophy. Include YouTube link.>",
+  "x_thread": "<5-tweet thread. Format: TWEET_1: ... | TWEET_2: ... | TWEET_3: ... | TWEET_4: ... | TWEET_5: (CTA with YouTube link)>"
 }}
 
-IMPORTANT: Return ONLY the JSON object. No text before or after."""
+Return ONLY the JSON object."""
 
-    print(f"  📱 Generating {lang_note} platform scripts (Shorts + Reels + X)...")
-
+    print(f"  📱 Generating {lang_note} platform scripts...")
     try:
-        raw = generate(prompt)
-        raw = raw.strip()
+        raw = generate(prompt).strip()
         if raw.startswith("```"):
             raw = raw.split("```")[1]
             if raw.startswith("json"):
                 raw = raw[4:]
-        raw = raw.strip()
-        data = json.loads(raw)
+        data = json.loads(raw.strip())
         return {
             "shorts":   data.get("shorts", ""),
             "reels":    data.get("reels", ""),
@@ -264,7 +233,7 @@ def main():
     print(f"  Title: {idea.get('title', 'Unknown')}")
 
     try:
-        set_generating(IDEA_ID)
+        set_all_statuses(IDEA_ID, "generating")
 
         # 1. Research
         research = generate_research(idea)
@@ -280,54 +249,44 @@ def main():
         time.sleep(2)
 
         # 4. Tamil platform scripts
-        tamil_platforms = generate_platform_scripts(idea, research, tamil_script, "tamil")
+        tamil_p = generate_platform_scripts(idea, tamil_script, "tamil")
         time.sleep(2)
 
         # 5. English platform scripts
-        english_platforms = generate_platform_scripts(idea, research, english_script, "english")
+        english_p = generate_platform_scripts(idea, english_script, "english")
         time.sleep(1)
 
         # 6. Save everything
-        updates = {
-            # Long scripts
+        update_idea(IDEA_ID, {
             "script_tamil":            tamil_script,
             "script_english":          english_script,
             "research_brief":          research,
-
-            # Tamil platform scripts
-            "script_shorts_tamil":     tamil_platforms["shorts"],
-            "script_reels_tamil":      tamil_platforms["reels"],
-            "script_x_post_tamil":     tamil_platforms["x_post"],
-            "script_x_thread_tamil":   tamil_platforms["x_thread"],
-
-            # English platform scripts
-            "script_shorts_english":   english_platforms["shorts"],
-            "script_reels_english":    english_platforms["reels"],
-            "script_x_post_english":   english_platforms["x_post"],
-            "script_x_thread_english": english_platforms["x_thread"],
-
-            # All platform statuses → script_ready
+            "script_shorts_tamil":     tamil_p["shorts"],
+            "script_reels_tamil":      tamil_p["reels"],
+            "script_x_post_tamil":     tamil_p["x_post"],
+            "script_x_thread_tamil":   tamil_p["x_thread"],
+            "script_shorts_english":   english_p["shorts"],
+            "script_reels_english":    english_p["reels"],
+            "script_x_post_english":   english_p["x_post"],
+            "script_x_thread_english": english_p["x_thread"],
             "status":        "script_ready",
             "status_shorts": "script_ready",
             "status_reels":  "script_ready",
             "status_x":      "script_ready",
-        }
+        })
 
-        update_idea(IDEA_ID, updates)
-
-        print(f"\n  🎉 Idea complete — all scripts saved, all platforms → script_ready")
+        print(f"\n  🎉 Done — all scripts saved, all platforms → script_ready")
         print(f"{'='*60}")
 
     except TimeoutError as e:
         print(f"  ⏰ Timeout: {e}")
-        set_failed(IDEA_ID)
+        set_all_statuses(IDEA_ID, "pending")
         sys.exit(1)
 
     except Exception as e:
         print(f"  ❌ Error: {e}")
-        set_failed(IDEA_ID)
+        set_all_statuses(IDEA_ID, "pending")
         raise
-
 
 if __name__ == "__main__":
     main()
