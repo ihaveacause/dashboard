@@ -1,195 +1,199 @@
 """
-generate_idea_scripts.py — Sprint 7
-Triggered by generate_idea_scripts.yml via trigger-idea-gen edge function.
-Auth: GOOGLE_APPLICATION_CREDENTIALS_JSON (same as generate_script.yml)
-Library: google.genai via google-cloud-aiplatform (already installed)
+I Have a Cause — Idea Script Generator (Vertex AI)
+===================================================
+Triggered by GitHub Actions with IDEA_ID input.
+Mirrors script_generator.py auth pattern exactly.
+Flow:
+  1. Fetch idea details from ideas table
+  2. Vertex AI Gemini 2.5 Pro → deep research
+  3. Gemini → Tamil long script
+  4. Gemini → English long script
+  5. Gemini → Tamil platform scripts (shorts, reels, x_post, x_thread)
+  6. Gemini → English platform scripts
+  7. Save everything to ideas table
+  8. Update all statuses → script_ready
 """
 
-import json
 import os
-import signal
-import sys
-import tempfile
-import time
-
-from supabase import create_client, Client
-
-# ── Credentials (mirrors generate_script.yml pattern) ────────
-_creds_json = os.environ["GOOGLE_APPLICATION_CREDENTIALS_JSON"]
-_tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False)
-_tmp.write(_creds_json)
-_tmp.close()
-os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = _tmp.name
-
-# ── Gemini via google.genai with ADC (no API key needed) ──────
-import google.auth
-from google.auth.transport.requests import Request
-from google import genai
-
-# Explicitly load ADC credentials from the service account file we wrote above
-_credentials, _project = google.auth.default(
-    scopes=[
-        "https://www.googleapis.com/auth/generative-language",
-        "https://www.googleapis.com/auth/cloud-platform",
-    ]
-)
-_credentials.refresh(Request())
-client = genai.Client(credentials=_credentials)
-MODEL  = "gemini-2.5-pro-preview-05-06"
+import json
+import requests
+from datetime import datetime
+from google.oauth2 import service_account
+import vertexai
+from vertexai.generative_models import GenerativeModel
 
 # ── Config ────────────────────────────────────────────────────
-SUPABASE_URL = os.environ["SUPABASE_URL"]
-SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or os.environ["SUPABASE_KEY"]
-IDEA_ID      = os.environ["IDEA_ID"]
+SUPABASE_URL   = os.environ["SUPABASE_URL"]
+SUPABASE_KEY   = os.environ["SUPABASE_KEY"]
+GCP_CREDS_JSON = os.environ["GOOGLE_APPLICATION_CREDENTIALS_JSON"]
+IDEA_ID        = os.environ["IDEA_ID"]
+
+PROJECT_ID = "gen-lang-client-0078128013"
+LOCATION   = "us-central1"
 
 YOUTUBE_CHANNEL_URL = "https://www.youtube.com/@IHaveACause"
-MIN_WORDS_LONG      = 1200
-MIN_WORDS_SHORT     = 80
-TIMEOUT_SECONDS     = 300
 
-# ── Supabase ──────────────────────────────────────────────────
+# ── Vertex AI auth (same as script_generator.py) ─────────────
+creds_info  = json.loads(GCP_CREDS_JSON)
+credentials = service_account.Credentials.from_service_account_info(
+    creds_info,
+    scopes=["https://www.googleapis.com/auth/cloud-platform"]
+)
+vertexai.init(project=PROJECT_ID, location=LOCATION, credentials=credentials)
+model = GenerativeModel("gemini-2.5-pro")
 
-def get_supabase() -> Client:
-    return create_client(SUPABASE_URL, SUPABASE_KEY)
+SB_HEADERS = {
+    "apikey":        SUPABASE_KEY,
+    "Authorization": f"Bearer {SUPABASE_KEY}",
+    "Content-Type":  "application/json",
+    "Prefer":        "return=minimal"
+}
+REST = f"{SUPABASE_URL}/rest/v1"
 
-def fetch_idea(idea_id: str) -> dict:
-    res = get_supabase().table("ideas").select("*").eq("id", idea_id).single().execute()
-    if not res.data:
-        raise ValueError(f"Idea not found: {idea_id}")
-    return res.data
+# ── Supabase helpers ──────────────────────────────────────────
+def db_get(table, params):
+    r = requests.get(
+        f"{REST}/{table}",
+        headers={**SB_HEADERS, "Prefer": "return=representation"},
+        params=params, timeout=15
+    )
+    return r.json() if r.status_code == 200 else []
 
-def update_idea(idea_id: str, updates: dict):
-    get_supabase().table("ideas").update(updates).eq("id", idea_id).execute()
+def db_patch_idea(data):
+    r = requests.patch(
+        f"{REST}/ideas?id=eq.{IDEA_ID}",
+        headers=SB_HEADERS,
+        json=data, timeout=15
+    )
+    return r.status_code in (200, 204)
 
-def set_all_statuses(idea_id: str, status: str):
-    update_idea(idea_id, {
-        "status":        status,
-        "status_shorts": status,
-        "status_reels":  status,
-        "status_x":      status,
-    })
+# ── Gemini call ───────────────────────────────────────────────
+def generate(prompt):
+    response = model.generate_content(prompt)
+    parts = []
+    for candidate in response.candidates:
+        for part in candidate.content.parts:
+            if hasattr(part, "text") and part.text:
+                parts.append(part.text)
+    return "\n".join(parts)
 
-# ── Generation helpers ────────────────────────────────────────
+# ── Fetch idea ────────────────────────────────────────────────
+def fetch_idea():
+    rows = db_get("ideas", {"id": f"eq.{IDEA_ID}", "select": "*"})
+    return rows[0] if rows else None
 
-def _timeout_handler(signum, frame):
-    raise TimeoutError("Gemini call exceeded 5 minutes")
-
-def generate(prompt: str) -> str:
-    signal.signal(signal.SIGALRM, _timeout_handler)
-    signal.alarm(TIMEOUT_SECONDS)
-    try:
-        response = client.models.generate_content(
-            model=MODEL,
-            contents=prompt,
-        )
-        return response.text.strip()
-    finally:
-        signal.alarm(0)
-
-def validate_word_count(text: str, minimum: int, label: str) -> bool:
-    count = len(text.split())
-    if count < minimum:
-        print(f"  ⚠️  {label}: only {count} words (minimum {minimum}) — will retry")
-        return False
-    print(f"  ✅ {label}: {count} words")
-    return True
-
-def generate_with_retry(prompt: str, minimum_words: int, label: str, max_retries: int = 2) -> str:
-    for attempt in range(max_retries + 1):
-        try:
-            text = generate(prompt)
-            if validate_word_count(text, minimum_words, label):
-                return text
-            if attempt < max_retries:
-                print(f"  🔄 Retrying {label} (attempt {attempt + 2})...")
-                prompt += "\n\nIMPORTANT: Previous response was too short. Write COMPLETE content."
-        except TimeoutError:
-            print(f"  ⏰ Timeout on {label} attempt {attempt + 1}")
-            if attempt == max_retries:
-                raise
-    return text
-
-# ── Research ──────────────────────────────────────────────────
-
-def generate_research(idea: dict) -> str:
+# ── Step 1: Research ──────────────────────────────────────────
+def deep_research(idea):
+    print(f"\n🔍 Step 1: Deep Research")
     title          = idea.get("title", "")
     description    = idea.get("description", "")
     research_angle = idea.get("research_angle", "")
-    angle_section  = f"\nResearch angle: {research_angle}" if research_angle else ""
+    angle_section  = f"\nResearch Angle: {research_angle}" if research_angle else ""
 
-    prompt = f"""You are a Tamil philosophy and social reform researcher writing for "I Have a Cause" — a YouTube channel for the Tamil diaspora.
+    prompt = f"""You are a deep research assistant for a Tamil philosophy YouTube channel called "I Have a Cause."
 
 Research this idea thoroughly for a standalone video:
 
 Title: {title}
 Description: {description}{angle_section}
 
-Provide:
-1. Core concepts and arguments to make (with Tamil cultural references where relevant)
-2. Historical or philosophical grounding (Vedic, Thirukkural, Tamil literature as applicable)
-3. 3-4 relatable modern analogies that Tamil diaspora would connect with
-4. Data, evidence, or real-world examples that strengthen the argument
-5. Counter-arguments and how to address them
-6. Emotional arc — where should the viewer feel moved, challenged, inspired?
-7. Practical takeaways for the audience
+Provide comprehensive research covering:
+1. CORE ARGUMENT: The main point explained deeply (3-4 paragraphs)
+2. KEY SOURCES: Specific references — Thiruvalluvar, Tamil saints, Vedic texts, modern science as applicable
+3. MODERN CONNECTIONS: How this connects to current events, science, psychology, daily life
+4. TAMIL CONTEXT: Tamil poets, literature, history that strengthen this argument
+5. HOOK IDEAS: 3 powerful opening hooks that stop a Tamil viewer from scrolling
+6. KEY INSIGHTS: 5-7 profound insights from this topic
+7. STORY/ANALOGY: A compelling story or analogy that makes this concept tangible
+8. EMOTIONAL ARC: Where should the viewer feel moved, challenged, inspired?
+9. COUNTER-ARGUMENTS: What would critics say and how to address them
+10. PRACTICAL TAKEAWAYS: What can the viewer DO after watching?
 
 Be thorough — this research will power Tamil + English scripts and social media content."""
 
-    print("  📚 Generating research...")
-    return generate(prompt)
+    research = generate(prompt)
+    print(f"   ✅ Research complete ({len(research)} chars)")
+    return research
 
-# ── Long scripts ──────────────────────────────────────────────
+# ── Step 2: Tamil Long Script ─────────────────────────────────
+def generate_tamil_script(idea, research):
+    print(f"\n✍️  Step 2: Tamil Script")
+    title       = idea.get("title", "")
+    description = idea.get("description", "")
+    target_words = 110 * 12  # 12 min × 110 words/min
 
-def generate_tamil_script(idea: dict, research: str) -> str:
-    prompt = f"""You are writing a Tamil YouTube script for "I Have a Cause" — a philosophy and social reform channel for the Tamil diaspora.
+    prompt = f"""நீங்கள் "I Have a Cause" YouTube சேனலுக்கான expert Tamil script writer.
 
-Video title: {idea.get("title", "")}
-Concept: {idea.get("description", "")}
+சேனலின் குணாதிசயங்கள்:
+- அமைதியான, அறிவார்ந்த, இரக்கமுள்ள குரல்
+- தத்துவம் மற்றும் நவீன அறிவியலை இணைக்கும்
+- சமூக சீர்திருத்தத்தை ஆதரிக்கும்
+- Tamil diaspora மற்றும் Tamil Nadu பார்வையாளர்கள்
 
-RESEARCH TO USE:
+VIDEO விவரங்கள்:
+தலைப்பு: {title}
+கருத்து: {description}
+Target Duration: 12 நிமிடங்கள் (~{target_words} words)
+
+RESEARCH:
 {research}
 
-SCRIPT REQUIREMENTS:
-- Write entirely in Tamil (Unicode — no transliteration)
-- Target: 12 minutes spoken aloud (~1560 Tamil words)
-- Opening hook: a powerful question, story, or fact in first 20 seconds
-- Natural conversational tone — like an intelligent friend explaining
-- Add [PAUSE] markers for effect, [EMPHASIS] on key Tamil terms
-- Closing: meaningful summary with a call to think, act, or share
+கட்டாய விதிகள்:
+1. Script முழுவதும் 100% தமிழில் இருக்க வேண்டும் — ஒரு English word கூட வேண்டாம்
+2. தொடர்ச்சியான பேச்சு வழக்கில் மட்டும் — headings, bullets, markdown வேண்டாம்
+3. நேரடியாக hook-உடன் தொடங்கட்டும் — எந்த label-உம் வேண்டாம்
+4. குறைந்தது {target_words} words எழுதவும்
+5. ஒரு கருத்தை ஒரு முறை மட்டுமே சொல்லவும் — மீண்டும் சொல்லாதீர்கள்
 
-Write the COMPLETE script now. Do not truncate."""
+FLOW: பார்வையாளரை உடனே கட்டிப் போடும் தொடக்கம் → கருத்து விரிவாக → examples, stories → சமூக மாற்றத்துடன் தொடர்பு → summary + குழுசேருங்கள் கோரிக்கை
 
-    print("  📝 Generating Tamil long script...")
-    return generate_with_retry(prompt, MIN_WORDS_LONG, "Tamil script")
+Write the COMPLETE script now."""
 
-def generate_english_script(idea: dict, research: str, tamil_script: str) -> str:
-    prompt = f"""You are writing an English YouTube script for "I Have a Cause" — a Tamil philosophy channel for the global diaspora.
+    script = generate(prompt)
+    print(f"   ✅ Tamil script ({len(script)} chars)")
+    return script
 
-Video title: {idea.get("title", "")}
-Concept: {idea.get("description", "")}
+# ── Step 3: English Long Script ───────────────────────────────
+def generate_english_script(idea, research, tamil_script):
+    print(f"\n✍️  Step 3: English Script")
+    title        = idea.get("title", "")
+    description  = idea.get("description", "")
+    target_words = 130 * 12  # 12 min × 130 words/min
 
-RESEARCH TO USE:
+    prompt = f"""You are an expert English script writer for "I Have a Cause" — a Tamil philosophy YouTube channel.
+
+Channel voice: Calm, intellectual, compassionate. Think Alan Watts meets Sadhguru in English.
+Audience: Tamil diaspora (UK, USA, Canada, Singapore) + global seekers.
+
+VIDEO DETAILS:
+Title: {title}
+Concept: {description}
+Target: 12 minutes (~{target_words} words)
+
+RESEARCH:
 {research}
 
 TAMIL SCRIPT THEMES (align but do NOT copy):
 {tamil_script[:800]}...
 
-SCRIPT REQUIREMENTS:
-- Write entirely in English
-- Target: 12 minutes (~1680 English words)
-- Opening hook must be DIFFERENT from Tamil version
-- Use Tamil terms with brief English explanations in brackets
-- Add [PAUSE] and [EMPHASIS] markers
-- Closing: drive viewers to subscribe, mention Tamil version exists
+CRITICAL RULES:
+1. Write ENTIRE script in English only — not one word in Tamil or any other language
+2. Continuous flowing spoken prose — no headings, bullets, markdown, timestamps
+3. Start directly with the hook — no labels or preamble
+4. Minimum {target_words} words
+5. Opening hook must be DIFFERENT from Tamil version — find a fresh angle
+6. NO REPETITION — every sentence must introduce something new
+7. Closing: subscribe ask + mention Tamil version exists
 
-Write the COMPLETE script now. Do not truncate."""
+Write the COMPLETE script now."""
 
-    print("  📝 Generating English long script...")
-    return generate_with_retry(prompt, MIN_WORDS_LONG, "English script")
+    script = generate(prompt)
+    print(f"   ✅ English script ({len(script)} chars)")
+    return script
 
-# ── Platform scripts ──────────────────────────────────────────
-
-def generate_platform_scripts(idea: dict, long_script: str, language: str) -> dict:
+# ── Step 4: Platform Scripts ──────────────────────────────────
+def generate_platform_scripts(idea, long_script, language):
+    print(f"\n📱 Step 4: {language.title()} platform scripts")
     title     = idea.get("title", "")
     lang_note = "Tamil" if language == "tamil" else "English"
     yt_url    = YOUTUBE_CHANNEL_URL
@@ -198,23 +202,22 @@ def generate_platform_scripts(idea: dict, long_script: str, language: str) -> di
 
 Video title: {title}
 Language: {lang_note}
-YouTube channel: {yt_url}
+YouTube: {yt_url}
 
-EPISODE SUMMARY (base all content on this):
+EPISODE SUMMARY:
 {long_script[:1500]}
 
 Generate ALL FOUR in {lang_note}. Return as valid JSON only — no markdown, no preamble.
 
 {{
-  "shorts": "<60-second TEASER script — hook in 5 seconds, reveal just enough, end with 'Full video on YouTube: {yt_url}'. 80-120 words.>",
-  "reels": "<30-45 second VERTICAL REEL — punchy opening, one core insight, CTA 'Watch the full video — link in bio'. 60-90 words.>",
-  "x_post": "<Single X post — one powerful insight, max 240 chars. Include #IHaveACause #TamilPhilosophy. Include YouTube link.>",
-  "x_thread": "<5-tweet thread. Format: TWEET_1: ... | TWEET_2: ... | TWEET_3: ... | TWEET_4: ... | TWEET_5: (CTA with YouTube link)>"
+  "shorts": "<60-second TEASER — hook in 5 seconds, just enough to make them want the full video, end with 'Full video on YouTube: {yt_url}'. 80-120 words.>",
+  "reels": "<30-45 second VERTICAL REEL — punchy opening, one core insight, CTA 'Watch full video — link in bio'. 60-90 words.>",
+  "x_post": "<Single X post — one powerful insight, max 240 chars, hashtags #IHaveACause #TamilPhilosophy, YouTube link.>",
+  "x_thread": "<5-tweet thread. Format: TWEET_1: ... | TWEET_2: ... | TWEET_3: ... | TWEET_4: ... | TWEET_5: (CTA + YouTube link)>"
 }}
 
 Return ONLY the JSON object."""
 
-    print(f"  📱 Generating {lang_note} platform scripts...")
     try:
         raw = generate(prompt).strip()
         if raw.startswith("```"):
@@ -222,6 +225,7 @@ Return ONLY the JSON object."""
             if raw.startswith("json"):
                 raw = raw[4:]
         data = json.loads(raw.strip())
+        print(f"   ✅ {lang_note} platform scripts parsed")
         return {
             "shorts":   data.get("shorts", ""),
             "reels":    data.get("reels", ""),
@@ -229,45 +233,39 @@ Return ONLY the JSON object."""
             "x_thread": data.get("x_thread", ""),
         }
     except Exception as e:
-        print(f"  ⚠️  Platform scripts parse error: {e}")
+        print(f"   ⚠️  Parse error: {e}")
         return {"shorts": "", "reels": "", "x_post": "", "x_thread": ""}
 
 # ── Main ──────────────────────────────────────────────────────
-
 def main():
-    print(f"\n{'='*60}")
-    print(f"💡 Processing Idea: {IDEA_ID}")
-    print(f"{'='*60}")
+    print("=" * 60)
+    print(f"💡 Idea Script Generator (Vertex AI) — {IDEA_ID}")
+    print(f"   {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print("=" * 60)
 
-    idea = fetch_idea(IDEA_ID)
-    print(f"  Title: {idea.get('title', 'Unknown')}")
+    idea = fetch_idea()
+    if not idea:
+        print(f"❌ Idea {IDEA_ID} not found")
+        return
+
+    print(f"\n📖 {idea.get('title', '')}")
+
+    db_patch_idea({
+        "status":        "generating",
+        "status_shorts": "generating",
+        "status_reels":  "generating",
+        "status_x":      "generating",
+    })
 
     try:
-        set_all_statuses(IDEA_ID, "generating")
-
-        # 1. Research
-        research = generate_research(idea)
-        print(f"  ✅ Research: {len(research.split())} words")
-        time.sleep(2)
-
-        # 2. Tamil long script
-        tamil_script = generate_tamil_script(idea, research)
-        time.sleep(2)
-
-        # 3. English long script
+        research       = deep_research(idea)
+        tamil_script   = generate_tamil_script(idea, research)
         english_script = generate_english_script(idea, research, tamil_script)
-        time.sleep(2)
+        tamil_p        = generate_platform_scripts(idea, tamil_script, "tamil")
+        english_p      = generate_platform_scripts(idea, english_script, "english")
 
-        # 4. Tamil platform scripts
-        tamil_p = generate_platform_scripts(idea, tamil_script, "tamil")
-        time.sleep(2)
-
-        # 5. English platform scripts
-        english_p = generate_platform_scripts(idea, english_script, "english")
-        time.sleep(1)
-
-        # 6. Save everything
-        update_idea(IDEA_ID, {
+        print(f"\n💾 Saving to Supabase...")
+        ok = db_patch_idea({
             "script_tamil":            tamil_script,
             "script_english":          english_script,
             "research_brief":          research,
@@ -285,18 +283,25 @@ def main():
             "status_x":      "script_ready",
         })
 
-        print(f"\n  🎉 Done — all scripts saved, all platforms → script_ready")
-        print(f"{'='*60}")
-
-    except TimeoutError as e:
-        print(f"  ⏰ Timeout: {e}")
-        set_all_statuses(IDEA_ID, "pending")
-        sys.exit(1)
+        if ok:
+            print(f"\n{'='*60}")
+            print(f"✅ Idea complete — all scripts ready!")
+            print(f"{'='*60}")
+        else:
+            print("❌ Save failed")
+            db_patch_idea({
+                "status": "pending", "status_shorts": "pending",
+                "status_reels": "pending", "status_x": "pending",
+            })
 
     except Exception as e:
-        print(f"  ❌ Error: {e}")
-        set_all_statuses(IDEA_ID, "pending")
-        raise
+        import traceback
+        print(f"\n❌ Error: {e}")
+        traceback.print_exc()
+        db_patch_idea({
+            "status": "pending", "status_shorts": "pending",
+            "status_reels": "pending", "status_x": "pending",
+        })
 
 if __name__ == "__main__":
     main()
