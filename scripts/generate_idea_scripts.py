@@ -16,28 +16,20 @@ import json
 import os
 import signal
 import sys
-import tempfile
 import time
 
+import google.generativeai as genai
 from supabase import create_client, Client
-import vertexai
-from vertexai.generative_models import GenerativeModel
 
 # ── Config ────────────────────────────────────────────────────
+# Matches script_generator.py exactly — uses Gemini API key, not Vertex AI
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or os.environ["SUPABASE_KEY"]
+GEMINI_KEY   = os.environ["GEMINI_API_KEY"]
 IDEA_ID      = os.environ["IDEA_ID"]
 
-# Write credentials to disk and init Vertex AI
-_creds_json = os.environ["GOOGLE_APPLICATION_CREDENTIALS_JSON"]
-_tmp        = tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False)
-_tmp.write(_creds_json)
-_tmp.close()
-os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = _tmp.name
-
-_project_id = json.loads(_creds_json).get("project_id", "")
-vertexai.init(project=_project_id, location="us-central1")
-model = GenerativeModel("gemini-2.5-pro-preview-05-06")
+genai.configure(api_key=GEMINI_KEY)
+model = genai.GenerativeModel("gemini-2.5-pro-preview-05-06")
 
 YOUTUBE_CHANNEL_URL = "https://www.youtube.com/@IHaveACause"
 MIN_WORDS_LONG      = 1200
@@ -85,15 +77,11 @@ def generate(prompt: str) -> str:
     signal.alarm(TIMEOUT_SECONDS)
     try:
         response = model.generate_content(prompt)
-        # Handle both vertexai and google.generativeai response formats
-        try:
-            text_parts = []
-            for part in response.candidates[0].content.parts:
-                if hasattr(part, "text") and part.text:
-                    text_parts.append(part.text)
-            return "\n".join(text_parts).strip()
-        except Exception:
-            return response.text.strip()
+        text_parts = []
+        for part in response.candidates[0].content.parts:
+            if hasattr(part, "text") and part.text:
+                text_parts.append(part.text)
+        return "\n".join(text_parts).strip()
     finally:
         signal.alarm(0)
 
