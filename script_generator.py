@@ -1,398 +1,479 @@
 """
-I Have a Cause — Script Generator (Vertex AI)
-=============================================
-Triggered by GitHub Actions with EPISODE_NUMBER input.
-Flow:
-  1. Fetch episode details from tamil_episodes
-  2. Fetch active channel_preferences
-  3. Fetch previously completed episodes (to avoid repetition)
-  4. Vertex AI Gemini 2.5 Pro → deep research
-  5. Vertex AI Gemini 2.5 Pro → clean spoken Tamil script (no English, no markdown)
-  6. Vertex AI Gemini 2.5 Pro → clean spoken English script
-  7. Save both to tamil_episodes + english_episodes
-  8. Update status → script_ready
+script_generator.py  —  Sprint 7 edition
+Generates for each episode:
+  - Research brief
+  - Tamil long script + English long script
+  - Script summary (continuity for future episodes)
+  - Shorts teaser  Tamil + English (60 sec, drives to YouTube)
+  - Reels script   Tamil + English (30-45 sec vertical, drives to YouTube)
+  - X post + thread Tamil + English (caption + 5-7 tweet thread)
+
+Peer review fixes applied:
+  1. script_summary column for continuity feed
+  2. Word count validation before save
+  3. Clear regenerate_note after use
+  4. Safe defaults for nullable columns
+  5. Generation timeout (5 min per call)
 """
 
-import os
 import json
-import requests
-from datetime import datetime
-from google.oauth2 import service_account
-import vertexai
-from vertexai.generative_models import GenerativeModel
+import os
+import signal
+import sys
+import time
 
-# ── Config ────────────────────────────────────────────────────
-SUPABASE_URL   = os.environ["SUPABASE_URL"]
-SUPABASE_KEY   = os.environ["SUPABASE_KEY"]
-GCP_CREDS_JSON = os.environ["GOOGLE_APPLICATION_CREDENTIALS_JSON"]
-EPISODE_NUMBER = int(os.environ["EPISODE_NUMBER"])
+import google.generativeai as genai
+from supabase import create_client, Client
 
-PROJECT_ID = "gen-lang-client-0078128013"
-LOCATION   = "us-central1"
+# ── Config ────────────────────────────────────────────────────────────────────
+SUPABASE_URL = os.environ["SUPABASE_URL"]
+SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or os.environ["SUPABASE_KEY"]
+GEMINI_KEY   = os.environ["GEMINI_API_KEY"]
 
-# ── Vertex AI auth ────────────────────────────────────────────
-creds_info  = json.loads(GCP_CREDS_JSON)
-credentials = service_account.Credentials.from_service_account_info(
-    creds_info,
-    scopes=["https://www.googleapis.com/auth/cloud-platform"]
-)
-vertexai.init(project=PROJECT_ID, location=LOCATION, credentials=credentials)
-model = GenerativeModel("gemini-2.5-pro")   # Deep reasoning for philosophy
+genai.configure(api_key=GEMINI_KEY)
+model = genai.GenerativeModel("gemini-2.5-pro-preview-05-06")
 
-SB_HEADERS = {
-    "apikey":        SUPABASE_KEY,
-    "Authorization": f"Bearer {SUPABASE_KEY}",
-    "Content-Type":  "application/json",
-    "Prefer":        "return=minimal"
-}
-REST = f"{SUPABASE_URL}/rest/v1"
+YOUTUBE_CHANNEL_URL = "https://www.youtube.com/@IHaveACause"
 
-# ── Supabase helpers ──────────────────────────────────────────
-def db_get(table, params):
-    r = requests.get(
-        f"{REST}/{table}",
-        headers={**SB_HEADERS, "Prefer": "return=representation"},
-        params=params, timeout=15
-    )
-    return r.json() if r.status_code == 200 else []
+# Word count minimums
+MIN_WORDS_LONG   = 1200   # long script minimum
+MIN_WORDS_SHORT  = 80     # shorts/reels minimum
+MIN_WORDS_THREAD = 50     # x thread minimum
 
-def db_patch(table, match_col, match_val, data):
-    r = requests.patch(
-        f"{REST}/{table}?{match_col}=eq.{match_val}",
-        headers=SB_HEADERS,
-        json=data, timeout=15
-    )
-    return r.status_code in (200, 204)
+# Generation timeout seconds
+TIMEOUT_SECONDS  = 300
 
-def generate(prompt):
-    """Call Gemini via Vertex AI and safely extract text from any response shape."""
-    response = model.generate_content(prompt)
-    parts = []
-    for candidate in response.candidates:
-        for part in candidate.content.parts:
+# ── Supabase ──────────────────────────────────────────────────────────────────
+
+def get_supabase() -> Client:
+    return create_client(SUPABASE_URL, SUPABASE_KEY)
+
+
+def fetch_pending_episodes(table: str) -> list[dict]:
+    sb = get_supabase()
+    res = (sb.table(table)
+             .select("*")
+             .eq("status", "pending")
+             .order("episode_number")
+             .limit(5)
+             .execute())
+    return res.data or []
+
+
+def fetch_previous_episodes(table: str, current_episode_number: int) -> list[dict]:
+    """Fetch previous episodes with summaries for continuity context."""
+    sb = get_supabase()
+    res = (sb.table(table)
+             .select("episode_number, title_tamil, title_english, bridge_angle, script_summary")
+             .lt("episode_number", current_episode_number)
+             .not_.is_("script_summary", "null")
+             .order("episode_number", desc=True)
+             .limit(5)
+             .execute())
+    return res.data or []
+
+
+def update_episode(table: str, episode_id: str, updates: dict):
+    sb = get_supabase()
+    sb.table(table).update(updates).eq("id", episode_id).execute()
+
+
+def set_status(table: str, episode_id: str, status: str):
+    update_episode(table, episode_id, {"status": status})
+
+
+# ── Generation helpers ────────────────────────────────────────────────────────
+
+def _timeout_handler(signum, frame):
+    raise TimeoutError("Gemini call exceeded 5 minutes")
+
+
+def generate(prompt: str) -> str:
+    """Call Gemini with a timeout. Returns the full text response."""
+    signal.signal(signal.SIGALRM, _timeout_handler)
+    signal.alarm(TIMEOUT_SECONDS)
+    try:
+        response = model.generate_content(prompt)
+        # Handle thinking models that return mixed content blocks
+        text_parts = []
+        for part in response.candidates[0].content.parts:
             if hasattr(part, "text") and part.text:
-                parts.append(part.text)
-    return "\n".join(parts)
+                text_parts.append(part.text)
+        return "\n".join(text_parts).strip()
+    finally:
+        signal.alarm(0)
 
-# ── Fetch episode ─────────────────────────────────────────────
-def fetch_episode():
-    rows = db_get("tamil_episodes", {
-        "episode_number": f"eq.{EPISODE_NUMBER}",
-        "select": "*"
-    })
-    return rows[0] if rows else None
 
-# ── Fetch previously completed episodes ──────────────────────
-def fetch_previous_episodes():
-    """
-    Fetch all episodes that have already been scripted/completed.
-    Used to prevent Gemini from repeating themes already covered.
-    """
-    rows = db_get("tamil_episodes", {
-        "episode_number": f"lt.{EPISODE_NUMBER}",
-        "status":         "in.(script_ready,images_ready,images_approved,video_ready,published)",
-        "select":         "episode_number,title_english,title_tamil,bridge,module",
-        "order":          "episode_number.asc"
-    })
-    if not rows:
-        return ""
+def validate_word_count(text: str, minimum: int, label: str) -> bool:
+    count = len(text.split())
+    if count < minimum:
+        print(f"  ⚠️  {label}: only {count} words (minimum {minimum}) — will retry")
+        return False
+    print(f"  ✅ {label}: {count} words")
+    return True
 
-    lines = ["PREVIOUSLY COVERED EPISODES — do not repeat these themes, angles, or examples:"]
-    for ep in rows:
-        lines.append(
-            f"  Episode {ep['episode_number']}: {ep['title_english']} "
-            f"(Bridge: {ep['bridge']})"
-        )
-    lines.append("")
-    lines.append(
-        "Each new episode must go DEEPER or cover a DIFFERENT angle. "
-        "Never restate what was already said in earlier episodes."
-    )
+
+def generate_with_retry(prompt: str, minimum_words: int, label: str, max_retries: int = 2) -> str:
+    for attempt in range(max_retries + 1):
+        try:
+            text = generate(prompt)
+            if validate_word_count(text, minimum_words, label):
+                return text
+            if attempt < max_retries:
+                print(f"  🔄 Retrying {label} (attempt {attempt + 2})...")
+                prompt += "\n\nIMPORTANT: The previous response was too short. Please write a FULL, COMPLETE script."
+        except TimeoutError:
+            print(f"  ⏰ Timeout on {label} attempt {attempt + 1}")
+            if attempt == max_retries:
+                raise
+    return text  # return last attempt even if short
+
+
+# ── Context builder ───────────────────────────────────────────────────────────
+
+def build_continuity_context(previous_episodes: list[dict]) -> str:
+    if not previous_episodes:
+        return "This is the first episode — no previous episodes to reference."
+
+    lines = ["PREVIOUSLY COVERED EPISODES — avoid repeating these specific examples, analogies, or stories:"]
+    for ep in reversed(previous_episodes):
+        title = ep.get("title_english") or ep.get("title_tamil", "")
+        bridge = ep.get("bridge_angle", "")
+        summary = ep.get("script_summary", "")
+        lines.append(f"\nEP {ep['episode_number']}: {title}")
+        if bridge:
+            lines.append(f"  Bridge angle: {bridge}")
+        if summary:
+            lines.append(f"  What was covered: {summary}")
     return "\n".join(lines)
 
-# ── Fetch channel preferences ─────────────────────────────────
-def fetch_preferences():
-    rows = db_get("channel_preferences", {
-        "is_active": "eq.true",
-        "select":    "category,preference",
-        "order":     "created_at.asc"
-    })
-    if not rows:
+
+# ── Research ──────────────────────────────────────────────────────────────────
+
+def generate_research(episode: dict) -> str:
+    title_en = episode.get("title_english", "")
+    title_ta = episode.get("title_tamil", "")
+    pillar   = episode.get("content_pillar", "Consciousness")
+    module   = episode.get("module_name", "")
+    # Peer review fix #4 — safe defaults
+    research_source = episode.get("research_source") or "Mandukya Upanishad, Mandukya Karika by Gaudapada, Shankaracharya's commentary"
+    target_min      = episode.get("target_duration_min") or 12
+
+    prompt = f"""You are a Tamil philosophy researcher specialising in Advaita Vedanta and consciousness studies.
+
+Research this episode thoroughly for a Tamil YouTube channel "I Have a Cause":
+
+Episode: {title_en} (Tamil: {title_ta})
+Module: {module}
+Pillar: {pillar}
+Primary source: {research_source}
+Target duration: {target_min} minutes
+
+Provide:
+1. Core philosophical concepts to explain (with Sanskrit + Tamil terms)
+2. Key verses or sutras to reference (with transliteration)
+3. 3-4 relatable modern analogies that Tamil diaspora audiences would connect with
+4. Historical context and relevance today
+5. Common misconceptions to address
+6. Practical takeaways for daily life
+7. Suggested bridge to next episode
+
+Be thorough — this research will power Tamil + English scripts and social media content."""
+
+    print("  📚 Generating research...")
+    return generate(prompt)
+
+
+# ── Long scripts ──────────────────────────────────────────────────────────────
+
+def generate_tamil_script(episode: dict, research: str, continuity: str) -> str:
+    title_ta   = episode.get("title_tamil", "")
+    title_en   = episode.get("title_english", "")
+    target_min = episode.get("target_duration_min") or 12
+    bridge     = episode.get("bridge_angle", "")
+    regen_note = episode.get("regenerate_note", "")
+    module     = episode.get("module_name", "")
+
+    regen_section = f"\nSPECIAL INSTRUCTION: {regen_note}\n" if regen_note else ""
+
+    prompt = f"""You are writing a Tamil YouTube script for "I Have a Cause" — a philosophy channel for the Tamil diaspora.
+{regen_section}
+Episode: {title_ta} ({title_en})
+Module: {module}
+Target: {target_min} minutes spoken aloud (approx {target_min * 130} Tamil words)
+
+RESEARCH TO USE:
+{research}
+
+{continuity}
+
+SCRIPT REQUIREMENTS:
+- Write entirely in Tamil (Unicode — no transliteration)
+- Opening hook: a powerful question or story that grabs attention in first 20 seconds
+- Natural conversational tone — like an intelligent friend explaining, not a lecture
+- Use the analogies from research but make them feel fresh
+- Include moments of wonder, humour where appropriate
+- Each concept must build on the previous one
+- Closing: meaningful summary + tease for next episode
+- Add [PAUSE] markers where the speaker should pause for effect
+- Add [EMPHASIS] markers on key Tamil philosophical terms
+
+CRITICAL: Do not repeat examples, stories or analogies used in previous episodes (listed in continuity context above).
+
+Write the COMPLETE script now. Do not truncate."""
+
+    print("  📝 Generating Tamil script...")
+    return generate_with_retry(prompt, MIN_WORDS_LONG, "Tamil script")
+
+
+def generate_english_script(episode: dict, research: str, continuity: str, tamil_script: str) -> str:
+    title_en   = episode.get("title_english", "")
+    title_ta   = episode.get("title_tamil", "")
+    target_min = episode.get("target_duration_min") or 12
+    bridge     = episode.get("bridge_angle", "")
+    regen_note = episode.get("regenerate_note", "")
+    module     = episode.get("module_name", "")
+
+    regen_section = f"\nSPECIAL INSTRUCTION: {regen_note}\n" if regen_note else ""
+
+    prompt = f"""You are writing an English YouTube script for "I Have a Cause" — a Tamil philosophy channel for the global diaspora.
+{regen_section}
+Episode: {title_en} (Tamil: {title_ta})
+Module: {module}
+Target: {target_min} minutes spoken aloud (approx {target_min * 140} English words)
+
+RESEARCH TO USE:
+{research}
+
+{continuity}
+
+TAMIL SCRIPT THEMES (already written — align but do NOT copy):
+{tamil_script[:800]}...
+
+SCRIPT REQUIREMENTS:
+- Write entirely in English
+- Adapt for a global Tamil diaspora — use Tamil terms with brief English explanations in brackets
+- Same conversational intelligence as Tamil version but natural English rhythm
+- Same philosophical depth — different cultural entry points where relevant
+- Include [PAUSE] and [EMPHASIS] markers same as Tamil
+- Opening hook must be different from Tamil version — find a fresh angle
+- Closing: drive viewers to subscribe and mention the Tamil version exists
+
+CRITICAL: Do not repeat examples from previous episodes (listed in continuity context).
+
+Write the COMPLETE script now. Do not truncate."""
+
+    print("  📝 Generating English script...")
+    return generate_with_retry(prompt, MIN_WORDS_LONG, "English script")
+
+
+# ── Script summary (peer review fix #1) ──────────────────────────────────────
+
+def generate_script_summary(episode: dict, research: str, tamil_script: str) -> str:
+    title = episode.get("title_english") or episode.get("title_tamil", "")
+    prompt = f"""Summarise this episode in exactly 6 bullet points for use as continuity context in FUTURE episodes.
+Focus on: key concepts explained, analogies used, stories told, Tamil terms introduced, examples given.
+This will be read by AI when writing future episodes to AVOID repetition.
+
+Episode: {title}
+Research themes: {research[:1500]}
+Script excerpt: {tamil_script[:1000]}
+
+Return ONLY 6 short bullet points starting with • 
+No preamble. No headings. Just the 6 bullets."""
+
+    print("  📋 Generating script summary...")
+    try:
+        summary = generate(prompt)
+        return summary
+    except Exception as e:
+        print(f"  ⚠️  Summary generation failed: {e} — skipping")
         return ""
-    prefs_by_cat = {}
-    for row in rows:
-        cat = row["category"]
-        if cat not in prefs_by_cat:
-            prefs_by_cat[cat] = []
-        prefs_by_cat[cat].append(row["preference"])
-    lines = []
-    for cat, prefs in prefs_by_cat.items():
-        lines.append(f"{cat.upper()} PREFERENCES:")
-        for p in prefs:
-            lines.append(f"  - {p}")
-    return "\n".join(lines)
 
-# ── Step 1: Deep Research ─────────────────────────────────────
-def deep_research(episode, previous_episodes):
-    print(f"\n🔍 Step 1: Deep Research for Episode {EPISODE_NUMBER}")
 
-    prev_block = f"\n\n{previous_episodes}" if previous_episodes else ""
+# ── Short-form platform scripts ───────────────────────────────────────────────
 
-    prompt = f"""You are a deep research assistant for a Tamil philosophy YouTube channel called "I Have a Cause."
+def generate_platform_scripts(episode: dict, research: str, tamil_script: str, english_script: str, language: str) -> dict:
+    """
+    Generate all short-form scripts in one efficient Gemini call per language.
+    Returns dict with keys: shorts, reels, x_post, x_thread
+    """
+    title     = episode.get(f"title_{language}") or episode.get("title_english", "")
+    ep_num    = episode.get("episode_number", 1)
+    module    = episode.get("module_name", "")
+    yt_url    = YOUTUBE_CHANNEL_URL
+    lang_note = "Tamil" if language == "tamil" else "English"
+    script_ref = tamil_script if language == "tamil" else english_script
 
-Research this episode topic thoroughly:
+    prompt = f"""You are a social media content writer for "I Have a Cause" — a Tamil philosophy YouTube channel.
 
-Episode: {episode['episode_number']} — {episode['title_english']}
-Tamil Title: {episode['title_tamil']}
-Module: {episode['module']}
-Pillar: {episode['pillar']}
-Bridge/Angle: {episode['bridge']}
-Key Sources: {episode['research_source']}
-Target Duration: {episode['target_duration_min']} minutes{prev_block}
+Episode: EP {ep_num:02d} — {title}
+Module: {module}
+Language: {lang_note}
+YouTube channel: {yt_url}
 
-Provide comprehensive research covering:
-1. CORE PHILOSOPHY: The main philosophical concept explained deeply (3-4 paragraphs)
-2. KEY SOURCES: Specific quotes, verses, slokas from the sources listed above
-3. MODERN CONNECTIONS: How this ancient wisdom connects to modern science, psychology, daily life
-4. TAMIL CONTEXT: Tamil poets, saints, literature (Thiruvalluvar, Vallalar, Avvaiyar, Sangam etc.)
-5. HOOK IDEAS: 3 powerful opening hooks that stop a Tamil viewer from scrolling
-6. KEY INSIGHTS: 5-7 profound insights from this topic
-7. STORY/ANALOGY: A compelling story or analogy that makes this concept tangible
-8. SOCIAL CONNECTION: How this philosophy applies to social reform and compassion
+EPISODE SUMMARY (to base all content on):
+{script_ref[:1500]}
 
-IMPORTANT: Research must be FRESH — do not cover ground already explored in previous episodes above.
-Go deeper, find new angles, use different examples and stories.
+Generate ALL FOUR of the following in {lang_note}. Return as valid JSON only — no markdown, no preamble.
 
-Research deeply. This will power a {episode['target_duration_min']}-minute YouTube video script."""
+{{
+  "shorts": "<60-second TEASER script — hook the viewer in first 5 seconds, reveal just enough to make them want the full video, end with 'Full episode on YouTube: {yt_url}'. Natural spoken {lang_note}. 80-120 words.>",
 
-    research = generate(prompt)
-    print(f"   ✅ Research complete ({len(research)} chars)")
-    return research
+  "reels": "<30-45 second VERTICAL REEL script — punchy opening question or shocking philosophical fact, one core insight from the episode, strong call to action 'Watch the full episode — link in bio'. Written for vertical short-form video. 60-90 words.>",
 
-# ── Step 2: Tamil Script ──────────────────────────────────────
-def generate_tamil_script(episode, research, preferences, previous_episodes):
-    print(f"\n✍️  Step 2: Tamil Script")
-    pref_block = f"\n\nCHANNEL PREFERENCES (always apply):\n{preferences}" if preferences else ""
-    prev_block = f"\n\n{previous_episodes}" if previous_episodes else ""
+  "x_post": "<Single X/Twitter post — one powerful insight from the episode as a thought-provoking statement or question. Max 240 characters. Include hashtags: #IHaveACause #TamilPhilosophy #Consciousness. Include YouTube link.>",
 
-    target_min   = episode['target_duration_min']
-    target_words = target_min * 110  # ~110 Tamil words/min at 0.85x speed
+  "x_thread": "<5-tweet thread. Tweet 1: hook question. Tweets 2-4: one insight per tweet (each under 240 chars). Tweet 5: CTA with YouTube link. Format as: TWEET_1: ... | TWEET_2: ... | TWEET_3: ... | TWEET_4: ... | TWEET_5: ...>"
+}}
 
-    prompt = f"""நீங்கள் "I Have a Cause" YouTube சேனலுக்கான expert Tamil script writer.
+IMPORTANT: Return ONLY the JSON object. No text before or after."""
 
-சேனலின் குணாதிசயங்கள்:
-- அமைதியான, அறிவார்ந்த, இரக்கமுள்ள குரல்
-- தத்துவம் மற்றும் நவீன அறிவியலை இணைக்கும்
-- சமூக சீர்திருத்தத்தை ஆதரிக்கும்
-- Tamil diaspora மற்றும் Tamil Nadu பார்வையாளர்கள்
-- எளிய Tamil பேச்சு வழக்கு — சாதாரண மனிதர்களுக்கு புரியும் வகையில்{pref_block}{prev_block}
-
-EPISODE விவரங்கள்:
-எண்: {episode['episode_number']}
-தலைப்பு: {episode['title_tamil']}
-Module: {episode['module']}
-Bridge/Angle: {episode['bridge']}
-Sources: {episode['research_source']}
-Target Duration: {target_min} நிமிடங்கள் (~{target_words} words)
-
-RESEARCH:
-{research}
-
-கட்டாய விதிகள் — இவற்றை கண்டிப்பாக பின்பற்றவும்:
-
-1. மொழி: Script முழுவதும் 100% தமிழில் இருக்க வேண்டும்.
-   எந்த English words-உம் கூடாது — ஒரு வார்த்தை கூட வேண்டாம்.
-   English words-க்கு தமிழ் மாற்றங்கள்:
-   - YouTube → யூடியூப்
-   - Subscribe → சந்தா செய்யுங்கள் / குழுசேருங்கள்
-   - Like → விரும்பல் குறி போடுங்கள்
-   - Comment → கருத்து பகிருங்கள்
-   - Share → பகிருங்கள்
-   - Module → தொகுதி
-   - Episode → அத்தியாயம்
-   - Channel → சேவை
-   - Notification → அறிவிப்பு
-   - Bell → மணி
-   - Science → அறிவியல்
-   - Psychology → உளவியல்
-   - Research → ஆராய்ச்சி
-   - Modern → நவீன
-   - Video → காணொளி
-
-2. வடிவம்: தொடர்ச்சியான பேச்சு வழக்கில் மட்டுமே எழுதவும்.
-   - எந்த section headings வேண்டாம்
-   - எந்த timestamps வேண்டாம்
-   - எந்த markdown வேண்டாம் (**bold**, *italic*, bullets, numbers)
-   - [stage directions] வேண்டாம்
-   - Camera முன்பு பேசுவது போல் இயல்பான உரையாடல் வடிவம்
-
-3. தொடக்கம்: Script நேரடியாக hook-உடன் தொடங்கட்டும்.
-   எந்த label-உம், header-உம் வேண்டாம்.
-
-4. நீளம்: குறைந்தது {target_words} words எழுதவும்.
-
-5. ஆழம்: தத்துவத்தை எளிய வார்த்தைகளில் விளக்கவும்.
-   கடினமான கருத்துக்களை அன்றாட உதாரணங்களால் புரிய வையுங்கள்.
-   ஒவ்வொரு கருத்தையும் படிப்படியாக, தெளிவாக விரிவுபடுத்தவும்.
-
-6. மீண்டும் சொல்லாதீர்கள்: ஒரு கருத்தை ஒரு முறை மட்டுமே சொல்லவும்.
-   அதே கருத்தை வேறு வார்த்தைகளில் திரும்ப சொல்வது கூடாது.
-   ஒவ்வொரு வாக்கியமும் புதிய தகவல் அல்லது புதிய கோணம் தர வேண்டும்.
-   முன்னர் சொன்னதை சுருக்கமாக திரும்ப சொல்வது கூடாது — அதற்கு பதில் ஆழமாக செல்லவும்.
-
-FLOW (labels இல்லாமல்):
-பார்வையாளரை உடனே கட்டிப் போடும் தொடக்கம் → episode அறிமுகம் → core philosophy விரிவாக → examples, stories, modern connections → சமூக மாற்றத்துடன் தொடர்பு → summary, குழுசேருங்கள் கோரிக்கை, அடுத்த அத்தியாயம் preview."""
-
-    script = generate(prompt)
-    print(f"   ✅ Tamil script complete ({len(script)} chars)")
-    return script
-
-# ── Step 3: English Script ────────────────────────────────────
-def generate_english_script(episode, research, preferences, previous_episodes):
-    print(f"\n✍️  Step 3: English Script")
-    eng_prefs  = f"\n\nCHANNEL PREFERENCES (always apply):\n{preferences}" if preferences else ""
-    prev_block = f"\n\n{previous_episodes}" if previous_episodes else ""
-
-    target_min   = episode['target_duration_min']
-    target_words = target_min * 130  # ~130 English words/min at 0.85x speed
-
-    prompt = f"""You are an expert English script writer for "I Have a Cause" — a Tamil philosophy YouTube channel.
-
-Channel voice:
-- Calm, intellectual, compassionate tone
-- Bridges ancient Vedic wisdom with modern science
-- Champions social reform and animal consciousness
-- Audience: Tamil diaspora (UK, USA, Canada, Singapore) + global seekers
-- Think: Alan Watts meets Sadhguru in English
-- Explain complex philosophy in simple, everyday language anyone can understand{eng_prefs}{prev_block}
-
-EPISODE DETAILS:
-Number: {episode['episode_number']}
-Title: {episode['title_english']}
-Module: {episode['module']}
-Bridge/Angle: {episode['bridge']}
-Sources: {episode['research_source']}
-Target Duration: {target_min} minutes (~{target_words} words)
-
-RESEARCH:
-{research}
-
-CRITICAL RULES — follow exactly:
-1. LANGUAGE: Write the ENTIRE script in English only. Not a single word in Tamil, Hindi,
-   or any other language. Every word must be English.
-2. Write the entire script as continuous flowing spoken prose.
-3. NO section headings, NO timestamps, NO markdown formatting.
-4. NO bullet points, NO numbered lists, NO bold/italic.
-5. Write exactly as you would speak to a camera — natural, warm, intelligent.
-6. Start directly with the hook — no labels, no preamble.
-7. Minimum {target_words} words — rich, layered, profound.
-8. Break down every complex idea with simple analogies and real-life examples.
-9. NO REPETITION: State each idea exactly once. Never restate the same concept
-   in different words. Every sentence must introduce something NEW — a fresh
-   insight, a new example, or a deeper layer. Forward momentum only.
-   If you find yourself summarizing what you just said, delete it and go deeper instead.
-
-FLOW (no headings):
-Powerful hook → ease into episode → unpack core philosophy with examples, analogies,
-science, stories → connect to social reform and compassion → meaningful summary +
-subscribe ask + next episode teaser."""
-
-    script = generate(prompt)
-    print(f"   ✅ English script complete ({len(script)} chars)")
-    return script
-
-# ── Save scripts ──────────────────────────────────────────────
-def save_scripts(tamil_script, english_script):
-    print(f"\n💾 Saving to Supabase...")
-    ok_ta = db_patch("tamil_episodes", "episode_number", EPISODE_NUMBER, {
-        "script_tamil": tamil_script,
-        "status":       "script_ready",
-    })
-    print(f"   Tamil:   {'✅' if ok_ta else '❌'}")
-
-    ok_en = db_patch("english_episodes", "episode_number", EPISODE_NUMBER, {
-        "script_english": english_script,
-        "status":         "script_ready",
-    })
-    print(f"   English: {'✅' if ok_en else '❌'}")
-    return ok_ta and ok_en
-
-# ── Save preference from regenerate note ──────────────────────
-def save_preference_if_noted(episode):
-    note = episode.get("regenerate_note", "")
-    if not note:
-        return
-    note_lower = note.lower()
-    if any(w in note_lower for w in ["image", "visual", "photo", "scene", "colour", "color"]):
-        category = "image"
-    elif any(w in note_lower for w in ["voice", "audio", "tone", "speed", "pace"]):
-        category = "voice"
-    elif any(w in note_lower for w in ["infographic", "svg", "diagram", "chart"]):
-        category = "infographic"
-    else:
-        category = "script"
-    requests.post(
-        f"{REST}/channel_preferences",
-        headers=SB_HEADERS,
-        json={"category": category, "preference": note,
-              "episode_number": EPISODE_NUMBER, "is_active": True},
-        timeout=10
-    )
-    print(f"   💡 Preference saved: [{category}] {note[:60]}")
-
-# ── Main ──────────────────────────────────────────────────────
-def main():
-    print("=" * 60)
-    print(f"🎬 Script Generator (Vertex AI) — Episode {EPISODE_NUMBER}")
-    print(f"   {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print("=" * 60)
-
-    episode = fetch_episode()
-    if not episode:
-        print(f"❌ Episode {EPISODE_NUMBER} not found")
-        return
-
-    print(f"\n📖 {episode['title_english']}")
-    print(f"   Module: {episode['module']}")
-    print(f"   Bridge: {episode['bridge']}")
-
-    if episode.get("regenerate_note"):
-        print(f"   🔄 Regen: {episode['regenerate_note']}")
-        save_preference_if_noted(episode)
-
-    db_patch("tamil_episodes",   "episode_number", EPISODE_NUMBER, {"status": "generating"})
-    db_patch("english_episodes", "episode_number", EPISODE_NUMBER, {"status": "generating"})
-
-    preferences        = fetch_preferences()
-    previous_episodes  = fetch_previous_episodes()
-
-    if preferences:
-        print(f"\n📋 Channel preferences loaded")
-    if previous_episodes:
-        prev_count = previous_episodes.count("Episode ")
-        print(f"📚 {prev_count} previous episodes loaded as context")
+    print(f"  📱 Generating {lang_note} platform scripts (Shorts + Reels + X)...")
 
     try:
-        research       = deep_research(episode, previous_episodes)
-        tamil_script   = generate_tamil_script(episode, research, preferences, previous_episodes)
-        english_script = generate_english_script(episode, research, preferences, previous_episodes)
-        success        = save_scripts(tamil_script, english_script)
+        raw = generate(prompt)
+        # Strip any accidental markdown fences
+        raw = raw.strip()
+        if raw.startswith("```"):
+            raw = raw.split("```")[1]
+            if raw.startswith("json"):
+                raw = raw[4:]
+        raw = raw.strip()
+        data = json.loads(raw)
+        return {
+            "shorts":   data.get("shorts", ""),
+            "reels":    data.get("reels", ""),
+            "x_post":   data.get("x_post", ""),
+            "x_thread": data.get("x_thread", ""),
+        }
+    except Exception as e:
+        print(f"  ⚠️  Platform scripts parse error: {e}")
+        return {"shorts": "", "reels": "", "x_post": "", "x_thread": ""}
 
-        if success:
-            print(f"\n{'='*60}")
-            print(f"✅ Episode {EPISODE_NUMBER} — Both scripts ready!")
-            print(f"{'='*60}")
-        else:
-            print(f"\n❌ Save failed")
-            db_patch("tamil_episodes",   "episode_number", EPISODE_NUMBER, {"status": "pending"})
-            db_patch("english_episodes", "episode_number", EPISODE_NUMBER, {"status": "pending"})
+
+# ── Main episode processor ────────────────────────────────────────────────────
+
+def process_episode(episode: dict, table: str):
+    ep_id  = episode["id"]
+    ep_num = episode.get("episode_number", "?")
+    title  = episode.get("title_english") or episode.get("title_tamil", "Unknown")
+
+    print(f"\n{'='*60}")
+    print(f"🎬 Processing EP {ep_num}: {title}")
+    print(f"{'='*60}")
+
+    try:
+        # Mark as generating
+        set_status(table, ep_id, "generating")
+
+        # Fetch continuity context
+        previous = fetch_previous_episodes(table, ep_num)
+        continuity = build_continuity_context(previous)
+        print(f"  📖 Continuity context: {len(previous)} previous episodes")
+
+        # 1. Research
+        research = generate_research(episode)
+        print(f"  ✅ Research: {len(research.split())} words")
+        time.sleep(2)
+
+        # 2. Tamil long script
+        tamil_script = generate_tamil_script(episode, research, continuity)
+        time.sleep(2)
+
+        # 3. English long script
+        english_script = generate_english_script(episode, research, continuity, tamil_script)
+        time.sleep(2)
+
+        # 4. Script summary for continuity
+        summary = generate_script_summary(episode, research, tamil_script)
+        time.sleep(1)
+
+        # 5. Tamil platform scripts (Shorts + Reels + X)
+        tamil_platforms = generate_platform_scripts(episode, research, tamil_script, english_script, "tamil")
+        time.sleep(2)
+
+        # 6. English platform scripts
+        english_platforms = generate_platform_scripts(episode, research, tamil_script, english_script, "english")
+        time.sleep(1)
+
+        # 7. Save everything to Supabase
+        updates = {
+            # Long scripts
+            "script_tamil":             tamil_script,
+            "script_english":           english_script,
+            "research_brief":           research,
+
+            # Continuity (peer review fix #1)
+            "script_summary":           summary,
+
+            # Tamil platform scripts
+            "script_shorts_tamil":      tamil_platforms["shorts"],
+            "script_reels_tamil":       tamil_platforms["reels"],
+            "script_x_post_tamil":      tamil_platforms["x_post"],
+            "script_x_thread_tamil":    tamil_platforms["x_thread"],
+
+            # English platform scripts
+            "script_shorts_english":    english_platforms["shorts"],
+            "script_reels_english":     english_platforms["reels"],
+            "script_x_post_english":    english_platforms["x_post"],
+            "script_x_thread_english":  english_platforms["x_thread"],
+
+            # Platform statuses — all start at script_ready
+            "status":                   "script_ready",
+            "status_shorts":            "script_ready",
+            "status_reels":             "script_ready",
+            "status_x":                 "script_ready",
+
+            # Peer review fix #3 — clear regenerate_note after use
+            "regenerate_note":          None,
+        }
+
+        update_episode(table, ep_id, updates)
+        print(f"\n  🎉 EP {ep_num} complete — all scripts saved")
+
+    except TimeoutError as e:
+        print(f"  ⏰ Timeout on EP {ep_num}: {e}")
+        set_status(table, ep_id, "pending")
 
     except Exception as e:
-        import traceback
-        print(f"\n❌ Error: {e}")
-        traceback.print_exc()
-        db_patch("tamil_episodes",   "episode_number", EPISODE_NUMBER, {"status": "pending"})
-        db_patch("english_episodes", "episode_number", EPISODE_NUMBER, {"status": "pending"})
+        print(f"  ❌ Error on EP {ep_num}: {e}")
+        set_status(table, ep_id, "pending")
+        raise
+
+
+# ── Entry point ───────────────────────────────────────────────────────────────
+
+def main():
+    tables = [
+        ("tamil_episodes",   "Tamil"),
+        ("english_episodes", "English"),
+    ]
+
+    total_processed = 0
+
+    for table, lang_label in tables:
+        print(f"\n{'#'*60}")
+        print(f"# {lang_label} episodes")
+        print(f"{'#'*60}")
+
+        episodes = fetch_pending_episodes(table)
+
+        if not episodes:
+            print(f"  No pending {lang_label} episodes.")
+            continue
+
+        print(f"  Found {len(episodes)} pending episodes.")
+
+        for episode in episodes:
+            process_episode(episode, table)
+            total_processed += 1
+            time.sleep(3)  # Breathing room between episodes
+
+    print(f"\n{'='*60}")
+    print(f"✅ Done — processed {total_processed} episodes total")
+    print(f"{'='*60}")
+
 
 if __name__ == "__main__":
     main()
