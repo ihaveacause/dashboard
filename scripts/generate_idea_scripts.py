@@ -18,18 +18,18 @@ import signal
 import sys
 import time
 
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 from supabase import create_client, Client
 
 # ── Config ────────────────────────────────────────────────────
-# Matches script_generator.py exactly — uses Gemini API key, not Vertex AI
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or os.environ["SUPABASE_KEY"]
 GEMINI_KEY   = os.environ["GEMINI_API_KEY"]
 IDEA_ID      = os.environ["IDEA_ID"]
 
-genai.configure(api_key=GEMINI_KEY)
-model = genai.GenerativeModel("gemini-2.5-pro-preview-05-06")
+client = genai.Client(api_key=GEMINI_KEY)
+MODEL  = "gemini-2.5-pro-preview-05-06"
 
 YOUTUBE_CHANNEL_URL = "https://www.youtube.com/@IHaveACause"
 MIN_WORDS_LONG      = 1200
@@ -76,12 +76,11 @@ def generate(prompt: str) -> str:
     signal.signal(signal.SIGALRM, _timeout_handler)
     signal.alarm(TIMEOUT_SECONDS)
     try:
-        response = model.generate_content(prompt)
-        text_parts = []
-        for part in response.candidates[0].content.parts:
-            if hasattr(part, "text") and part.text:
-                text_parts.append(part.text)
-        return "\n".join(text_parts).strip()
+        response = client.models.generate_content(
+            model=MODEL,
+            contents=prompt,
+        )
+        return response.text.strip()
     finally:
         signal.alarm(0)
 
