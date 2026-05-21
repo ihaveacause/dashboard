@@ -22,9 +22,19 @@ _tmp.close()
 os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = _tmp.name
 
 # ── Gemini via google.genai with ADC (no API key needed) ──────
+import google.auth
+from google.auth.transport.requests import Request
 from google import genai
 
-client = genai.Client()  # Uses GOOGLE_APPLICATION_CREDENTIALS automatically
+# Explicitly load ADC credentials from the service account file we wrote above
+_credentials, _project = google.auth.default(
+    scopes=[
+        "https://www.googleapis.com/auth/generative-language",
+        "https://www.googleapis.com/auth/cloud-platform",
+    ]
+)
+_credentials.refresh(Request())
+client = genai.Client(credentials=_credentials)
 MODEL  = "gemini-2.5-pro-preview-05-06"
 
 # ── Config ────────────────────────────────────────────────────
