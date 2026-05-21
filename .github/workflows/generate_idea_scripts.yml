@@ -23,15 +23,14 @@ jobs:
           python-version: '3.11'
 
       - name: Install dependencies
-        run: |
-          pip install google-generativeai supabase
+        run: pip install requests google-auth google-cloud-aiplatform google-generativeai supabase
 
       - name: Generate idea scripts
         env:
-          SUPABASE_URL:    ${{ secrets.SUPABASE_URL }}
-          SUPABASE_KEY:    ${{ secrets.SUPABASE_KEY }}
-          GEMINI_API_KEY:  ${{ secrets.GEMINI_API_KEY }}
-          IDEA_ID:         ${{ inputs.idea_id }}
+          SUPABASE_URL:                        ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY:                        ${{ secrets.SUPABASE_KEY }}
+          GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
+          IDEA_ID:                             ${{ inputs.idea_id }}
         run: python scripts/generate_idea_scripts.py
 
       - name: Summary
