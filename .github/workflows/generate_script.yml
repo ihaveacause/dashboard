@@ -23,7 +23,7 @@ jobs:
           python-version: '3.11'
 
       - name: Install dependencies
-        run: pip install requests google-auth google-cloud-aiplatform
+        run: pip install requests google-auth google-cloud-aiplatform supabase
 
       - name: Generate script
         env:
@@ -31,4 +31,7 @@ jobs:
           SUPABASE_KEY:                        ${{ secrets.SUPABASE_KEY }}
           GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
           EPISODE_NUMBER:                      ${{ inputs.episode_number }}
-        run: python script_generator.py
+        run: python scripts/script_generator.py
+
+      - name: Summary
+        run: echo "✅ Episode ${{ inputs.episode_number }} — all scripts generated"
