@@ -23,7 +23,7 @@ jobs:
           python-version: '3.11'
 
       - name: Install dependencies
-        run: pip install requests google-auth google-cloud-aiplatform supabase
+        run: pip install requests google-auth google-cloud-aiplatform
 
       - name: Generate idea scripts
         env:
