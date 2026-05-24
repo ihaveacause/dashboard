@@ -1136,7 +1136,9 @@ function openImagesModal(n, isIdea=false, orientation='landscape') {
   let imageData = [];
   try {
     const src = isIdea
-      ? (orientation==='vertical' ? item.image_urls_vertical : item.image_urls_landscape)
+      ? (orientation==='vertical'
+          ? (item.image_urls_vertical || item.image_urls_landscape)  // fall back to landscape if vertical empty
+          : item.image_urls_landscape)
       : (orientation==='vertical' ? item.image_urls_vertical : item.image_urls);
     imageData = typeof src==='string' ? JSON.parse(src) : (src||[]);
   } catch(e) {}
