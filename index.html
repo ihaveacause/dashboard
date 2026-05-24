@@ -377,7 +377,9 @@ const EDGE_FN       = `${SB_URL}/functions/v1/trigger-script-gen`;
 const EDGE_IMG_FN   = `${SB_URL}/functions/v1/trigger-image-gen`;
 const EDGE_VIDEO_FN = `${SB_URL}/functions/v1/trigger-video-gen`;
 const EDGE_SVG_FN   = `${SB_URL}/functions/v1/trigger-svg-gen`;
-const EDGE_IDEA_FN  = `${SB_URL}/functions/v1/trigger-idea-gen`;
+const EDGE_IDEA_FN       = `${SB_URL}/functions/v1/trigger-idea-gen`;
+const EDGE_IDEA_IMG_FN   = `${SB_URL}/functions/v1/trigger-idea-image-gen`;
+const EDGE_IDEA_VIDEO_FN = `${SB_URL}/functions/v1/trigger-idea-video-gen`;
 
 const H = { 'apikey':SB_KEY,'Authorization':`Bearer ${SB_KEY}`,'Content-Type':'application/json' };
 const EDGE_H = { 'apikey':SB_KEY,'Authorization':`Bearer ${SB_KEY}`,'Content-Type':'application/json' };
@@ -907,8 +909,11 @@ async function quickApproveShorts(n, isIdea=false) {
 // ── Image & Video Actions ─────────────────────────────────────
 async function generateImages(n, isIdea=false, orientation='landscape') {
   try {
+    const edgeFn = isIdea ? EDGE_IDEA_IMG_FN : EDGE_IMG_FN;
+    const body   = isIdea ? {idea_id:n} : {episode_number:n};
     if (!isIdea) await patchTable(TABLE(),n,{[PLATFORMS[activePlatform].statusCol]:'generating_images'});
-    const r = await fetch(EDGE_IMG_FN,{method:'POST',headers:EDGE_H,body:JSON.stringify({episode_number:isIdea?undefined:n,idea_id:isIdea?n:undefined,orientation})});
+    else await patchIdea(n,{status:'generating_images'});
+    const r = await fetch(edgeFn,{method:'POST',headers:EDGE_H,body:JSON.stringify(body)});
     const data = await r.json();
     if (data.success) { showToast('Image generation started','success'); setTimeout(load,2000); }
     else throw new Error(data.error||'Error');
@@ -917,8 +922,11 @@ async function generateImages(n, isIdea=false, orientation='landscape') {
 
 async function generateVideo(n, isIdea=false) {
   try {
-    await patchTable(TABLE(),n,{[PLATFORMS[activePlatform].statusCol]:'rendering_video'});
-    const r = await fetch(EDGE_VIDEO_FN,{method:'POST',headers:EDGE_H,body:JSON.stringify({episode_number:n})});
+    const edgeFn = isIdea ? EDGE_IDEA_VIDEO_FN : EDGE_VIDEO_FN;
+    const body   = isIdea ? {idea_id:n} : {episode_number:n};
+    if (isIdea) await patchIdea(n,{status:'rendering_video'});
+    else await patchTable(TABLE(),n,{[PLATFORMS[activePlatform].statusCol]:'rendering_video'});
+    const r = await fetch(edgeFn,{method:'POST',headers:EDGE_H,body:JSON.stringify(body)});
     const data = await r.json();
     if (data.success) { showToast('Video rendering started','success'); setTimeout(load,2000); }
     else throw new Error(data.error||'Error');

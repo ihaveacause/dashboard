@@ -1,0 +1,47 @@
+name: Generate Idea Video
+
+on:
+  workflow_dispatch:
+    inputs:
+      idea_id:
+        description: 'Supabase idea UUID'
+        required: true
+        type: string
+
+jobs:
+  render-idea-video:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            ffmpeg \
+            fonts-noto \
+            fonts-noto-extra \
+            fonts-noto-color-emoji \
+            fonts-indic
+
+      - name: Install Python dependencies
+        run: pip install requests google-auth Pillow
+
+      - name: Render idea video
+        env:
+          SUPABASE_URL:                        ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY:                        ${{ secrets.SUPABASE_KEY }}
+          GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
+          IDEA_ID:                             ${{ inputs.idea_id }}
+        run: python scripts/idea_video_pipeline.py
+
+      - name: Summary
+        run: echo "✅ Idea ${{ inputs.idea_id }} — video rendered"

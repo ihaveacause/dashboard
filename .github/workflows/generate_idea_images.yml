@@ -1,0 +1,45 @@
+name: Generate Idea Images
+
+on:
+  workflow_dispatch:
+    inputs:
+      idea_id:
+        description: 'Supabase idea UUID'
+        required: true
+        type: string
+
+jobs:
+  generate-idea-images:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-imagen-${{ hashFiles('**/generate_idea_images.yml') }}
+          restore-keys: ${{ runner.os }}-pip-imagen-
+
+      - name: Install dependencies
+        run: pip install requests google-genai google-auth
+
+      - name: Generate idea images
+        env:
+          SUPABASE_URL:                        ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY:                        ${{ secrets.SUPABASE_KEY }}
+          GEMINI_API_KEY:                      ${{ secrets.GEMINI_API_KEY }}
+          GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
+          IDEA_ID:                             ${{ inputs.idea_id }}
+        run: python scripts/idea_image_pipeline.py
+
+      - name: Summary
+        run: echo "✅ Idea ${{ inputs.idea_id }} — images generated"
