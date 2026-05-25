@@ -215,6 +215,10 @@ RULES for each prompt:
 - Include TAMIL CULTURAL DETAILS from the brief anchor list
 - MINIMUM 50 words per prompt — more detail = better image
 - NEVER mention: text, writing, letters, words, numbers, signs, watermarks
+- NEVER use: floating, cosmic, universe, infinite void, surreal, abstract, ethereal space
+- Every image must be PHYSICALLY GROUNDED — a real place, a real person, a real object
+- If the topic is philosophical/cosmic, show it through HUMAN MOMENTS and REAL ENVIRONMENTS
+  e.g. NOT "cosmic consciousness floating in space" → YES "an old man meditating at dawn by a temple tank"
 
 Return ONLY valid JSON:
 [
