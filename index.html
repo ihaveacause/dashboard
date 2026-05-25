@@ -438,7 +438,7 @@ function buildActions(ep, s, n) {
   // ── Pending ──────────────────────────────────────────────
   if (s === 'pending')
     return `<div class="ep-actions">
-      <button class="btn btn-gen" onclick="triggerScript(${n})">⚡ Generate Script</button>
+      <button class="btn btn-gen" onclick="triggerScript(${n},'${lang}')">⚡ Generate Script</button>
     </div>`;
 
   // ── Generating ────────────────────────────────────────────
@@ -456,7 +456,7 @@ function buildActions(ep, s, n) {
   if (s === 'script_approved')
     return `<div class="ep-actions">
       <button class="btn btn-review" onclick="openScriptMod(${n})">📄 View Script</button>
-      <button class="btn btn-gen" onclick="triggerImages(${n})">🖼 Generate Images</button>
+      <button class="btn btn-gen" onclick="triggerImages(${n},'${lang}')">🖼 Generate Images</button>
     </div>`;
 
   // ── Images ready ──────────────────────────────────────────
@@ -550,21 +550,21 @@ function buildYtImagesSection(ep, n) {
       </label>
     </div>
     <div class="ep-actions" style="border-top:none;padding-top:0">
-      <button class="btn btn-gen" onclick="triggerVideo(${n})">🎬 Generate Video</button>
+      <button class="btn btn-gen" onclick="triggerVideo(${n},'${lang}')">🎬 Generate Video</button>
       <span style="font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace">Defaults used if no custom images uploaded</span>
     </div>
   </div>`;
 }
 
 // ── Actions ────────────────────────────────────────────────
-async function triggerScript(n) {
+async function triggerScript(n, language=lang) {
   const card = document.getElementById(`card-${n}`);
   const btn  = card?.querySelector('.btn-gen');
   if (btn) { btn.disabled=true; btn.textContent='⚙️ Triggering...'; }
   try {
     const r = await fetch(EDGE.script, {
       method:'POST', headers:H,
-      body: JSON.stringify({episode_number:n, language:lang})
+      body: JSON.stringify({episode_number:n, language})
     });
     const d = await r.json();
     if (d.success) {
@@ -578,11 +578,11 @@ async function triggerScript(n) {
   }
 }
 
-async function triggerImages(n) {
+async function triggerImages(n, language=lang) {
   try {
     const r = await fetch(EDGE.images, {
       method:'POST', headers:H,
-      body: JSON.stringify({episode_number:n, language:lang})
+      body: JSON.stringify({episode_number:n, language})
     });
     const d = await r.json();
     if (d.success) {
@@ -593,11 +593,11 @@ async function triggerImages(n) {
   } catch(e) { showToast(`Error: ${e.message}`,'error'); }
 }
 
-async function triggerVideo(n) {
+async function triggerVideo(n, language=lang) {
   try {
     const r = await fetch(EDGE.video, {
       method:'POST', headers:H,
-      body: JSON.stringify({episode_number:n, language:lang})
+      body: JSON.stringify({episode_number:n, language})
     });
     const d = await r.json();
     if (d.success) {
