@@ -1,0 +1,71 @@
+name: Post to X (Twitter)
+
+on:
+  workflow_dispatch:
+    inputs:
+      episode_number:
+        description: 'Episode number (leave blank for idea)'
+        required: false
+        type: string
+      idea_id:
+        description: 'Idea UUID (leave blank for episode)'
+        required: false
+        type: string
+      language:
+        description: 'Language: ta (Tamil) or en (English)'
+        required: true
+        default: 'ta'
+        type: choice
+        options:
+          - ta
+          - en
+      youtube_link:
+        description: 'Optional YouTube link to include in first tweet'
+        required: false
+        type: string
+
+jobs:
+  post-to-x:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-x-post-${{ hashFiles('**/post_to_x.yml') }}
+          restore-keys: ${{ runner.os }}-pip-x-post-
+
+      - name: Install Python dependencies
+        run: |
+          pip install requests tweepy
+
+      - name: Post thread to X
+        env:
+          SUPABASE_URL:          ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY:          ${{ secrets.SUPABASE_KEY }}
+          TWITTER_API_KEY:       ${{ secrets.TWITTER_API_KEY }}
+          TWITTER_API_SECRET:    ${{ secrets.TWITTER_API_SECRET }}
+          TWITTER_ACCESS_TOKEN:  ${{ secrets.TWITTER_ACCESS_TOKEN }}
+          TWITTER_ACCESS_SECRET: ${{ secrets.TWITTER_ACCESS_SECRET }}
+          EPISODE_NUMBER:        ${{ inputs.episode_number }}
+          IDEA_ID:               ${{ inputs.idea_id }}
+          LANGUAGE:              ${{ inputs.language }}
+          YOUTUBE_LINK:          ${{ inputs.youtube_link }}
+        run: python scripts/post_to_x.py
+
+      - name: Summary
+        run: |
+          echo "✅ Posted to X"
+          echo "   Episode: ${{ inputs.episode_number }}"
+          echo "   Idea:    ${{ inputs.idea_id }}"
+          echo "   Language: ${{ inputs.language }}"

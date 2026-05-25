@@ -1,0 +1,73 @@
+name: Generate Shorts Video
+
+on:
+  workflow_dispatch:
+    inputs:
+      episode_number:
+        description: 'Episode number (leave blank for idea)'
+        required: false
+        type: string
+      idea_id:
+        description: 'Idea UUID (leave blank for episode)'
+        required: false
+        type: string
+      language:
+        description: 'Language: ta (Tamil) or en (English)'
+        required: true
+        default: 'ta'
+        type: choice
+        options:
+          - ta
+          - en
+
+jobs:
+  generate-shorts-video:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install FFmpeg
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg
+          ffmpeg -version | head -1
+
+      - name: Install Tamil fonts (for any text overlays)
+        run: |
+          sudo apt-get install -y fonts-noto-tamil fonts-noto-cjk
+
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-shorts-${{ hashFiles('**/generate_shorts_video.yml') }}
+          restore-keys: ${{ runner.os }}-pip-shorts-
+
+      - name: Install Python dependencies
+        run: |
+          pip install requests google-auth google-cloud-texttospeech Pillow
+
+      - name: Generate shorts video
+        env:
+          SUPABASE_URL:                        ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY:                        ${{ secrets.SUPABASE_KEY }}
+          GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
+          EPISODE_NUMBER:                      ${{ inputs.episode_number }}
+          IDEA_ID:                             ${{ inputs.idea_id }}
+          LANGUAGE:                            ${{ inputs.language }}
+        run: python scripts/shorts_video_pipeline.py
+
+      - name: Summary
+        run: |
+          echo "✅ Shorts video generated"
+          echo "   Episode: ${{ inputs.episode_number }}"
+          echo "   Idea:    ${{ inputs.idea_id }}"
+          echo "   Language: ${{ inputs.language }}"

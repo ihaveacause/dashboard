@@ -1,0 +1,54 @@
+name: Generate X Images
+
+on:
+  workflow_dispatch:
+    inputs:
+      episode_number:
+        description: 'Episode number (leave blank for idea)'
+        required: false
+        type: string
+      idea_id:
+        description: 'Idea UUID (leave blank for episode)'
+        required: false
+        type: string
+
+jobs:
+  generate-x-images:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-x-images-${{ hashFiles('**/generate_x_images.yml') }}
+          restore-keys: ${{ runner.os }}-pip-x-images-
+
+      - name: Install Python dependencies
+        run: |
+          pip install requests google-genai google-auth Pillow
+
+      - name: Generate X images
+        env:
+          SUPABASE_URL:                        ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY:                        ${{ secrets.SUPABASE_KEY }}
+          GEMINI_API_KEY:                      ${{ secrets.GEMINI_API_KEY }}
+          GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
+          EPISODE_NUMBER:                      ${{ inputs.episode_number }}
+          IDEA_ID:                             ${{ inputs.idea_id }}
+        run: python scripts/x_image_pipeline.py
+
+      - name: Summary
+        run: |
+          echo "✅ X images generated (Tamil + English)"
+          echo "   Episode: ${{ inputs.episode_number }}"
+          echo "   Idea:    ${{ inputs.idea_id }}"

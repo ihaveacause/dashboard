@@ -1,0 +1,57 @@
+name: Upload Idea to YouTube
+
+on:
+  workflow_dispatch:
+    inputs:
+      idea_id:
+        description: 'Supabase idea UUID'
+        required: true
+        type: string
+      language:
+        description: 'Language: ta (Tamil) or en (English)'
+        required: true
+        default: 'ta'
+        type: choice
+        options:
+          - ta
+          - en
+
+jobs:
+  upload-idea-youtube:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Tamil fonts
+        run: sudo apt-get install -y fonts-noto-tamil
+
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-idea-yt-${{ hashFiles('**/upload_idea_to_youtube.yml') }}
+          restore-keys: ${{ runner.os }}-pip-idea-yt-
+
+      - name: Install Python dependencies
+        run: |
+          pip install requests google-auth google-api-python-client
+
+      - name: Upload idea to YouTube
+        env:
+          SUPABASE_URL:    ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY:    ${{ secrets.SUPABASE_KEY }}
+          YOUTUBE_OAUTH_JSON: ${{ secrets.YOUTUBE_OAUTH_JSON }}
+          IDEA_ID:         ${{ inputs.idea_id }}
+          LANGUAGE:        ${{ inputs.language }}
+        run: python scripts/upload_idea_to_youtube.py
+
+      - name: Summary
+        run: echo "✅ Idea ${{ inputs.idea_id }} — uploaded to YouTube (${{ inputs.language }})"
