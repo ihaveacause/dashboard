@@ -40,7 +40,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-video-v2-${{ hashFiles('**/generate_video.yml') }}
+          key: ${{ runner.os }}-pip-video-v2
 
       - name: Install Python dependencies
         run: |
@@ -54,7 +54,7 @@ jobs:
           GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
           EPISODE_NUMBER:                      ${{ inputs.episode_number }}
           LANGUAGE:                            ${{ inputs.language }}
-        run: python "New YouTube/scripts/generate_video.py"
+        run: python new_youtube/scripts/generate_video.py
 
       - name: Summary
         run: echo "✅ Video done — Episode ${{ inputs.episode_number }} (${{ inputs.language }})"
