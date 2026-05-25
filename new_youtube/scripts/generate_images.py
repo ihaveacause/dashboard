@@ -332,29 +332,31 @@ def main():
 
     print(f"\n📖 {episode['title_english']}")
 
-    # 2. Get script for this language
+    # 2. Get the correct row and script for this language
     table = "tamil_episodes" if LANGUAGE == "ta" else "english_episodes"
     if LANGUAGE == "en":
-        ep_en = db_get("english_episodes", {
-            "episode_number": f"eq.{EPISODE_NUMBER}", "select": "script_english"
+        ep_lang = db_get("english_episodes", {
+            "episode_number": f"eq.{EPISODE_NUMBER}", "select": "*"
         })
-        script = ep_en[0].get("script_english", "") if ep_en else ""
+        ep_lang = ep_lang[0] if ep_lang else {}
+        script  = ep_lang.get("script_english", "")
     else:
-        script = episode.get("script_tamil", "")
+        ep_lang = episode   # tamil_episodes row already fetched
+        script  = episode.get("script_tamil", "")
 
     if not script:
         print(f"❌ No script found for language '{LANGUAGE}' — generate script first")
         return
 
-    # 3. Check for existing images (for selective regeneration)
-    existing_raw = episode.get("image_urls_landscape") or episode.get("image_urls") or []
+    # 3. Check for existing images from the CORRECT language table
+    existing_raw = ep_lang.get("image_urls") or []
     if isinstance(existing_raw, str):
         try:
             existing_raw = json.loads(existing_raw)
         except:
             existing_raw = []
 
-    regen_note = episode.get("regenerate_note", "") or ""
+    regen_note = ep_lang.get("regenerate_note", "") or ""
     regen_scene_id  = None
     regen_direction = None
 
