@@ -46,7 +46,7 @@ jobs:
           GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
           EPISODE_NUMBER:                      ${{ inputs.episode_number }}
           LANGUAGE:                            ${{ inputs.language }}
-        run: python "New YouTube/scripts/generate_script.py"
+        run: python new_youtube/scripts/generate_script.py
 
       - name: Summary
         run: echo "✅ Script done — Episode ${{ inputs.episode_number }} (${{ inputs.language }})"
