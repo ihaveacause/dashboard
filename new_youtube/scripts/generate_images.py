@@ -103,10 +103,30 @@ def gemini(prompt, model="gemini-2.5-flash"):
     response = gemini_client.models.generate_content(model=model, contents=prompt)
     return response.text
 
-def gemini_json(prompt, model="gemini-2.5-flash"):
-    raw = gemini(prompt, model).strip()
-    raw = raw.replace("```json", "").replace("```", "").strip()
-    return json.loads(raw)
+def gemini_json(prompt, model="gemini-2.5-flash", retries=3):
+    """Call Gemini and parse JSON. Retries on malformed JSON."""
+    import re as _re
+    for attempt in range(retries):
+        try:
+            raw = gemini(prompt, model).strip()
+            raw = raw.replace("```json", "").replace("```", "").strip()
+            try:
+                return json.loads(raw)
+            except json.JSONDecodeError:
+                pass
+            arr = _re.search(r'\[[\s\S]*\]', raw)
+            if arr:
+                return json.loads(arr.group())
+            obj = _re.search(r'\{[\s\S]*\}', raw)
+            if obj:
+                return json.loads(obj.group())
+            raise ValueError("No valid JSON in response")
+        except Exception as e:
+            if attempt < retries - 1:
+                print(f"   ⚠️  JSON parse attempt {attempt+1} failed: {str(e)[:80]}. Retrying in 10s...")
+                import time; time.sleep(10)
+            else:
+                raise
 
 # ── Retry helper ──────────────────────────────────────────────
 def with_retry(fn, retries=3, wait=20):
