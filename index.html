@@ -564,7 +564,7 @@ async function triggerScript(n) {
   try {
     const r = await fetch(EDGE.script, {
       method:'POST', headers:H,
-      body: JSON.stringify({episode_number:n})
+      body: JSON.stringify({episode_number:n, language:lang})
     });
     const d = await r.json();
     if (d.success) {
@@ -582,7 +582,7 @@ async function triggerImages(n) {
   try {
     const r = await fetch(EDGE.images, {
       method:'POST', headers:H,
-      body: JSON.stringify({episode_number:n})
+      body: JSON.stringify({episode_number:n, language:lang})
     });
     const d = await r.json();
     if (d.success) {
@@ -597,7 +597,7 @@ async function triggerVideo(n) {
   try {
     const r = await fetch(EDGE.video, {
       method:'POST', headers:H,
-      body: JSON.stringify({episode_number:n})
+      body: JSON.stringify({episode_number:n, language:lang})
     });
     const d = await r.json();
     if (d.success) {
