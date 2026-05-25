@@ -1,17 +1,25 @@
-name: Generate Episode Images
+name: Generate Images (New YouTube)
 
 on:
   workflow_dispatch:
     inputs:
       episode_number:
-        description: 'Episode number to generate images for'
+        description: 'Episode number'
         required: true
         type: string
+      language:
+        description: 'Language: ta (Tamil) or en (English)'
+        required: true
+        default: 'ta'
+        type: choice
+        options:
+          - ta
+          - en
 
 jobs:
   generate-images:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
 
     steps:
       - name: Checkout repo
@@ -22,12 +30,11 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Cache pip packages
+      - name: Cache pip
         uses: actions/cache@v4
         with:
           path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-imagen-${{ hashFiles('**/generate_images.yml') }}
-          restore-keys: ${{ runner.os }}-pip-imagen-
+          key: ${{ runner.os }}-pip-images-v2
 
       - name: Install dependencies
         run: pip install requests google-genai google-auth
@@ -36,7 +43,10 @@ jobs:
         env:
           SUPABASE_URL:                        ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY:                        ${{ secrets.SUPABASE_KEY }}
-          GEMINI_API_KEY:                      ${{ secrets.GEMINI_API_KEY }}
           GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
           EPISODE_NUMBER:                      ${{ inputs.episode_number }}
-        run: python image_pipeline.py
+          LANGUAGE:                            ${{ inputs.language }}
+        run: python "New YouTube/scripts/generate_images.py"
+
+      - name: Summary
+        run: echo "✅ Images done — Episode ${{ inputs.episode_number }} (${{ inputs.language }})"

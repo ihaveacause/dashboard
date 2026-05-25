@@ -4,231 +4,172 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>I Have a Cause — Dashboard</title>
-<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&family=Inter:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500&family=Inter:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 :root {
   --bg:#080a0f;--surface:#0f1218;--surface2:#161b24;--surface3:#1c2230;
   --border:#1e2535;--border2:#252d40;--text:#dde3f0;--muted:#5a6480;--muted2:#8892aa;
   --accent:#e8412a;--accent2:#ff6b4a;
-  --tamil:#f59e0b;--tamil-dim:rgba(245,158,11,0.12);
-  --english:#3b82f6;--english-dim:rgba(59,130,246,0.12);
-  --green:#10b981;--green-dim:rgba(16,185,129,0.12);
-  --purple:#8b5cf6;--purple-dim:rgba(139,92,246,0.12);
-  --teal:#14b8a6;--teal-dim:rgba(20,184,166,0.12);
-  --red:#ef4444;--red-dim:rgba(239,68,68,0.12);
-  --yellow:#f59e0b;--yellow-dim:rgba(245,158,11,0.12);
-  --orange:#f97316;--orange-dim:rgba(249,115,22,0.12);
-  --blue:#3b82f6;--blue-dim:rgba(59,130,246,0.12);
-  --yt:#ff3333;--yt-dim:rgba(255,51,51,0.1);
-  --shorts:#ff6600;--shorts-dim:rgba(255,102,0,0.1);
-  --xc:#e7e9ea;--x-dim:rgba(231,233,234,0.08);
-  --idea:#a78bfa;--idea-dim:rgba(167,139,250,0.12);
-  --stats:#22d3ee;--stats-dim:rgba(34,211,238,0.1);
+  --ta:#f59e0b;--ta-dim:rgba(245,158,11,.12);
+  --en:#3b82f6;--en-dim:rgba(59,130,246,.12);
+  --green:#10b981;--green-dim:rgba(16,185,129,.12);
+  --purple:#8b5cf6;--purple-dim:rgba(139,92,246,.12);
+  --teal:#14b8a6;--teal-dim:rgba(20,184,166,.12);
+  --yellow:#f59e0b;--orange:#f97316;--orange-dim:rgba(249,115,22,.12);
+  --blue:#3b82f6;--blue-dim:rgba(59,130,246,.12);
+  --red:#ef4444;--red-dim:rgba(239,68,68,.12);
+  --yt:#ff3333;--yt-dim:rgba(255,51,51,.1);
+  --stats:#22d3ee;
 }
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden}
+body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-height:100vh}
 
-.loading-bar{height:2px;background:linear-gradient(90deg,var(--accent),var(--accent2),var(--accent));background-size:200% 100%;animation:loadbar 1.2s ease infinite;position:fixed;top:0;left:0;right:0;z-index:9999;display:none}
-.loading-bar.show{display:block}
-@keyframes loadbar{0%{background-position:100% 0}100%{background-position:-100% 0}}
-
-/* L1 Topbar */
-.topbar{display:flex;align-items:center;padding:0 28px;height:58px;background:var(--surface);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:200;gap:0}
-.logo{font-family:'Syne',sans-serif;font-size:16px;font-weight:800;letter-spacing:-0.3px;white-space:nowrap;margin-right:32px}
+/* Topbar */
+.topbar{display:flex;align-items:center;padding:0 28px;height:56px;background:var(--surface);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:300;gap:0}
+.logo{font-family:'Syne',sans-serif;font-size:16px;font-weight:800;letter-spacing:-.3px;margin-right:36px;white-space:nowrap}
 .logo em{color:var(--accent);font-style:normal}
 .l1-nav{display:flex;gap:2px;flex:1}
-.l1-btn{padding:0 20px;height:58px;font-family:'Syne',sans-serif;font-size:13px;font-weight:700;border:none;background:none;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;transition:all .2s;white-space:nowrap;margin-bottom:-1px}
+.l1-btn{padding:0 20px;height:56px;font-family:'Syne',sans-serif;font-size:13px;font-weight:700;border:none;background:none;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;transition:all .2s;margin-bottom:-1px}
 .l1-btn:hover{color:var(--text)}
-.l1-btn.active-stats{color:var(--stats);border-bottom-color:var(--stats)}
 .l1-btn.active-series{color:var(--text);border-bottom-color:var(--text)}
-.l1-btn.active-ideas{color:var(--idea);border-bottom-color:var(--idea)}
-.topbar-right{margin-left:auto;display:flex;gap:10px;align-items:center}
-.btn-gen-all{padding:8px 18px;background:var(--accent);border:none;border-radius:8px;color:white;font-family:'Syne',sans-serif;font-size:13px;font-weight:700;cursor:pointer;transition:all .2s;white-space:nowrap}
-.btn-gen-all:hover{background:var(--accent2);transform:translateY(-1px)}
-.btn-gen-all:disabled{opacity:.5;cursor:not-allowed;transform:none}
+.l1-btn.active-stats{color:var(--stats);border-bottom-color:var(--stats)}
 
-/* L2 Platform Tabs */
-.platform-bar{background:var(--surface);border-bottom:1px solid var(--border);position:sticky;top:58px;z-index:199;padding:0 28px;display:flex;align-items:center;gap:2px;overflow-x:auto;scrollbar-width:none}
-.platform-bar::-webkit-scrollbar{display:none}
-.platform-bar.hidden{display:none}
-.ptab{display:flex;align-items:center;gap:7px;padding:0 18px;height:44px;font-family:'Syne',sans-serif;font-size:13px;font-weight:600;color:var(--muted);border:none;background:none;cursor:pointer;border-bottom:2px solid transparent;transition:all .2s;white-space:nowrap;margin-bottom:-1px}
-.ptab:hover{color:var(--text)}
-.ptab.active-youtube{color:var(--yt);border-bottom-color:var(--yt)}
-.ptab.active-shorts{color:var(--shorts);border-bottom-color:var(--shorts)}
-.ptab.active-x{color:var(--xc);border-bottom-color:var(--xc)}
-.ptab-count{font-family:'JetBrains Mono',monospace;font-size:10px;padding:2px 7px;border-radius:10px;background:var(--surface2);color:var(--muted)}
-.ptab.active-youtube .ptab-count{background:var(--yt-dim);color:var(--yt)}
-.ptab.active-shorts .ptab-count{background:var(--shorts-dim);color:var(--shorts)}
-.ptab.active-x .ptab-count{background:var(--x-dim);color:var(--xc)}
+/* Platform bar */
+.platbar{background:var(--surface);border-bottom:1px solid var(--border);padding:0 28px;position:sticky;top:56px;z-index:299}
+.platbar.hidden{display:none}
+.ptab{display:inline-flex;align-items:center;gap:7px;padding:0 18px;height:42px;font-family:'Syne',sans-serif;font-size:13px;font-weight:600;color:var(--muted);border:none;background:none;cursor:pointer;border-bottom:2px solid transparent;transition:all .2s;margin-bottom:-1px}
+.ptab.active{color:var(--yt);border-bottom-color:var(--yt)}
 
-/* L3 Filter Bar */
-.filter-bar{background:var(--surface);border-bottom:1px solid var(--border);padding:0 28px;position:sticky;top:102px;z-index:198}
-.filter-bar.hidden{display:none}
-.filter-row{display:flex;gap:4px;padding:9px 0;overflow-x:auto;scrollbar-width:none;align-items:center}
+/* Filter bar */
+.filterbar{background:var(--surface);border-bottom:1px solid var(--border);padding:0 28px;position:sticky;top:98px;z-index:298}
+.filterbar.hidden{display:none}
+.filter-row{display:flex;gap:4px;padding:9px 0;overflow-x:auto;scrollbar-width:none;align-items:center;flex-wrap:wrap}
 .filter-row::-webkit-scrollbar{display:none}
 .lang-toggle{display:flex;background:var(--surface2);border:1px solid var(--border2);border-radius:10px;padding:3px;gap:3px;flex-shrink:0}
 .lang-btn{padding:5px 16px;border-radius:7px;border:none;background:transparent;color:var(--muted2);font-family:'Syne',sans-serif;font-size:12px;font-weight:600;cursor:pointer;transition:all .2s}
-.lang-btn.active-ta{background:var(--tamil-dim);color:var(--tamil);border:1px solid rgba(245,158,11,.25)}
-.lang-btn.active-en{background:var(--english-dim);color:var(--english);border:1px solid rgba(59,130,246,.25)}
-.filter-divider{width:1px;height:20px;background:var(--border2);margin:0 8px;flex-shrink:0}
-.filter-btn{padding:5px 14px;border-radius:7px;border:1px solid transparent;background:transparent;color:var(--muted);font-family:'Inter',sans-serif;font-size:12px;font-weight:500;cursor:pointer;transition:all .2s;white-space:nowrap}
-.filter-btn:hover{color:var(--text);border-color:var(--border2)}
-.filter-btn.active{background:var(--accent);color:white;border-color:var(--accent)}
-.gen-progress{display:none;background:var(--surface2);border:1px solid var(--border2);border-radius:10px;padding:10px 16px;font-size:12px;font-family:'JetBrains Mono',monospace;color:var(--muted2);margin:10px 0 4px}
-.gen-progress.show{display:block}
-.gen-progress-bar{height:4px;background:var(--border);border-radius:2px;margin-top:8px;overflow:hidden}
-.gen-progress-fill{height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2));border-radius:2px;transition:width .4s ease;width:0%}
+.lang-btn.ta{background:var(--ta-dim);color:var(--ta);border:1px solid rgba(245,158,11,.25)}
+.lang-btn.en{background:var(--en-dim);color:var(--en);border:1px solid rgba(59,130,246,.25)}
+.fdiv{width:1px;height:20px;background:var(--border2);margin:0 8px;flex-shrink:0}
+.fpill{padding:5px 14px;border-radius:7px;border:1px solid transparent;background:transparent;color:var(--muted);font-family:'Inter',sans-serif;font-size:12px;font-weight:500;cursor:pointer;transition:all .2s;white-space:nowrap}
+.fpill:hover{color:var(--text);border-color:var(--border2)}
+.fpill.active{background:var(--accent);color:white;border-color:var(--accent)}
 
 /* Main */
-.main{padding:24px 28px;max-width:1120px;margin:0 auto}
-.bucket-label{font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:500;color:var(--muted);letter-spacing:1px;text-transform:uppercase;padding:20px 0 10px}
-.bucket-label:first-child{padding-top:0}
-.episodes-grid{display:grid;gap:12px}
+.main{padding:24px 28px;max-width:1100px;margin:0 auto}
 
-/* Episode Card */
-.ep-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;overflow:hidden;transition:border-color .2s,transform .15s}
+/* Cards */
+.ep-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;overflow:hidden;margin-bottom:12px;transition:border-color .2s,transform .15s}
 .ep-card:hover{border-color:var(--border2);transform:translateY(-1px)}
-.ep-card.st-pending{border-left:3px solid var(--muted)}
-.ep-card.st-generating{border-left:3px solid var(--orange)}
-.ep-card.st-script_ready{border-left:3px solid var(--blue)}
-.ep-card.st-script_approved{border-left:3px solid var(--yellow)}
-.ep-card.st-images_ready{border-left:3px solid var(--purple)}
-.ep-card.st-images_approved{border-left:3px solid var(--purple)}
-.ep-card.st-x_images_ready{border-left:3px solid var(--xc)}
-.ep-card.st-video_ready{border-left:3px solid var(--green)}
-.ep-card.st-video_approved{border-left:3px solid var(--green)}
-.ep-card.st-published{border-left:3px solid var(--accent);opacity:.85}
-.ep-header{padding:16px 18px 14px;display:flex;align-items:flex-start;gap:14px}
-.ep-num{font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:500;color:var(--muted);background:var(--surface2);border:1px solid var(--border2);border-radius:6px;padding:3px 8px;flex-shrink:0;margin-top:2px}
+.ep-card.lang-ta{border-left:3px solid var(--ta)}
+.ep-card.lang-en{border-left:3px solid var(--en)}
+.ep-card.published{opacity:.8}
+.ep-head{padding:16px 18px 12px;display:flex;align-items:flex-start;gap:12px}
+.ep-num{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted);background:var(--surface2);border:1px solid var(--border2);border-radius:6px;padding:3px 8px;flex-shrink:0;margin-top:2px}
 .ep-body{flex:1;min-width:0}
-.ep-meta{display:flex;align-items:center;gap:6px;margin-bottom:8px;flex-wrap:wrap}
-.module-badge{font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:500;padding:2px 7px;border-radius:4px;text-transform:uppercase;letter-spacing:.5px}
-.mod-1{background:rgba(245,158,11,.1);color:#f59e0b}
-.mod-2{background:rgba(139,92,246,.1);color:#8b5cf6}
-.mod-3{background:rgba(59,130,246,.1);color:#3b82f6}
-.mod-4{background:rgba(239,68,68,.1);color:#ef4444}
-.mod-5{background:rgba(16,185,129,.1);color:#10b981}
-.mod-6{background:rgba(20,184,166,.1);color:#14b8a6}
-.pillar-badge{font-family:'JetBrains Mono',monospace;font-size:9px;padding:2px 7px;border-radius:4px;background:var(--surface2);color:var(--muted2)}
+.ep-meta{display:flex;align-items:center;gap:6px;margin-bottom:7px;flex-wrap:wrap}
+.ep-lang{font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:700;padding:2px 7px;border-radius:4px}
+.ep-lang.ta{background:var(--ta-dim);color:var(--ta)}
+.ep-lang.en{background:var(--en-dim);color:var(--en)}
+.mod-badge{font-family:'JetBrains Mono',monospace;font-size:9px;padding:2px 7px;border-radius:4px;background:var(--surface2);color:var(--muted2)}
 .status-badge{font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:700;padding:2px 8px;border-radius:4px;text-transform:uppercase;letter-spacing:.5px;margin-left:auto}
 .sb-pending{background:rgba(90,100,128,.15);color:var(--muted2)}
-.sb-generating{background:var(--orange-dim);color:var(--orange)}
+.sb-generating,.sb-generating_images,.sb-generating_video{background:var(--orange-dim);color:var(--orange)}
 .sb-script_ready{background:var(--blue-dim);color:var(--blue)}
-.sb-script_approved{background:var(--yellow-dim);color:var(--yellow)}
+.sb-script_approved{background:rgba(245,158,11,.12);color:var(--yellow)}
 .sb-images_ready{background:var(--purple-dim);color:var(--purple)}
 .sb-images_approved{background:var(--purple-dim);color:var(--purple)}
-.sb-x_images_ready{background:var(--x-dim);color:var(--xc)}
-.sb-video_ready{background:var(--green-dim);color:var(--green)}
+.sb-voice_uploaded{background:var(--ta-dim);color:var(--ta)}
+.sb-voice_approved{background:var(--green-dim);color:var(--green)}
+.sb-video_ready{background:var(--teal-dim);color:var(--teal)}
 .sb-video_approved{background:var(--green-dim);color:var(--green)}
 .sb-published{background:rgba(232,65,42,.12);color:var(--accent2)}
-.ep-title-ta{font-family:'Syne',sans-serif;font-size:14px;font-weight:700;line-height:1.5;color:var(--text);margin-bottom:3px}
-.ep-title-en{font-size:12px;color:var(--muted2);line-height:1.4;margin-bottom:6px}
+.ep-title{font-family:'Syne',sans-serif;font-size:14px;font-weight:700;line-height:1.5;color:var(--text);margin-bottom:2px}
+.ep-sub{font-size:12px;color:var(--muted2);line-height:1.4;margin-bottom:4px}
 .ep-bridge{font-size:11px;color:var(--muted);font-style:italic;line-height:1.4}
 .ep-actions{padding:12px 18px;border-top:1px solid var(--border);display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-
-/* Idea Card */
-.idea-card{background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--idea);border-radius:14px;overflow:hidden;transition:border-color .2s,transform .15s;margin-bottom:12px}
-.idea-card:hover{border-color:var(--border2);transform:translateY(-1px)}
-.idea-card.st-published{opacity:.8}
-.idea-header{padding:16px 18px 14px;display:flex;align-items:flex-start;gap:12px}
-.idea-icon-tag{font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:700;padding:3px 8px;border-radius:5px;background:var(--idea-dim);color:var(--idea);flex-shrink:0;text-transform:uppercase;letter-spacing:.5px;margin-top:2px}
-.idea-body{flex:1;min-width:0}
-.idea-title{font-family:'Syne',sans-serif;font-size:14px;font-weight:700;color:var(--text);margin-bottom:5px;line-height:1.4}
-.idea-desc{font-size:12px;color:var(--muted2);line-height:1.6;margin-bottom:4px}
-.idea-angle{font-size:11px;color:var(--muted);font-style:italic}
-.idea-actions{padding:12px 18px;border-top:1px solid var(--border);display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 
 /* Buttons */
 .btn{padding:7px 16px;border-radius:8px;font-size:12px;font-weight:600;font-family:'Inter',sans-serif;border:1px solid transparent;cursor:pointer;transition:all .2s}
 .btn:hover{opacity:.85;transform:translateY(-1px)}
 .btn:active{transform:translateY(0)}
 .btn:disabled{opacity:.4;cursor:not-allowed;transform:none}
-.btn-generate{background:var(--accent);color:white;border-color:var(--accent)}
+.btn-gen{background:var(--accent);color:white;border-color:var(--accent)}
 .btn-review{background:var(--blue-dim);color:var(--blue);border-color:rgba(59,130,246,.3)}
 .btn-approve{background:var(--green-dim);color:var(--green);border-color:rgba(16,185,129,.3)}
 .btn-regen{background:var(--surface2);color:var(--muted2);border-color:var(--border2)}
+.btn-upload{background:var(--ta-dim);color:var(--ta);border-color:rgba(245,158,11,.3)}
 .btn-preview{background:var(--teal-dim);color:var(--teal);border-color:rgba(20,184,166,.3)}
-.btn-youtube{background:var(--yt-dim);color:var(--yt);border-color:rgba(255,51,51,.3)}
-.btn-shorts{background:var(--shorts-dim);color:var(--shorts);border-color:rgba(255,102,0,.3)}
-.btn-x{background:var(--x-dim);color:var(--xc);border-color:rgba(231,233,234,.2)}
-.btn-idea{background:var(--idea-dim);color:var(--idea);border-color:rgba(167,139,250,.3)}
-.generating-banner{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--orange);font-family:'JetBrains Mono',monospace}
+.btn-yt{background:var(--yt-dim);color:var(--yt);border-color:rgba(255,51,51,.3)}
+.btn-listen{background:var(--purple-dim);color:var(--purple);border-color:rgba(139,92,246,.3)}
 .spin{display:inline-block;animation:spin 1.2s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
-.waiting-banner{font-size:12px;color:var(--muted2);font-family:'JetBrains Mono',monospace}
+.wait-msg{font-size:12px;color:var(--muted2);font-family:'JetBrains Mono',monospace}
 
-/* Channel Stats */
-.stats-page{display:flex;flex-direction:column;gap:20px}
-.stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
-.stat-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:20px 18px}
-.stat-val{font-family:'JetBrains Mono',monospace;font-size:28px;font-weight:500;margin-bottom:4px;line-height:1}
-.stat-lbl{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;font-family:'JetBrains Mono',monospace;margin-bottom:8px}
-.stat-sub{font-size:12px;color:var(--muted2)}
-.stat-progress{height:3px;background:var(--border);border-radius:2px;margin-top:12px;overflow:hidden}
-.stat-progress-fill{height:100%;border-radius:2px;transition:width .6s ease}
-.stats-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-.stats-panel{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px}
-.stats-panel-title{font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:500;color:var(--muted);letter-spacing:1px;text-transform:uppercase;margin-bottom:14px}
-.stats-row-item{display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border);font-size:13px}
-.stats-row-item:last-child{border-bottom:none}
-.stats-row-num{font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:500}
-.series-progress{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px}
-.progress-bar-big{height:8px;background:var(--border);border-radius:4px;margin:12px 0 8px;overflow:hidden}
-.progress-bar-fill{height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2));border-radius:4px;transition:width .8s ease}
-.progress-labels{display:flex;justify-content:space-between;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted)}
+/* Upload section (YouTube images) */
+.upload-section{padding:14px 18px;border-top:1px solid var(--border);background:var(--surface2)}
+.upload-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:12px}
+.upload-slot{border:1px dashed var(--border2);border-radius:10px;padding:12px;text-align:center;cursor:pointer;transition:all .2s;position:relative}
+.upload-slot:hover{border-color:var(--accent);background:rgba(232,65,42,.05)}
+.upload-slot.has-file{border-color:var(--green);border-style:solid;background:var(--green-dim)}
+.upload-slot-label{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--muted2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px}
+.upload-slot-icon{font-size:22px;margin-bottom:4px}
+.upload-slot-status{font-size:11px;color:var(--muted)}
+.upload-slot.has-file .upload-slot-status{color:var(--green)}
+.upload-input{display:none}
 
-/* Secrets note */
-.secrets-note{background:var(--surface);border:1px solid rgba(245,158,11,.25);border-radius:12px;padding:14px 18px;margin-bottom:16px}
-.secrets-note-title{font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;color:var(--yellow);text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px}
-.secrets-note-body{font-size:12px;color:var(--muted2);line-height:1.7}
-.secrets-note-body code{font-family:'JetBrains Mono',monospace;font-size:11px;background:var(--surface2);padding:1px 5px;border-radius:3px;color:var(--text)}
+/* Bucket label */
+.bucket{font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:500;color:var(--muted);letter-spacing:1px;text-transform:uppercase;padding:18px 0 10px}
+.bucket:first-child{padding-top:0}
+.ep-grid{display:grid;gap:0}
 
-/* Modals */
+/* Modal */
 .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.85);backdrop-filter:blur(4px);z-index:1000;display:none;align-items:center;justify-content:center;padding:20px}
 .modal-overlay.open{display:flex}
-.modal{background:var(--surface);border:1px solid var(--border2);border-radius:18px;width:100%;max-width:860px;max-height:90vh;display:flex;flex-direction:column;overflow:hidden;animation:modalIn .25s ease}
-.modal.modal-sm{max-width:520px}
-@keyframes modalIn{from{opacity:0;transform:translateY(20px) scale(.97)}to{opacity:1;transform:translateY(0) scale(1)}}
-.modal-header{padding:20px 24px 16px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;gap:12px}
-.modal-ep-info{flex:1}
-.modal-ep-num{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted);margin-bottom:4px}
-.modal-title{font-family:'Syne',sans-serif;font-size:17px;font-weight:700;line-height:1.4}
-.modal-subtitle{font-size:12px;color:var(--muted2);margin-top:3px}
+.modal{background:var(--surface);border:1px solid var(--border2);border-radius:18px;width:100%;max-width:880px;max-height:90vh;display:flex;flex-direction:column;overflow:hidden;animation:mIn .25s ease}
+.modal.sm{max-width:520px}
+@keyframes mIn{from{opacity:0;transform:translateY(20px) scale(.97)}to{opacity:1;transform:none}}
+.modal-head{padding:20px 24px 16px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;gap:12px}
+.modal-info{flex:1}
+.modal-ep{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted);margin-bottom:4px}
+.modal-title{font-family:'Syne',sans-serif;font-size:17px;font-weight:700}
+.modal-sub{font-size:12px;color:var(--muted2);margin-top:3px}
 .modal-close{background:var(--surface2);border:1px solid var(--border2);border-radius:8px;color:var(--muted2);width:32px;height:32px;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .2s}
-.modal-close:hover{color:var(--text);border-color:var(--border)}
+.modal-close:hover{color:var(--text)}
 .modal-lang-tabs{display:flex;border-bottom:1px solid var(--border);padding:0 24px}
-.modal-lang-tab{padding:10px 18px;font-size:13px;font-weight:600;font-family:'Inter',sans-serif;color:var(--muted);border:none;border-bottom:2px solid transparent;background:none;cursor:pointer;transition:all .2s;margin-bottom:-1px}
-.modal-lang-tab:hover{color:var(--text)}
-.modal-lang-tab.active-ta{color:var(--tamil);border-bottom-color:var(--tamil)}
-.modal-lang-tab.active-en{color:var(--english);border-bottom-color:var(--english)}
+.mltab{padding:10px 18px;font-size:13px;font-weight:600;color:var(--muted);border:none;border-bottom:2px solid transparent;background:none;cursor:pointer;transition:all .2s;margin-bottom:-1px}
+.mltab.ta{color:var(--ta);border-bottom-color:var(--ta)}
+.mltab.en{color:var(--en);border-bottom-color:var(--en)}
 .modal-body{flex:1;overflow-y:auto;padding:24px;scrollbar-width:thin;scrollbar-color:var(--border2) transparent}
-.script-text{font-size:14px;line-height:1.8;color:var(--text);white-space:pre-wrap;font-family:'Inter',sans-serif;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:20px}
-.script-empty{text-align:center;color:var(--muted);font-size:13px;padding:40px;font-family:'JetBrains Mono',monospace}
-.x-thread-preview{display:flex;flex-direction:column;gap:10px}
-.x-tweet{background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:14px 16px;font-size:13px;line-height:1.7;position:relative}
-.x-tweet-num{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--muted);margin-bottom:6px}
-.x-tweet-img{width:100%;border-radius:8px;margin-top:10px;display:block}
-.regen-section{margin-top:16px;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:16px;display:none}
-.regen-section.open{display:block}
-.regen-label{font-size:12px;font-weight:600;color:var(--muted2);margin-bottom:8px;font-family:'JetBrains Mono',monospace}
-.regen-textarea{width:100%;background:var(--surface);border:1px solid var(--border2);border-radius:8px;color:var(--text);font-family:'Inter',sans-serif;font-size:13px;padding:10px 12px;resize:vertical;min-height:80px;outline:none;transition:border-color .2s}
-.regen-textarea:focus{border-color:var(--accent)}
-.modal-footer{padding:16px 24px;border-top:1px solid var(--border);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-.modal-status-note{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted);margin-left:auto}
+.script-text{font-size:14px;line-height:1.85;color:var(--text);white-space:pre-wrap;font-family:'Inter',sans-serif;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:20px}
+.modal-foot{padding:14px 24px;border-top:1px solid var(--border);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.modal-note{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted);margin-left:auto}
+.img-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.img-item{border-radius:10px;overflow:hidden;border:1px solid var(--border2)}
+.img-item img{width:100%;display:block;aspect-ratio:16/9;object-fit:cover}
+.img-label{padding:6px 10px;font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--muted);border-top:1px solid var(--border)}
+.regen-box{margin-top:16px;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:14px;display:none}
+.regen-box.open{display:block}
+.regen-label{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--muted2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:7px}
+.regen-ta{width:100%;background:var(--surface);border:1px solid var(--border2);border-radius:8px;color:var(--text);font-family:'Inter',sans-serif;font-size:13px;padding:10px;resize:vertical;min-height:70px;outline:none;transition:border-color .2s}
+.regen-ta:focus{border-color:var(--accent)}
 
-/* Idea Submit Modal */
-.form-group{margin-bottom:16px}
-.form-label{font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:500;color:var(--muted2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;display:block}
-.form-input,.form-textarea{width:100%;background:var(--surface2);border:1px solid var(--border2);border-radius:8px;color:var(--text);font-family:'Inter',sans-serif;font-size:13px;padding:10px 12px;outline:none;transition:border-color .2s}
-.form-input:focus,.form-textarea:focus{border-color:var(--accent)}
-.form-textarea{resize:vertical;min-height:80px}
-
-/* X Link Modal */
-.x-link-modal-body{padding:20px 24px}
-.x-link-lang-row{display:flex;gap:10px;margin-bottom:16px}
-.x-lang-opt{flex:1;padding:10px 14px;border-radius:10px;border:1px solid var(--border2);background:var(--surface2);color:var(--muted2);font-family:'Syne',sans-serif;font-size:13px;font-weight:600;cursor:pointer;transition:all .2s;text-align:center}
-.x-lang-opt.selected-ta{background:var(--tamil-dim);color:var(--tamil);border-color:rgba(245,158,11,.4)}
-.x-lang-opt.selected-en{background:var(--english-dim);color:var(--english);border-color:rgba(59,130,246,.4)}
+/* Stats */
+.stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px}
+.stat{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:20px 18px}
+.stat-val{font-family:'JetBrains Mono',monospace;font-size:30px;font-weight:500;line-height:1;margin-bottom:4px}
+.stat-lbl{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;font-family:'JetBrains Mono',monospace;margin-bottom:10px}
+.stat-bar{height:3px;background:var(--border);border-radius:2px;overflow:hidden}
+.stat-bar-fill{height:100%;border-radius:2px;transition:width .6s ease}
+.pipeline-panel{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px}
+.pp-title{font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:500;color:var(--muted);letter-spacing:1px;text-transform:uppercase;margin-bottom:14px}
+.pp-row{display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border);font-size:13px}
+.pp-row:last-child{border-bottom:none}
+.pp-num{font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:500}
+.progress-big{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px;margin-top:12px}
+.pb-bar{height:8px;background:var(--border);border-radius:4px;margin:12px 0 6px;overflow:hidden}
+.pb-fill{height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2));border-radius:4px;transition:width .8s ease}
+.pb-labels{display:flex;justify-content:space-between;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted)}
 
 /* Toast */
 .toast{position:fixed;bottom:28px;right:28px;background:var(--surface2);border:1px solid var(--border2);border-radius:10px;padding:12px 18px;font-size:13px;font-family:'JetBrains Mono',monospace;color:var(--text);z-index:9999;transform:translateY(80px);opacity:0;transition:all .3s;max-width:340px}
@@ -236,182 +177,114 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 .toast.success{border-color:rgba(16,185,129,.4);color:var(--green)}
 .toast.error{border-color:rgba(239,68,68,.4);color:var(--red)}
 .toast.info{border-color:rgba(59,130,246,.4);color:var(--blue)}
-
-/* Empty */
-.empty-state{text-align:center;padding:60px 20px;color:var(--muted)}
-.empty-state .empty-icon{font-size:40px;margin-bottom:12px}
-.empty-state p{font-size:14px;font-family:'JetBrains Mono',monospace}
+.loading-bar{height:2px;background:linear-gradient(90deg,var(--accent),var(--accent2));background-size:200%;animation:lb 1.2s ease infinite;position:fixed;top:0;left:0;right:0;z-index:9999;display:none}
+.loading-bar.show{display:block}
+@keyframes lb{0%{background-position:100% 0}100%{background-position:-100% 0}}
+.empty{text-align:center;padding:60px 20px;color:var(--muted)}
+.empty div{font-size:36px;margin-bottom:10px}
+.empty p{font-size:14px;font-family:'JetBrains Mono',monospace}
 </style>
 </head>
 <body>
-<div class="loading-bar" id="loadbar"></div>
+<div class="loading-bar" id="lb"></div>
 
-<!-- L1 Topbar -->
+<!-- Topbar -->
 <div class="topbar">
   <div class="logo">I Have A <em>Cause</em></div>
   <nav class="l1-nav">
-    <button class="l1-btn" id="l1-stats"   onclick="setL1('stats')">Channel Stats</button>
-    <button class="l1-btn active-series" id="l1-series"  onclick="setL1('series')">Series</button>
-    <button class="l1-btn" id="l1-ideas"  onclick="setL1('ideas')">I Have an Idea</button>
+    <button class="l1-btn" id="l1-stats" onclick="setL1('stats')">Channel Stats</button>
+    <button class="l1-btn active-series" id="l1-series" onclick="setL1('series')">Series</button>
   </nav>
-  <div class="topbar-right">
-    <button class="btn-gen-all" id="btn-gen-all" onclick="generateAll()">⚡ Generate All Pending</button>
-  </div>
 </div>
 
-<!-- L2 Platform Tabs -->
-<div class="platform-bar" id="platform-bar">
-  <button class="ptab active-youtube" id="pt-youtube" onclick="setPlatform('youtube')">
-    ▶ YouTube Long <span class="ptab-count" id="cnt-youtube">—</span>
-  </button>
-  <button class="ptab" id="pt-shorts" onclick="setPlatform('shorts')">
-    ✂ Shorts / Reels <span class="ptab-count" id="cnt-shorts">—</span>
-  </button>
-  <button class="ptab" id="pt-x" onclick="setPlatform('x')">
-    𝕏 X / Twitter <span class="ptab-count" id="cnt-x">—</span>
-  </button>
+<!-- Platform bar -->
+<div class="platbar" id="platbar">
+  <button class="ptab active" id="pt-yt">▶ YouTube Long</button>
 </div>
 
-<!-- L3 Filter Bar -->
-<div class="filter-bar" id="filter-bar">
+<!-- Filter bar -->
+<div class="filterbar" id="filterbar">
   <div class="filter-row" id="filter-row">
     <div class="lang-toggle">
-      <button class="lang-btn active-ta" id="btn-ta" onclick="setLang('ta')">🇮🇳 Tamil</button>
+      <button class="lang-btn ta" id="btn-ta" onclick="setLang('ta')">🇮🇳 Tamil</button>
       <button class="lang-btn" id="btn-en" onclick="setLang('en')">🇬🇧 English</button>
     </div>
-    <div class="filter-divider"></div>
-    <button class="filter-btn active" onclick="setFilter('all',this)">All</button>
-    <button class="filter-btn" onclick="setFilter('pending',this)">Pending</button>
-    <button class="filter-btn" onclick="setFilter('generating',this)" id="fb-generating">Generating</button>
-    <button class="filter-btn" onclick="setFilter('script_ready',this)">Script Ready</button>
-    <button class="filter-btn" onclick="setFilter('script_approved',this)">Script Approved</button>
-    <button class="filter-btn" onclick="setFilter('images_ready',this)" id="fb-images_ready">Images Ready</button>
-    <button class="filter-btn" onclick="setFilter('images_approved',this)" id="fb-images_approved">Images Approved</button>
-    <button class="filter-btn" onclick="setFilter('x_images_ready',this)" id="fb-x_images_ready">X Images Ready</button>
-    <button class="filter-btn" onclick="setFilter('video_ready',this)" id="fb-video_ready">Video Ready</button>
-    <button class="filter-btn" onclick="setFilter('video_approved',this)" id="fb-video_approved">Video Approved</button>
-    <button class="filter-btn" onclick="setFilter('published',this)">Published</button>
-  </div>
-  <div class="gen-progress" id="gen-progress">
-    <span id="gen-progress-text">Queueing episodes...</span>
-    <div class="gen-progress-bar"><div class="gen-progress-fill" id="gen-progress-fill"></div></div>
+    <div class="fdiv"></div>
+    <button class="fpill active" onclick="setFilter('all',this)">All</button>
+    <button class="fpill" onclick="setFilter('pending',this)">Pending</button>
+    <button class="fpill" onclick="setFilter('script_ready',this)">Script Ready</button>
+    <button class="fpill" onclick="setFilter('script_approved',this)">Script Approved</button>
+    <button class="fpill" onclick="setFilter('images_ready',this)">Images Ready</button>
+    <button class="fpill" onclick="setFilter('images_approved',this)">Images Approved</button>
+    <button class="fpill" onclick="setFilter('voice_uploaded',this)">Voice Uploaded</button>
+    <button class="fpill" onclick="setFilter('voice_approved',this)">Voice Approved</button>
+    <button class="fpill" onclick="setFilter('video_ready',this)">Video Ready</button>
+    <button class="fpill" onclick="setFilter('video_approved',this)">Video Approved</button>
+    <button class="fpill" onclick="setFilter('published',this)">Published</button>
   </div>
 </div>
 
 <!-- Main -->
 <div class="main" id="main">
-  <div class="empty-state"><div class="empty-icon">🌀</div><p>Loading...</p></div>
+  <div class="empty"><div>🌀</div><p>Loading...</p></div>
 </div>
 
-<!-- Script Review Modal -->
-<div class="modal-overlay" id="modal-overlay" onclick="closeModal(event)">
+<!-- Script Modal -->
+<div class="modal-overlay" id="modal-overlay" onclick="closeMod(event)">
   <div class="modal">
-    <div class="modal-header">
-      <div class="modal-ep-info">
-        <div class="modal-ep-num" id="modal-ep-num">—</div>
-        <div class="modal-title" id="modal-title">—</div>
-        <div class="modal-subtitle" id="modal-subtitle">—</div>
+    <div class="modal-head">
+      <div class="modal-info">
+        <div class="modal-ep" id="mod-ep">—</div>
+        <div class="modal-title" id="mod-title">—</div>
+        <div class="modal-sub" id="mod-sub">—</div>
       </div>
-      <button class="modal-close" onclick="closeModal()">✕</button>
-    </div>
-    <div class="modal-lang-tabs" id="modal-lang-tabs">
-      <button class="modal-lang-tab active-ta" id="mtab-ta" onclick="switchModalLang('ta')">🇮🇳 Tamil</button>
-      <button class="modal-lang-tab" id="mtab-en" onclick="switchModalLang('en')">🇬🇧 English</button>
+      <button class="modal-close" onclick="closeMod()">✕</button>
     </div>
     <div class="modal-body">
-      <div id="modal-script-ta">
-        <div class="script-text" id="script-content-ta"></div>
-        <div class="regen-section" id="regen-ta">
-          <div class="regen-label">REGENERATION NOTE</div>
-          <textarea class="regen-textarea" id="regen-note-ta" placeholder="Describe what to change..."></textarea>
-          <div style="display:flex;gap:8px;margin-top:10px">
-            <button class="btn btn-generate" onclick="submitRegen('ta')">⚡ Regenerate</button>
-            <button class="btn btn-regen" onclick="toggleRegen('ta')">Cancel</button>
-          </div>
-        </div>
-      </div>
-      <div id="modal-script-en" style="display:none">
-        <div class="script-text" id="script-content-en"></div>
-        <div class="regen-section" id="regen-en">
-          <div class="regen-label">REGENERATION NOTE</div>
-          <textarea class="regen-textarea" id="regen-note-en" placeholder="Describe what to change..."></textarea>
-          <div style="display:flex;gap:8px;margin-top:10px">
-            <button class="btn btn-generate" onclick="submitRegen('en')">⚡ Regenerate</button>
-            <button class="btn btn-regen" onclick="toggleRegen('en')">Cancel</button>
-          </div>
+      <div class="script-text" id="mod-script"></div>
+      <div class="regen-box" id="regen-box">
+        <div class="regen-label">Regeneration note</div>
+        <textarea class="regen-ta" id="regen-note" placeholder="Describe what to change..."></textarea>
+        <div style="display:flex;gap:8px;margin-top:10px">
+          <button class="btn btn-gen" onclick="submitRegen()">⚡ Regenerate</button>
+          <button class="btn btn-regen" onclick="toggleRegen()">Cancel</button>
         </div>
       </div>
     </div>
-    <div class="modal-footer">
-      <button class="btn btn-approve" id="modal-approve-btn" onclick="approveScript()">✓ Approve</button>
-      <button class="btn btn-regen" id="modal-regen-btn" onclick="openRegen()">↺ Regenerate</button>
-      <span class="modal-status-note" id="modal-status-note"></span>
+    <div class="modal-foot">
+      <button class="btn btn-approve" id="mod-approve-btn" onclick="approveScript()">✓ Approve Script</button>
+      <button class="btn btn-regen" onclick="toggleRegen()">↺ Request Regeneration</button>
+      <span class="modal-note" id="mod-note"></span>
     </div>
   </div>
 </div>
 
-<!-- Idea Submit Modal -->
-<div class="modal-overlay" id="idea-modal-overlay" onclick="closeIdeaModal(event)">
-  <div class="modal modal-sm">
-    <div class="modal-header">
-      <div class="modal-ep-info">
-        <div class="modal-ep-num">NEW IDEA</div>
-        <div class="modal-title">💡 I Have an Idea</div>
-        <div class="modal-subtitle">Gemini will research and generate scripts for all formats</div>
+<!-- Images Modal -->
+<div class="modal-overlay" id="img-modal-overlay" onclick="closeImgMod(event)">
+  <div class="modal">
+    <div class="modal-head">
+      <div class="modal-info">
+        <div class="modal-ep" id="img-mod-ep">—</div>
+        <div class="modal-title">🖼 Image Review</div>
+        <div class="modal-sub" id="img-mod-sub">5 AI-generated scenes</div>
       </div>
-      <button class="modal-close" onclick="closeIdeaModal()">✕</button>
+      <button class="modal-close" onclick="closeImgMod()">✕</button>
     </div>
     <div class="modal-body">
-      <div class="form-group">
-        <label class="form-label">Idea Title (catchy, publishable)</label>
-        <input class="form-input" id="idea-title" placeholder="e.g. Thiruvalluvar knew quantum entanglement"/>
-      </div>
-      <div class="form-group">
-        <label class="form-label">Describe the idea</label>
-        <textarea class="form-textarea" id="idea-desc" placeholder="What angle? What message? What makes this compelling?"></textarea>
-      </div>
-      <div class="form-group">
-        <label class="form-label">Research angle (optional)</label>
-        <input class="form-input" id="idea-angle" placeholder="e.g. Connect to current events, Tamil diaspora angle..."/>
-      </div>
-    </div>
-    <div class="modal-footer">
-      <button class="btn btn-generate" onclick="submitIdea()">⚡ Generate All Scripts</button>
-      <button class="btn btn-regen" onclick="closeIdeaModal()">Cancel</button>
-    </div>
-  </div>
-</div>
-
-<!-- X Post Modal — link + language -->
-<div class="modal-overlay" id="x-modal-overlay" onclick="closeXModal(event)">
-  <div class="modal modal-sm">
-    <div class="modal-header">
-      <div class="modal-ep-info">
-        <div class="modal-ep-num" id="x-modal-ep">—</div>
-        <div class="modal-title">𝕏 Post to X / Twitter</div>
-        <div class="modal-subtitle">Thread + 6 images will be posted</div>
-      </div>
-      <button class="modal-close" onclick="closeXModal()">✕</button>
-    </div>
-    <div class="x-link-modal-body">
-      <div class="form-group">
-        <label class="form-label">Post language</label>
-        <div class="x-link-lang-row">
-          <div class="x-lang-opt selected-ta" id="x-lang-ta" onclick="selectXLang('ta')">🇮🇳 Tamil</div>
-          <div class="x-lang-opt" id="x-lang-en" onclick="selectXLang('en')">🇬🇧 English</div>
+      <div class="img-grid" id="img-grid"></div>
+      <div class="regen-box" id="img-regen-box">
+        <div class="regen-label">Regenerate specific scene</div>
+        <textarea class="regen-ta" id="img-regen-note" placeholder='e.g. "Regenerate scene 3: show a Tamil grandmother in a temple courtyard at dawn"'></textarea>
+        <div style="display:flex;gap:8px;margin-top:10px">
+          <button class="btn btn-gen" onclick="submitImgRegen()">⚡ Regenerate</button>
+          <button class="btn btn-regen" onclick="toggleImgRegen()">Cancel</button>
         </div>
       </div>
-      <div class="form-group">
-        <label class="form-label">YouTube link (optional — added to first tweet)</label>
-        <input class="form-input" id="x-yt-link" placeholder="https://youtube.com/watch?v=... (leave blank if none)"/>
-      </div>
-      <div style="font-size:12px;color:var(--muted);font-family:'JetBrains Mono',monospace;margin-top:4px">
-        Thread will post in ~2 min via GitHub Actions
-      </div>
     </div>
-    <div class="modal-footer">
-      <button class="btn btn-x" id="x-post-btn" onclick="confirmPostToX()">𝕏 Post Thread Now</button>
-      <button class="btn btn-regen" onclick="closeXModal()">Cancel</button>
+    <div class="modal-foot">
+      <button class="btn btn-approve" onclick="approveImages()">✓ Approve Images</button>
+      <button class="btn btn-regen" onclick="toggleImgRegen()">↺ Regenerate a Scene</button>
+      <span class="modal-note" id="img-mod-note"></span>
     </div>
   </div>
 </div>
@@ -419,973 +292,561 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 <div class="toast" id="toast"></div>
 
 <script>
-// ── Config ────────────────────────────────────────────────────
-const SB_URL      = 'https://alfuvzlmatfkgdrkeqgk.supabase.co';
-const SB_KEY      = 'sb_publishable_W6dVLZyqGI60qF6nDchJWg_kv2ZFfhn';
+// ── Config ─────────────────────────────────────────────────
+const SB_URL = 'https://alfuvzlmatfkgdrkeqgk.supabase.co';
+const SB_KEY = 'sb_publishable_W6dVLZyqGI60qF6nDchJWg_kv2ZFfhn';
 
-// Sprint 7 edge functions
-const EDGE_FN           = `${SB_URL}/functions/v1/trigger-script-gen`;
-const EDGE_IMG_FN       = `${SB_URL}/functions/v1/trigger-image-gen`;
-const EDGE_VIDEO_FN     = `${SB_URL}/functions/v1/trigger-video-gen`;
-const EDGE_SVG_FN       = `${SB_URL}/functions/v1/trigger-svg-gen`;
-const EDGE_IDEA_FN      = `${SB_URL}/functions/v1/trigger-idea-gen`;
-const EDGE_IDEA_IMG_FN  = `${SB_URL}/functions/v1/trigger-idea-image-gen`;
-const EDGE_IDEA_VIDEO_FN= `${SB_URL}/functions/v1/trigger-idea-video-gen`;
-
-// Sprint 8 edge functions
-const EDGE_SHORTS_VIDEO_FN    = `${SB_URL}/functions/v1/trigger-shorts-video-gen`;
-const EDGE_X_IMAGES_FN        = `${SB_URL}/functions/v1/trigger-x-images-gen`;
-const EDGE_X_POST_FN          = `${SB_URL}/functions/v1/trigger-x-post`;
-const EDGE_IDEA_YT_UPLOAD_FN  = `${SB_URL}/functions/v1/trigger-idea-youtube-upload`;
-
-const H      = {'apikey':SB_KEY,'Authorization':`Bearer ${SB_KEY}`,'Content-Type':'application/json'};
-const EDGE_H = {'apikey':SB_KEY,'Authorization':`Bearer ${SB_KEY}`,'Content-Type':'application/json'};
-
-// ── State ─────────────────────────────────────────────────────
-let activeL1       = 'series';
-let activePlatform = 'youtube';
-let lang           = 'ta';
-let filter         = 'all';
-let episodes       = [];
-let ideas          = [];
-let modalEp        = null;
-let modalLang      = 'ta';
-let modalPlatform  = 'youtube';
-let xPostTarget    = null;  // {n, isIdea} for X modal
-let xPostLang      = 'ta';
-
-// ── Platform config ───────────────────────────────────────────
-const PLATFORMS = {
-  youtube: { label:'YouTube Long',   statusCol:'status',         color:'var(--yt)',     scriptColTa:'script_tamil',            scriptColEn:'script_english' },
-  shorts:  { label:'Shorts / Reels', statusCol:'status_shorts',  color:'var(--shorts)', scriptColTa:'script_shorts_tamil',     scriptColEn:'script_shorts_english' },
-  x:       { label:'X / Twitter',    statusCol:'status_x',       color:'var(--xc)',     scriptColTa:'script_x_thread_tamil',   scriptColEn:'script_x_thread_english' }
+const EDGE = {
+  script: `${SB_URL}/functions/v1/trigger-script-gen`,
+  images: `${SB_URL}/functions/v1/trigger-image-gen`,
+  video:  `${SB_URL}/functions/v1/trigger-video-gen`,
+  yt:     `${SB_URL}/functions/v1/trigger-youtube-upload`,
 };
 
-const PLATFORM_STATUSES = {
-  youtube: ['pending','generating','script_ready','script_approved','images_ready','images_approved','video_ready','video_approved','published'],
-  shorts:  ['pending','script_ready','script_approved','images_ready','images_approved','video_ready','video_approved','published'],
-  x:       ['pending','script_ready','script_approved','x_images_ready','published']
-};
+const H    = {apikey:SB_KEY, Authorization:`Bearer ${SB_KEY}`, 'Content-Type':'application/json'};
+const SB   = window.supabase.createClient(SB_URL, SB_KEY);
+
+// ── State ──────────────────────────────────────────────────
+let activeL1 = 'series';
+let lang     = 'ta';
+let filter   = 'all';
+let episodes = [];
+let modalEp  = null;
+let imgModalEp = null;
 
 const STATUS_LABELS = {
-  pending:'Pending', generating:'Generating', script_ready:'Script Ready',
-  script_approved:'Script Approved', images_ready:'Images Ready', images_approved:'Images Approved',
-  x_images_ready:'X Images Ready',
-  video_ready:'Video Ready', video_approved:'Video Approved', published:'Published'
+  pending:'Pending', generating:'Generating', generating_images:'Generating Images',
+  generating_video:'Generating Video',
+  script_ready:'Script Ready', script_approved:'Script Approved',
+  images_ready:'Images Ready', images_approved:'Images Approved',
+  voice_uploaded:'Voice Uploaded', voice_approved:'Voice Approved',
+  video_ready:'Video Ready', video_approved:'Video Approved',
+  published:'Published'
 };
 
 const TABLE = () => lang === 'ta' ? 'tamil_episodes' : 'english_episodes';
-const MODULE_NUM = m => { const n = m?.match(/Module (\d)/); return n ? parseInt(n[1]) : 1; };
-const delay = ms => new Promise(r => setTimeout(r,ms));
 
-// ── Navigation ────────────────────────────────────────────────
+// ── Navigation ─────────────────────────────────────────────
 function setL1(tab) {
   activeL1 = tab;
-  ['stats','series','ideas'].forEach(t => {
-    const b = document.getElementById(`l1-${t}`);
-    b.className = `l1-btn${t===tab ? ` active-${t}` : ''}`;
-  });
-  document.getElementById('platform-bar').classList.toggle('hidden', tab==='stats');
-  document.getElementById('filter-bar').classList.toggle('hidden', tab==='stats');
-  document.getElementById('btn-gen-all').style.display = (tab==='series' && activePlatform==='youtube') ? '' : 'none';
-  updateFilterPills();
+  document.getElementById('l1-stats').className  = `l1-btn${tab==='stats'?' active-stats':''}`;
+  document.getElementById('l1-series').className = `l1-btn${tab==='series'?' active-series':''}`;
+  document.getElementById('platbar').classList.toggle('hidden', tab==='stats');
+  document.getElementById('filterbar').classList.toggle('hidden', tab==='stats');
   load();
 }
 
-function setPlatform(p) {
-  activePlatform = p;
-  ['youtube','shorts','x'].forEach(t => {
-    const b = document.getElementById(`pt-${t}`);
-    b.className = `ptab${t===p ? ` active-${t}` : ''}`;
-  });
-  document.getElementById('btn-gen-all').style.display =
-    (activeL1==='series' && p==='youtube') ? '' : 'none';
-  filter = 'all';
-  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
-  document.querySelector('.filter-btn')?.classList.add('active');
-  updateFilterPills();
+function setLang(l) {
+  lang = l;
+  document.getElementById('btn-ta').className = 'lang-btn'+(l==='ta'?' ta':'');
+  document.getElementById('btn-en').className = 'lang-btn'+(l==='en'?' en':'');
+  loadEpisodes();
+}
+
+function setFilter(f, btn) {
+  filter = f;
+  document.querySelectorAll('.fpill').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
   render();
 }
 
-function updateFilterPills() {
-  if (activeL1 === 'stats') return;
-  const statuses = PLATFORM_STATUSES[activePlatform] || PLATFORM_STATUSES.youtube;
-  ['generating','images_ready','images_approved','x_images_ready','video_ready','video_approved'].forEach(s => {
-    const el = document.getElementById(`fb-${s}`);
-    if (el) el.style.display = statuses.includes(s) ? '' : 'none';
-  });
-}
-
-// ── Load ──────────────────────────────────────────────────────
+// ── Load ───────────────────────────────────────────────────
 async function load() {
-  if (activeL1 === 'stats') { await loadStats(); return; }
-  if (activeL1 === 'ideas') { await loadIdeas(); return; }
-  await loadEpisodes();
+  if (activeL1 === 'stats') { loadStats(); return; }
+  loadEpisodes();
 }
 
 async function loadEpisodes() {
-  showLoader(true);
+  showLoad(true);
   try {
     const r = await fetch(`${SB_URL}/rest/v1/${TABLE()}?select=*&order=episode_number.asc&limit=200`, {headers:H});
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
     episodes = await r.json();
-    updatePlatformCounts();
     render();
   } catch(e) {
-    document.getElementById('main').innerHTML = `<div class="empty-state"><div class="empty-icon">⚠️</div><p>${e.message}</p></div>`;
+    document.getElementById('main').innerHTML = `<div class="empty"><div>⚠️</div><p>${e.message}</p></div>`;
   }
-  showLoader(false);
-}
-
-async function loadIdeas() {
-  showLoader(true);
-  try {
-    const r = await fetch(`${SB_URL}/rest/v1/ideas?select=*&order=created_at.desc&limit=100`, {headers:H});
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    ideas = await r.json();
-    updatePlatformCountsIdeas();
-    render();
-  } catch(e) {
-    document.getElementById('main').innerHTML = `<div class="empty-state"><div class="empty-icon">⚠️</div><p>${e.message}</p></div>`;
-  }
-  showLoader(false);
+  showLoad(false);
 }
 
 async function loadStats() {
-  showLoader(true);
+  showLoad(true);
   try {
-    const [ta, en, id] = await Promise.all([
-      fetch(`${SB_URL}/rest/v1/tamil_episodes?select=status,status_shorts,status_x&limit=200`,{headers:H}).then(r=>r.json()),
-      fetch(`${SB_URL}/rest/v1/english_episodes?select=status,status_shorts,status_x&limit=200`,{headers:H}).then(r=>r.json()),
-      fetch(`${SB_URL}/rest/v1/ideas?select=status,status_shorts,status_x&limit=200`,{headers:H}).then(r=>r.json()),
+    const [ta, en] = await Promise.all([
+      fetch(`${SB_URL}/rest/v1/tamil_episodes?select=status&limit=200`,{headers:H}).then(r=>r.json()),
+      fetch(`${SB_URL}/rest/v1/english_episodes?select=status&limit=200`,{headers:H}).then(r=>r.json()),
     ]);
-    renderStats(ta, en, id);
-  } catch(e) {
-    document.getElementById('main').innerHTML = `<div class="empty-state"><div class="empty-icon">⚠️</div><p>${e.message}</p></div>`;
-  }
-  showLoader(false);
+    renderStats(ta, en);
+  } catch(e) {}
+  showLoad(false);
 }
 
-// ── Counts ────────────────────────────────────────────────────
-function updatePlatformCounts() {
-  const col = p => PLATFORMS[p].statusCol;
-  ['youtube','shorts','x'].forEach(p => {
-    const c = col(p);
-    const active = episodes.filter(e => (e[c]||'pending') !== 'pending').length;
-    const pub    = episodes.filter(e => (e[c]||'pending') === 'published').length;
-    document.getElementById(`cnt-${p}`).textContent = pub > 0 ? `${pub} live` : active > 0 ? `${active} active` : '—';
-  });
-}
-
-function updatePlatformCountsIdeas() {
-  ['youtube','shorts','x'].forEach(p => {
-    const col = p==='youtube' ? 'status' : PLATFORMS[p].statusCol;
-    const active = ideas.filter(i => (i[col]||'pending') !== 'pending').length;
-    document.getElementById(`cnt-${p}`).textContent = active > 0 ? `${active} active` : '—';
-  });
-}
-
-// ── Render ────────────────────────────────────────────────────
+// ── Render ─────────────────────────────────────────────────
 function render() {
-  if (activeL1 === 'stats') return;
-  if (activeL1 === 'ideas') { renderIdeasTab(); return; }
-  renderSeriesTab();
-}
-
-function getEpStatus(ep) {
-  const col = PLATFORMS[activePlatform].statusCol;
-  return (ep[col] || 'pending');
-}
-
-function getIdeaStatus(idea) {
-  const col = activePlatform === 'youtube' ? 'status' : PLATFORMS[activePlatform].statusCol;
-  return (idea[col] || 'pending');
-}
-
-function renderSeriesTab() {
-  let items = episodes.filter(ep => {
-    const s = getEpStatus(ep);
+  const items = episodes.filter(ep => {
+    const s = ep.status || 'pending';
     return filter === 'all' || s === filter;
   });
 
   if (!items.length) {
-    document.getElementById('main').innerHTML = `<div class="empty-state"><div class="empty-icon">✨</div><p>No episodes in this view</p></div>`;
+    document.getElementById('main').innerHTML = `<div class="empty"><div>✨</div><p>No episodes in this view</p></div>`;
     return;
   }
 
   let html = '';
   if (filter === 'all') {
-    const ORDER = ['generating','script_ready','script_approved','images_ready','images_approved','x_images_ready','video_ready','video_approved','published','pending'];
+    const ORDER = ['generating','generating_images','generating_video','script_ready','script_approved','images_ready','images_approved','voice_uploaded','voice_approved','video_ready','video_approved','published','pending'];
     const groups = {};
-    items.forEach(ep => { const s = getEpStatus(ep); if (!groups[s]) groups[s]=[]; groups[s].push(ep); });
+    items.forEach(ep => { const s = ep.status||'pending'; if(!groups[s]) groups[s]=[]; groups[s].push(ep); });
     ORDER.forEach(s => {
       if (groups[s]?.length) {
-        const count = groups[s].length;
-        html += `<div class="bucket-label">${STATUS_LABELS[s]||s} · ${count} episode${count>1?'s':''}</div>`;
-        html += `<div class="episodes-grid">${groups[s].map(ep=>buildEpCard(ep)).join('')}</div>`;
+        html += `<div class="bucket">${STATUS_LABELS[s]||s} · ${groups[s].length} episode${groups[s].length>1?'s':''}</div>`;
+        html += `<div class="ep-grid">${groups[s].map(ep=>card(ep)).join('')}</div>`;
       }
     });
   } else {
-    html = `<div class="episodes-grid">${items.map(ep=>buildEpCard(ep)).join('')}</div>`;
+    html = `<div class="ep-grid">${items.map(ep=>card(ep)).join('')}</div>`;
   }
   document.getElementById('main').innerHTML = html;
 }
 
-function renderIdeasTab() {
-  const addBtn = `<div style="margin-bottom:16px"><button class="btn btn-idea" onclick="openIdeaModal()" style="font-size:13px;padding:9px 20px">💡 New Idea</button></div>`;
-
-  let items = ideas.filter(idea => {
-    const s = getIdeaStatus(idea);
-    return filter === 'all' || s === filter;
-  });
-
-  if (!items.length) {
-    document.getElementById('main').innerHTML = addBtn + `<div class="empty-state"><div class="empty-icon">💡</div><p>No ideas yet — add your first one</p></div>`;
-    return;
-  }
-
-  let html = addBtn;
-  if (filter === 'all') {
-    const ORDER = ['generating','script_ready','script_approved','images_ready','images_approved','x_images_ready','video_ready','video_approved','published','pending'];
-    const groups = {};
-    items.forEach(idea => { const s = getIdeaStatus(idea); if (!groups[s]) groups[s]=[]; groups[s].push(idea); });
-    ORDER.forEach(s => {
-      if (groups[s]?.length) {
-        const count = groups[s].length;
-        html += `<div class="bucket-label">${STATUS_LABELS[s]||s} · ${count} idea${count>1?'s':''}</div>`;
-        groups[s].forEach(idea => { html += buildIdeaCard(idea); });
-      }
-    });
-  } else {
-    items.forEach(idea => { html += buildIdeaCard(idea); });
-  }
-  document.getElementById('main').innerHTML = html;
-}
-
-// ── Build Cards ───────────────────────────────────────────────
-function buildEpCard(ep) {
-  const status = getEpStatus(ep);
-  const modNum = MODULE_NUM(ep.module);
+function card(ep) {
+  const n = ep.episode_number;
+  const s = ep.status || 'pending';
+  const isEn = lang === 'en';
+  const title = isEn ? (ep.title_english||ep.title_tamil) : (ep.title_tamil||ep.title_english);
+  const sub   = isEn ? '' : (ep.title_english||'');
   return `
-  <div class="ep-card st-${status}" id="card-${ep.episode_number}">
-    <div class="ep-header">
-      <div class="ep-num">#${String(ep.episode_number).padStart(3,'0')}</div>
+  <div class="ep-card lang-${lang} ${s==='published'?'published':''}" id="card-${n}">
+    <div class="ep-head">
+      <div class="ep-num">#${String(n).padStart(3,'0')}</div>
       <div class="ep-body">
         <div class="ep-meta">
-          <span class="module-badge mod-${modNum}">M${modNum}</span>
-          <span class="pillar-badge">${ep.pillar||''}</span>
-          <span class="status-badge sb-${status}">${STATUS_LABELS[status]||status}</span>
+          <span class="ep-lang ${lang}">${lang==='ta'?'🇮🇳 Tamil':'🇬🇧 English'}</span>
+          ${ep.module?`<span class="mod-badge">${ep.module}</span>`:''}
+          <span class="status-badge sb-${s}">${STATUS_LABELS[s]||s}</span>
         </div>
-        <div class="ep-title-ta">${ep.title_tamil||''}</div>
-        <div class="ep-title-en">${ep.title_english||''}</div>
+        <div class="ep-title">${title||''}</div>
+        ${sub?`<div class="ep-sub">${sub}</div>`:''}
         ${ep.bridge?`<div class="ep-bridge">↳ ${ep.bridge}</div>`:''}
       </div>
     </div>
-    <div class="ep-actions">${buildActions(ep, status, false)}</div>
+    ${buildActions(ep, s, n)}
   </div>`;
 }
 
-function buildIdeaCard(idea) {
-  const status = getIdeaStatus(idea);
+function buildActions(ep, s, n) {
+  // ── Pending ──────────────────────────────────────────────
+  if (s === 'pending')
+    return `<div class="ep-actions">
+      <button class="btn btn-gen" onclick="triggerScript(${n})">⚡ Generate Script</button>
+    </div>`;
+
+  // ── Generating ────────────────────────────────────────────
+  if (['generating','generating_images','generating_video'].includes(s))
+    return `<div class="ep-actions"><div class="wait-msg"><span class="spin">⚙️</span> ${STATUS_LABELS[s]} — check GitHub Actions</div></div>`;
+
+  // ── Script ready ──────────────────────────────────────────
+  if (s === 'script_ready')
+    return `<div class="ep-actions">
+      <button class="btn btn-review" onclick="openScriptMod(${n})">📄 Review Script</button>
+      <button class="btn btn-approve" onclick="quickSet(${n},'script_approved')">✓ Approve</button>
+    </div>`;
+
+  // ── Script approved ───────────────────────────────────────
+  if (s === 'script_approved')
+    return `<div class="ep-actions">
+      <button class="btn btn-review" onclick="openScriptMod(${n})">📄 View Script</button>
+      <button class="btn btn-gen" onclick="triggerImages(${n})">🖼 Generate Images</button>
+    </div>`;
+
+  // ── Images ready ──────────────────────────────────────────
+  if (s === 'images_ready')
+    return `<div class="ep-actions">
+      <button class="btn btn-review" onclick="openImgMod(${n})">🖼 Review Images</button>
+      <button class="btn btn-approve" onclick="quickSet(${n},'images_approved')">✓ Approve</button>
+    </div>`;
+
+  // ── Images approved ───────────────────────────────────────
+  if (s === 'images_approved')
+    return `<div class="ep-actions">
+      <button class="btn btn-review" onclick="openImgMod(${n})">🖼 View Images</button>
+      <label class="btn btn-upload" style="cursor:pointer">
+        🎙 Upload Voice Recording
+        <input type="file" accept="audio/*" style="display:none" onchange="uploadVoice(${n},this)">
+      </label>
+    </div>`;
+
+  // ── Voice uploaded ────────────────────────────────────────
+  if (s === 'voice_uploaded') {
+    const voiceUrl = ep.voice_url || '';
+    return `<div class="ep-actions">
+      ${voiceUrl?`<a href="${voiceUrl}" target="_blank" class="btn btn-listen">▶ Listen</a>`:''}
+      <label class="btn btn-regen" style="cursor:pointer">
+        ↺ Re-upload Voice
+        <input type="file" accept="audio/*" style="display:none" onchange="uploadVoice(${n},this)">
+      </label>
+      <button class="btn btn-approve" onclick="quickSet(${n},'voice_approved')">✓ Approve Voice</button>
+    </div>`;
+  }
+
+  // ── Voice approved — show YouTube images upload ───────────
+  if (s === 'voice_approved')
+    return buildYtImagesSection(ep, n);
+
+  // ── Video ready ───────────────────────────────────────────
+  if (s === 'video_ready') {
+    const vUrl = ep.video_url || '';
+    return `<div class="ep-actions">
+      ${vUrl?`<a href="${vUrl}" target="_blank" class="btn btn-preview">▶ Preview Video</a>`:''}
+      <button class="btn btn-approve" onclick="quickSet(${n},'video_approved')">✓ Approve Video</button>
+    </div>`;
+  }
+
+  // ── Video approved ────────────────────────────────────────
+  if (s === 'video_approved')
+    return `<div class="ep-actions">
+      <button class="btn btn-yt" onclick="triggerYouTube(${n})">▲ Upload to YouTube</button>
+      ${ep.video_url?`<a href="${ep.video_url}" target="_blank" class="btn btn-preview">▶ Preview</a>`:''}
+    </div>`;
+
+  // ── Published ─────────────────────────────────────────────
+  if (s === 'published') {
+    const url = ep.youtube_url;
+    return `<div class="ep-actions">
+      ${url?`<a href="${url}" target="_blank" class="btn btn-yt" style="text-decoration:none">▶ Watch on YouTube</a>`:''}
+      <span style="font-size:12px;color:var(--accent2);font-family:'JetBrains Mono',monospace">🚀 Published</span>
+    </div>`;
+  }
+
+  return `<div class="ep-actions"><span class="wait-msg">${STATUS_LABELS[s]||s}</span></div>`;
+}
+
+function buildYtImagesSection(ep, n) {
+  const hasIntro  = !!ep.intro_image_url;
+  const hasOutro  = !!ep.outro_image_url;
+  // Narrator photo is always in channel-assets — no upload needed
   return `
-  <div class="idea-card st-${status}" id="idea-card-${idea.id}">
-    <div class="idea-header">
-      <div class="idea-icon-tag">Idea</div>
-      <div class="idea-body">
-        <div class="ep-meta">
-          <span class="status-badge sb-${status}" style="margin-left:0">${STATUS_LABELS[status]||status}</span>
-          ${buildPlatformMarkers(idea)}
-        </div>
-        <div class="idea-title">${idea.title||''}</div>
-        ${idea.description?`<div class="idea-desc">${idea.description}</div>`:''}
-        ${idea.research_angle?`<div class="idea-angle">↳ ${idea.research_angle}</div>`:''}
-      </div>
+  <div class="upload-section">
+    <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">
+      YouTube images — upload episode-specific or use channel defaults
     </div>
-    <div class="idea-actions">${buildActions(idea, status, true)}</div>
-  </div>`;
-}
-
-function buildPlatformMarkers(idea) {
-  const ytS  = idea.status || 'pending';
-  const shS  = idea.status_shorts || 'pending';
-  const xS   = idea.status_x || 'pending';
-  const m = (label,s) => `<span style="font-family:'JetBrains Mono',monospace;font-size:9px;padding:2px 6px;border-radius:4px;background:${s==='published'?'var(--green-dim)':'var(--surface2)'};color:${s==='published'?'var(--green)':'var(--muted)'}">${label}</span>`;
-  return `<div style="display:flex;gap:4px;margin-left:auto">${m('YT',ytS)}${m('S/R',shS)}${m('X',xS)}</div>`;
-}
-
-// ── Build Actions (all 12 tracks wired) ───────────────────────
-function buildActions(item, status, isIdea) {
-  const n  = isIdea ? `'${item.id}'` : item.episode_number;
-  const p  = activePlatform;
-
-  // ── YouTube Long ──────────────────────────────────────────
-  if (p === 'youtube') {
-    if (status === 'pending')
-      return `<button class="btn btn-generate" onclick="${isIdea?`generateIdeaScript(${n})`:`generateScript(${n})`}">⚡ Generate All Scripts</button>`;
-    if (status === 'generating')
-      return `<div class="generating-banner"><span class="spin">⚙️</span> Gemini generating all formats — check back in a few minutes</div>`;
-    if (status === 'script_ready')
-      return `<button class="btn btn-review" onclick="openModal(${n},${isIdea})">📄 Review Script</button>
-              <button class="btn btn-approve" onclick="quickApprove(${n},'script_approved',${isIdea})">✓ Approve Script</button>`;
-    if (status === 'script_approved') {
-      if (!isIdea && lang === 'en')
-        return `<button class="btn btn-review" onclick="openModal(${n},false)">📄 View Script</button>
-                <div class="waiting-banner">⏳ Waiting for Tamil episode to complete first</div>`;
-      return `<button class="btn btn-review" onclick="openModal(${n},${isIdea})">📄 View Script</button>
-              <button class="btn btn-preview" onclick="generateImages(${n},${isIdea})">🖼 Generate Images</button>`;
-    }
-    if (status === 'generating_images')
-      return `<div class="generating-banner"><span class="spin">🎨</span> Imagen 3 generating — check back in ~5 min</div>`;
-    if (status === 'images_ready')
-      return `<button class="btn btn-review" onclick="openImagesModal(${n},${isIdea})">🖼 Review Images</button>
-              <button class="btn btn-approve" onclick="quickApprove(${n},'images_approved',${isIdea})">✓ Approve Images</button>`;
-    if (status === 'images_approved')
-      return `<button class="btn btn-review" onclick="openImagesModal(${n},${isIdea})">🖼 View Images</button>
-              <button class="btn btn-preview" onclick="generateVideo(${n},${isIdea})">🎬 Generate Video</button>`;
-    if (status === 'rendering_video')
-      return `<div class="generating-banner"><span class="spin">🎬</span> FFmpeg rendering — check back in ~15 min</div>`;
-    if (status === 'video_ready')
-      return `<button class="btn btn-preview" onclick="previewVideo(${n},${isIdea})">▶ Preview Video</button>
-              <button class="btn btn-approve" onclick="quickApprove(${n},'video_approved',${isIdea})">✓ Approve for YouTube</button>`;
-    if (status === 'video_approved') {
-      if (isIdea)
-        return `<button class="btn btn-youtube" onclick="uploadIdeaYouTube(${n})">▲ Upload to YouTube</button>
-                <button class="btn btn-preview" onclick="previewVideo(${n},true)">▶ Preview</button>`;
-      return `<button class="btn btn-youtube" onclick="uploadYouTube(${n},false)">▲ Upload to YouTube</button>
-              <button class="btn btn-preview" onclick="previewVideo(${n},false)">▶ Preview</button>`;
-    }
-    if (status === 'published') {
-      const url = item.youtube_url;
-      return url
-        ? `<a href="${url}" target="_blank" class="btn btn-youtube" style="text-decoration:none">▶ Watch on YouTube</a>`
-        : `<span style="font-size:12px;color:var(--accent2);font-family:'JetBrains Mono',monospace">🚀 Published on YouTube</span>`;
-    }
-  }
-
-  // ── Shorts / Reels ────────────────────────────────────────
-  if (p === 'shorts') {
-    if (status === 'pending')
-      return `<div class="waiting-banner">⏳ Generate scripts from YouTube tab first</div>`;
-    if (status === 'script_ready')
-      return `<button class="btn btn-review" onclick="openModal(${n},${isIdea},'shorts')">✂ Review Short Script</button>
-              <button class="btn btn-approve" onclick="quickApprove(${n},'script_approved',${isIdea},'status_shorts')">✓ Approve</button>`;
-    if (status === 'script_approved')
-      return `<button class="btn btn-review" onclick="openModal(${n},${isIdea},'shorts')">✂ View Script</button>
-              <button class="btn btn-preview" onclick="generateImages(${n},${isIdea},'vertical')">🖼 Generate Vertical Images</button>`;
-    if (status === 'generating_images')
-      return `<div class="generating-banner"><span class="spin">🎨</span> Generating vertical images — check back in ~5 min</div>`;
-    if (status === 'images_ready')
-      return `<button class="btn btn-review" onclick="openImagesModal(${n},${isIdea},'vertical')">🖼 Review Images</button>
-              <button class="btn btn-approve" onclick="quickApprove(${n},'images_approved',${isIdea},'status_shorts')">✓ Approve Images</button>`;
-    if (status === 'images_approved')
-      return `<button class="btn btn-shorts" onclick="generateShortVideo(${n},${isIdea})">🎬 Generate Short Video (AI voice)</button>`;
-    if (status === 'rendering_video')
-      return `<div class="generating-banner"><span class="spin">🎬</span> Rendering vertical video — check back in ~15 min</div>`;
-    if (status === 'video_ready')
-      return `<button class="btn btn-preview" onclick="previewVideo(${n},${isIdea},'short')">▶ Preview Short</button>
-              <button class="btn btn-approve" onclick="quickApprove(${n},'video_approved',${isIdea},'status_shorts')">✓ Approve</button>`;
-    if (status === 'video_approved')
-      return `<button class="btn btn-shorts" onclick="publishShortsReels(${n},${isIdea})">▲ Publish to Shorts & Reels</button>
-              <button class="btn btn-preview" onclick="previewVideo(${n},${isIdea},'short')">▶ Preview</button>`;
-    if (status === 'published') {
-      const ytS = item.youtube_shorts_url;
-      const rlS = item.reels_url;
-      return `${ytS?`<a href="${ytS}" target="_blank" class="btn btn-shorts" style="text-decoration:none">▶ Shorts</a>`:''}
-              ${rlS?`<a href="${rlS}" target="_blank" class="btn btn-shorts" style="text-decoration:none">▶ Reels</a>`:''}
-              ${(!ytS&&!rlS)?`<span style="font-size:12px;color:var(--shorts);font-family:'JetBrains Mono',monospace">🚀 Published Shorts & Reels</span>`:''}`;
-    }
-  }
-
-  // ── X / Twitter ───────────────────────────────────────────
-  if (p === 'x') {
-    if (status === 'pending')
-      return `<div class="waiting-banner">⏳ Generate scripts from YouTube tab first</div>`;
-    if (status === 'script_ready')
-      return `<button class="btn btn-review" onclick="openModal(${n},${isIdea},'x')">𝕏 Review X Thread</button>
-              <button class="btn btn-approve" onclick="quickApprove(${n},'script_approved',${isIdea},'status_x')">✓ Approve Thread</button>`;
-    if (status === 'script_approved')
-      return `<button class="btn btn-review" onclick="openModal(${n},${isIdea},'x')">𝕏 View Thread</button>
-              <button class="btn btn-x" onclick="generateXImages(${n},${isIdea})">🖼 Generate X Images</button>`;
-    if (status === 'generating_x_images')
-      return `<div class="generating-banner"><span class="spin">🖼</span> Generating 6 images per thread — ~10 min</div>`;
-    if (status === 'x_images_ready')
-      return `<button class="btn btn-review" onclick="openXImagesModal(${n},${isIdea})">🖼 Review X Images</button>
-              <button class="btn btn-x" onclick="openXPostModal(${n},${isIdea})">𝕏 Post to X</button>`;
-    if (status === 'published') {
-      const urlTa = item.x_post_url_tamil;
-      const urlEn = item.x_post_url_english;
-      return `${urlTa?`<a href="${urlTa}" target="_blank" class="btn btn-x" style="text-decoration:none">𝕏 Tamil Thread</a>`:''}
-              ${urlEn?`<a href="${urlEn}" target="_blank" class="btn btn-x" style="text-decoration:none">𝕏 English Thread</a>`:''}
-              ${(!urlTa&&!urlEn)?`<span style="font-size:12px;color:var(--xc);font-family:'JetBrains Mono',monospace">🚀 Posted on X</span>`:''}`;
-    }
-  }
-
-  return `<span style="font-size:12px;color:var(--muted);font-family:'JetBrains Mono',monospace">${STATUS_LABELS[status]||status}</span>`;
-}
-
-// ── Channel Stats ─────────────────────────────────────────────
-function renderStats(ta, en, id) {
-  const count = (arr, col, val) => arr.filter(r => (r[col]||'pending') === val).length;
-  const ytPub  = count(ta,'status','published');
-  const shPub  = count(ta,'status_shorts','published');
-  const xPub   = count(ta,'status_x','published');
-  const idPub  = id.filter(i => i.status==='published'||i.status_shorts==='published'||i.status_x==='published').length;
-  const inPipe = ta.filter(e => !['pending','published'].includes(e.status||'pending')).length;
-  const pending = count(ta,'status','pending');
-  const total = 200;
-  const pct = Math.round((ytPub/total)*100);
-
-  const pipelineRows = ['script_ready','script_approved','images_ready','images_approved','video_ready','video_approved']
-    .map(s => `<div class="stats-row-item"><span style="color:var(--muted2)">${STATUS_LABELS[s]}</span><span class="stats-row-num" style="color:var(--blue)">${count(ta,'status',s)}</span></div>`).join('');
-
-  document.getElementById('main').innerHTML = `
-  <div class="stats-page">
-    <div class="stats-grid">
-      <div class="stat-card">
-        <div class="stat-lbl">YouTube Published</div>
-        <div class="stat-val" style="color:var(--yt)">${ytPub}</div>
-        <div class="stat-sub">of ${total} episodes</div>
-        <div class="stat-progress"><div class="stat-progress-fill" style="width:${pct}%;background:var(--yt)"></div></div>
+    <div class="upload-grid">
+      <label class="upload-slot ${hasIntro?'has-file':''}" style="cursor:pointer">
+        <input type="file" accept="image/*" class="upload-input" onchange="uploadYtImage(${n},'intro',this)">
+        <div class="upload-slot-icon">🎬</div>
+        <div class="upload-slot-label">Intro image (2s)</div>
+        <div class="upload-slot-status">${hasIntro?'✓ Custom uploaded':'Using channel default'}</div>
+      </label>
+      <div class="upload-slot has-file" style="cursor:default">
+        <div class="upload-slot-icon">👤</div>
+        <div class="upload-slot-label">Narrator photo</div>
+        <div class="upload-slot-status">✓ From channel-assets</div>
       </div>
-      <div class="stat-card">
-        <div class="stat-lbl">Shorts & Reels Live</div>
-        <div class="stat-val" style="color:var(--shorts)">${shPub}</div>
-        <div class="stat-sub">YouTube Shorts + Instagram</div>
-        <div class="stat-progress"><div class="stat-progress-fill" style="width:${Math.round((shPub/total)*100)}%;background:var(--shorts)"></div></div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-lbl">X / Twitter Posted</div>
-        <div class="stat-val" style="color:var(--xc)">${xPub}</div>
-        <div class="stat-sub">threads published</div>
-        <div class="stat-progress"><div class="stat-progress-fill" style="width:${Math.round((xPub/total)*100)}%;background:var(--muted)"></div></div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-lbl">Ideas Active</div>
-        <div class="stat-val" style="color:var(--idea)">${id.length}</div>
-        <div class="stat-sub">${idPub} published across platforms</div>
-        <div class="stat-progress"><div class="stat-progress-fill" style="width:${id.length?Math.round((idPub/id.length)*100):0}%;background:var(--idea)"></div></div>
-      </div>
+      <label class="upload-slot ${hasOutro?'has-file':''}" style="cursor:pointer">
+        <input type="file" accept="image/*" class="upload-input" onchange="uploadYtImage(${n},'outro',this)">
+        <div class="upload-slot-icon">🏁</div>
+        <div class="upload-slot-label">Outro image (3s)</div>
+        <div class="upload-slot-status">${hasOutro?'✓ Custom uploaded':'Using channel default'}</div>
+      </label>
     </div>
-    <div class="stats-row">
-      <div class="stats-panel">
-        <div class="stats-panel-title">YouTube Long Pipeline (Tamil)</div>
-        <div class="stats-row-item"><span style="color:var(--muted2)">Pending</span><span class="stats-row-num" style="color:var(--muted)">${pending}</span></div>
-        ${pipelineRows}
-        <div class="stats-row-item"><span style="color:var(--muted2)">Published</span><span class="stats-row-num" style="color:var(--green)">${ytPub}</span></div>
-      </div>
-      <div class="stats-panel">
-        <div class="stats-panel-title">Platform Publishing</div>
-        <div class="stats-row-item"><span style="color:var(--muted2)">YouTube Long — Tamil</span><span class="stats-row-num" style="color:var(--yt)">${ytPub} live</span></div>
-        <div class="stats-row-item"><span style="color:var(--muted2)">YouTube Long — English</span><span class="stats-row-num" style="color:var(--yt)">${count(en,'status','published')} live</span></div>
-        <div class="stats-row-item"><span style="color:var(--muted2)">Shorts — Tamil & English</span><span class="stats-row-num" style="color:var(--shorts)">${shPub} live</span></div>
-        <div class="stats-row-item"><span style="color:var(--muted2)">Reels — Tamil & English</span><span class="stats-row-num" style="color:var(--shorts)">${shPub} live</span></div>
-        <div class="stats-row-item"><span style="color:var(--muted2)">X Tamil threads</span><span class="stats-row-num" style="color:var(--xc)">${xPub} posted</span></div>
-        <div class="stats-row-item"><span style="color:var(--muted2)">X English threads</span><span class="stats-row-num" style="color:var(--xc)">${count(en,'status_x','published')} posted</span></div>
-        <div class="stats-row-item"><span style="color:var(--muted2)">Ideas published</span><span class="stats-row-num" style="color:var(--idea)">${idPub}</span></div>
-      </div>
-    </div>
-    <div class="series-progress">
-      <div style="display:flex;justify-content:space-between;align-items:center">
-        <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted);letter-spacing:.8px;text-transform:uppercase">Series Progress</span>
-        <span style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:500;color:var(--accent)">${ytPub} / ${total} episodes published</span>
-      </div>
-      <div class="progress-bar-big"><div class="progress-bar-fill" style="width:${pct}%"></div></div>
-      <div class="progress-labels"><span>0</span><span>50</span><span>100</span><span>150</span><span>200</span></div>
-    </div>
-    <div class="secrets-note">
-      <div class="secrets-note-title">⚙️ Sprint 8 — New GitHub Secrets Required</div>
-      <div class="secrets-note-body">
-        Add these to your GitHub repo secrets for the new pipelines:<br>
-        <code>TWITTER_API_KEY</code> · <code>TWITTER_API_SECRET</code> · <code>TWITTER_ACCESS_TOKEN</code> · <code>TWITTER_ACCESS_SECRET</code><br>
-        <code>INSTAGRAM_ACCESS_TOKEN</code> (for Reels upload — separate Meta app setup needed)<br>
-        Also deploy 4 new Supabase edge functions: <code>trigger-shorts-video-gen</code> · <code>trigger-x-images-gen</code> · <code>trigger-x-post</code> · <code>trigger-idea-youtube-upload</code>
-      </div>
+    <div class="ep-actions" style="border-top:none;padding-top:0">
+      <button class="btn btn-gen" onclick="triggerVideo(${n})">🎬 Generate Video</button>
+      <span style="font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace">Defaults used if no custom images uploaded</span>
     </div>
   </div>`;
 }
 
-// ── Language & Filter ─────────────────────────────────────────
-function setLang(l) {
-  lang = l;
-  document.getElementById('btn-ta').className = 'lang-btn'+(l==='ta'?' active-ta':'');
-  document.getElementById('btn-en').className = 'lang-btn'+(l==='en'?' active-en':'');
-  if (activeL1 === 'series') loadEpisodes();
-}
-
-function setFilter(f, btn) {
-  filter = f;
-  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
-  if (btn) btn.classList.add('active');
-  render();
-}
-
-// ── Script Actions ────────────────────────────────────────────
-async function generateScript(n) {
+// ── Actions ────────────────────────────────────────────────
+async function triggerScript(n) {
   const card = document.getElementById(`card-${n}`);
-  const btn  = card?.querySelector('.btn-generate');
+  const btn  = card?.querySelector('.btn-gen');
   if (btn) { btn.disabled=true; btn.textContent='⚙️ Triggering...'; }
   try {
-    const r = await fetch(EDGE_FN,{method:'POST',headers:EDGE_H,body:JSON.stringify({episode_number:n})});
-    const data = await r.json();
-    if (data.success) {
-      await patchEpisode(n,{status:'generating'});
-      showToast(`Episode ${n} queued — all format scripts generating`,'success');
-      setTimeout(loadEpisodes,1500);
-    } else throw new Error(data.error||'Unknown error');
-  } catch(e) {
-    showToast(`Error: ${e.message}`,'error');
-    if (btn) { btn.disabled=false; btn.textContent='⚡ Generate All Scripts'; }
-  }
-}
-
-async function generateAll() {
-  const pending = episodes.filter(e => (e.status||'pending')==='pending');
-  if (!pending.length) { showToast('No pending episodes','info'); return; }
-  const btn  = document.getElementById('btn-gen-all');
-  const prog = document.getElementById('gen-progress');
-  const fill = document.getElementById('gen-progress-fill');
-  const txt  = document.getElementById('gen-progress-text');
-  btn.disabled=true; btn.textContent=`⚙️ Queueing ${pending.length}...`;
-  prog.classList.add('show');
-  let done=0;
-  for (const ep of pending) {
-    txt.textContent=`Triggering Episode ${ep.episode_number} (${done+1}/${pending.length})...`;
-    fill.style.width=`${Math.round((done/pending.length)*100)}%`;
-    try {
-      await fetch(EDGE_FN,{method:'POST',headers:EDGE_H,body:JSON.stringify({episode_number:ep.episode_number})});
-      await patchEpisode(ep.episode_number,{status:'generating'});
-    } catch(e) {}
-    done++; await delay(2000);
-  }
-  fill.style.width='100%'; txt.textContent=`✅ All ${done} queued!`;
-  btn.disabled=false; btn.textContent='⚡ Generate All Pending';
-  showToast(`${done} episodes queued`,'success');
-  setTimeout(()=>{ prog.classList.remove('show'); loadEpisodes(); },3000);
-}
-
-async function quickApprove(n, newStatus, isIdea=false, col=null) {
-  try {
-    if (isIdea) {
-      const statusCol = col || (activePlatform==='youtube'?'status':PLATFORMS[activePlatform].statusCol);
-      await patchIdea(n,{[statusCol]:newStatus});
-      showToast(`Idea → ${STATUS_LABELS[newStatus]}`,'success');
-      loadIdeas();
-    } else {
-      const statusCol = col || PLATFORMS[activePlatform].statusCol;
-      await patchTable(TABLE(),n,{[statusCol]:newStatus});
-      if (activePlatform==='youtube' && newStatus==='script_approved' && lang==='ta') {
-        await patchTable('english_episodes',n,{status:'script_ready'});
-      }
-      showToast(`Episode ${n} → ${STATUS_LABELS[newStatus]}`,'success');
-      loadEpisodes();
-    }
-  } catch(e) { showToast(`Error: ${e.message}`,'error'); }
-}
-
-// ── Image & Video Actions ─────────────────────────────────────
-async function generateImages(n, isIdea=false, orientation='landscape') {
-  try {
-    const edgeFn = isIdea ? EDGE_IDEA_IMG_FN : EDGE_IMG_FN;
-    const body   = isIdea ? {idea_id:n, orientation} : {episode_number:n, orientation};
-    const statusCol = isIdea ? 'status' : PLATFORMS[activePlatform].statusCol;
-    if (isIdea) await patchIdea(n,{[statusCol]:'generating_images'});
-    else await patchTable(TABLE(),n,{[statusCol]:'generating_images'});
-    const r = await fetch(edgeFn,{method:'POST',headers:EDGE_H,body:JSON.stringify(body)});
-    const data = await r.json();
-    if (data.success) { showToast('Image generation started','success'); setTimeout(load,2000); }
-    else throw new Error(data.error||'Error');
-  } catch(e) { showToast(`Error: ${e.message}`,'error'); }
-}
-
-async function generateVideo(n, isIdea=false) {
-  try {
-    const edgeFn = isIdea ? EDGE_IDEA_VIDEO_FN : EDGE_VIDEO_FN;
-    const body   = isIdea ? {idea_id:n} : {episode_number:n};
-    if (isIdea) await patchIdea(n,{status:'rendering_video'});
-    else await patchTable(TABLE(),n,{status:'rendering_video'});
-    const r = await fetch(edgeFn,{method:'POST',headers:EDGE_H,body:JSON.stringify(body)});
-    const data = await r.json();
-    if (data.success) { showToast('Video rendering started','success'); setTimeout(load,2000); }
-    else throw new Error(data.error||'Error');
-  } catch(e) { showToast(`Error: ${e.message}`,'error'); }
-}
-
-// Sprint 8: Generate short video via AI voice pipeline
-async function generateShortVideo(n, isIdea=false) {
-  try {
-    const body = isIdea
-      ? {idea_id:n, language:lang}
-      : {episode_number:n, language:lang};
-    const statusCol = isIdea ? 'status_shorts' : 'status_shorts';
-    if (isIdea) await patchIdea(n,{[statusCol]:'rendering_video'});
-    else await patchTable(TABLE(),n,{status_shorts:'rendering_video'});
-    const r = await fetch(EDGE_SHORTS_VIDEO_FN,{method:'POST',headers:EDGE_H,body:JSON.stringify(body)});
-    const data = await r.json();
-    if (data.success) {
-      showToast('Short video rendering started (AI voice) — ~15 min','success');
-      setTimeout(load,2000);
-    } else throw new Error(data.error||'Error');
-  } catch(e) { showToast(`Error: ${e.message}`,'error'); }
-}
-
-// Sprint 8: Publish to YouTube Shorts + Instagram Reels
-async function publishShortsReels(n, isIdea=false) {
-  const body = isIdea ? {idea_id:n, language:lang} : {episode_number:n, language:lang};
-  // Reuse the existing video upload flow — shorts workflow handles both platforms
-  showToast('Triggering Shorts + Reels upload — check GitHub Actions','info');
-}
-
-async function previewVideo(n, isIdea=false, type='long') {
-  const item = isIdea ? ideas.find(i=>i.id===n) : episodes.find(e=>e.episode_number===n);
-  const url  = type==='short' ? (item?.video_url_short_tamil || item?.video_url_short) : item?.video_url;
-  if (!url) { showToast('Video URL not available yet','info'); return; }
-  window.open(url,'_blank');
-}
-
-async function uploadYouTube(n, isIdea=false) {
-  showToast('Triggering YouTube upload workflow...','info');
-}
-
-// Sprint 8: Upload idea to YouTube
-async function uploadIdeaYouTube(id) {
-  try {
-    const r = await fetch(EDGE_IDEA_YT_UPLOAD_FN,{method:'POST',headers:EDGE_H,body:JSON.stringify({idea_id:id, language:lang})});
-    const data = await r.json();
-    if (data.success) {
-      await patchIdea(id,{status:'rendering_video'});
-      showToast('YouTube upload triggered for idea','success');
-      setTimeout(loadIdeas,2000);
-    } else throw new Error(data.error||'Error');
-  } catch(e) { showToast(`Error: ${e.message}`,'error'); }
-}
-
-// Sprint 8: Generate 6 X images (both languages)
-async function generateXImages(n, isIdea=false) {
-  try {
-    const body = isIdea ? {idea_id:n} : {episode_number:n};
-    const statusCol = 'status_x';
-    if (isIdea) await patchIdea(n,{[statusCol]:'generating_x_images'});
-    else await patchTable(TABLE(),n,{[statusCol]:'generating_x_images'});
-    const r = await fetch(EDGE_X_IMAGES_FN,{method:'POST',headers:EDGE_H,body:JSON.stringify(body)});
-    const data = await r.json();
-    if (data.success) {
-      showToast('X image generation started — 6 images per language, ~10 min','success');
-      setTimeout(load,2000);
-    } else throw new Error(data.error||'Error');
-  } catch(e) { showToast(`Error: ${e.message}`,'error'); }
-}
-
-// Sprint 8: Open X images review modal
-function openXImagesModal(n, isIdea=false) {
-  const item = isIdea ? ideas.find(i=>i.id===n) : episodes.find(e=>e.episode_number===n);
-  if (!item) return;
-
-  // Show Tamil images by default
-  let imageData = item.x_images_tamil || [];
-  if (typeof imageData === 'string') { try { imageData = JSON.parse(imageData); } catch(e) { imageData = []; } }
-
-  const imgHtml = imageData.map((img,i)=>`
-    <div style="margin-bottom:20px;background:var(--surface2);border:1px solid var(--border2);border-radius:12px;overflow:hidden">
-      <div style="padding:10px 14px;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--border)">
-        <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted)">Tweet ${img.tweet_index||i+1}</span>
-        <span style="font-size:11px;color:var(--muted2)">${img.style||''}</span>
-      </div>
-      <img src="${img.url}" style="width:100%;display:block;aspect-ratio:16/9;object-fit:cover" loading="lazy"/>
-    </div>`).join('');
-
-  document.getElementById('modal-ep-num').textContent = isIdea?'Idea · X Images':`Episode ${n} · X Images`;
-  document.getElementById('modal-title').textContent  = '𝕏 X Thread Images';
-  document.getElementById('modal-subtitle').textContent = '6 images (one per tweet) · Tamil shown — switch to English in modal';
-  document.getElementById('modal-lang-tabs').style.display='none';
-  document.getElementById('modal-script-ta').style.display='block';
-  document.getElementById('modal-script-en').style.display='none';
-  document.getElementById('script-content-ta').innerHTML = imgHtml||'<div class="script-empty">No X images yet</div>';
-  document.getElementById('script-content-ta').className='';
-  document.getElementById('script-content-ta').style.cssText='white-space:normal;background:none;border:none;padding:0';
-  document.getElementById('modal-approve-btn').style.display='none';
-  document.getElementById('modal-regen-btn').style.display='none';
-  document.getElementById('modal-status-note').textContent='x images · tap Post to X to proceed';
-  document.getElementById('modal-overlay').classList.add('open');
-  document.body.style.overflow='hidden';
-}
-
-// Sprint 8: X post modal
-function openXPostModal(n, isIdea=false) {
-  xPostTarget = {n, isIdea};
-  xPostLang = lang;
-  const item = isIdea ? ideas.find(i=>i.id===n) : episodes.find(e=>e.episode_number===n);
-  const label = isIdea ? `Idea — ${item?.title||''}` : `Episode ${n}`;
-  document.getElementById('x-modal-ep').textContent = label;
-  document.getElementById('x-yt-link').value = item?.youtube_url || '';
-  selectXLang(lang);
-  document.getElementById('x-modal-overlay').classList.add('open');
-  document.body.style.overflow='hidden';
-}
-
-function selectXLang(l) {
-  xPostLang = l;
-  document.getElementById('x-lang-ta').className = 'x-lang-opt'+(l==='ta'?' selected-ta':'');
-  document.getElementById('x-lang-en').className = 'x-lang-opt'+(l==='en'?' selected-en':'');
-}
-
-function closeXModal(event) {
-  if (event && event.target!==document.getElementById('x-modal-overlay')) return;
-  document.getElementById('x-modal-overlay').classList.remove('open');
-  document.body.style.overflow='';
-}
-
-async function confirmPostToX() {
-  if (!xPostTarget) return;
-  const {n, isIdea} = xPostTarget;
-  const ytLink = document.getElementById('x-yt-link').value.trim();
-  const btn = document.getElementById('x-post-btn');
-  btn.disabled = true; btn.textContent = '⚙️ Triggering...';
-
-  try {
-    const body = {language: xPostLang};
-    if (isIdea) body.idea_id = n;
-    else body.episode_number = n;
-    if (ytLink) body.youtube_link = ytLink;
-
-    const r = await fetch(EDGE_X_POST_FN,{method:'POST',headers:EDGE_H,body:JSON.stringify(body)});
-    const data = await r.json();
-    if (data.success) {
-      showToast(`𝕏 Thread posting triggered — ${xPostLang === 'ta' ? 'Tamil' : 'English'} · check X in ~2 min`,'success');
-      closeXModal();
-      setTimeout(load, 2000);
-    } else throw new Error(data.error||'Error');
-  } catch(e) {
-    showToast(`Error: ${e.message}`,'error');
-    btn.disabled=false; btn.textContent='𝕏 Post Thread Now';
-  }
-}
-
-// ── Ideas ─────────────────────────────────────────────────────
-function openIdeaModal() {
-  document.getElementById('idea-title').value='';
-  document.getElementById('idea-desc').value='';
-  document.getElementById('idea-angle').value='';
-  document.getElementById('idea-modal-overlay').classList.add('open');
-  document.body.style.overflow='hidden';
-}
-
-function closeIdeaModal(event) {
-  if (event && event.target!==document.getElementById('idea-modal-overlay')) return;
-  document.getElementById('idea-modal-overlay').classList.remove('open');
-  document.body.style.overflow='';
-}
-
-async function submitIdea() {
-  const title = document.getElementById('idea-title').value.trim();
-  const desc  = document.getElementById('idea-desc').value.trim();
-  const angle = document.getElementById('idea-angle').value.trim();
-  if (!title) { showToast('Please enter an idea title','error'); return; }
-  try {
-    const r = await fetch(`${SB_URL}/rest/v1/ideas`,{
-      method:'POST', headers:{...H,'Prefer':'return=representation'},
-      body:JSON.stringify({title,description:desc,research_angle:angle,status:'pending',status_shorts:'pending',status_x:'pending'})
+    const r = await fetch(EDGE.script, {
+      method:'POST', headers:H,
+      body: JSON.stringify({episode_number:n})
     });
-    if (!r.ok) throw new Error(`Supabase error ${r.status}`);
-    const [newIdea] = await r.json();
-    const ef = await fetch(EDGE_IDEA_FN,{method:'POST',headers:EDGE_H,body:JSON.stringify({idea_id:newIdea.id})});
-    const efData = await ef.json();
-    if (!efData.success) throw new Error(efData.error || 'Edge function failed');
-    await patchIdea(newIdea.id,{status:'generating',status_shorts:'generating',status_x:'generating'});
-    showToast('Idea saved — Gemini generating all scripts','success');
-    closeIdeaModal();
-    setL1('ideas');
+    const d = await r.json();
+    if (d.success) {
+      await patch(n, {status:'generating'});
+      showToast(`Episode ${n} script generating...`,'success');
+      setTimeout(loadEpisodes, 1500);
+    } else throw new Error(d.error||'Edge function error');
+  } catch(e) {
+    showToast(`Error: ${e.message}`,'error');
+    if (btn) { btn.disabled=false; btn.textContent='⚡ Generate Script'; }
+  }
+}
+
+async function triggerImages(n) {
+  try {
+    const r = await fetch(EDGE.images, {
+      method:'POST', headers:H,
+      body: JSON.stringify({episode_number:n})
+    });
+    const d = await r.json();
+    if (d.success) {
+      await patch(n, {status:'generating_images'});
+      showToast(`Image generation started — ~20 min`,'success');
+      setTimeout(loadEpisodes, 1500);
+    } else throw new Error(d.error||'Edge function error');
   } catch(e) { showToast(`Error: ${e.message}`,'error'); }
 }
 
-async function generateIdeaScript(id) {
-  const card = document.getElementById(`idea-card-${id}`);
-  const btn  = card?.querySelector('.btn-generate');
-  if (btn) { btn.disabled=true; btn.textContent='⚙️ Triggering...'; }
+async function triggerVideo(n) {
   try {
-    await patchIdea(id, {status:'generating',status_shorts:'generating',status_x:'generating'});
-    const r = await fetch(EDGE_IDEA_FN,{method:'POST',headers:EDGE_H,body:JSON.stringify({idea_id:id})});
-    const data = await r.json();
-    if (data.success) {
-      showToast('Gemini generating all format scripts — a few minutes','success');
-      setTimeout(loadIdeas,1500);
-    } else throw new Error(data.error||'Edge function error');
+    const r = await fetch(EDGE.video, {
+      method:'POST', headers:H,
+      body: JSON.stringify({episode_number:n})
+    });
+    const d = await r.json();
+    if (d.success) {
+      await patch(n, {status:'generating_video'});
+      showToast(`Video rendering started — ~30 min`,'success');
+      setTimeout(loadEpisodes, 1500);
+    } else throw new Error(d.error||'Edge function error');
+  } catch(e) { showToast(`Error: ${e.message}`,'error'); }
+}
+
+async function triggerYouTube(n) {
+  try {
+    const r = await fetch(EDGE.yt, {
+      method:'POST', headers:H,
+      body: JSON.stringify({episode_number:n})
+    });
+    const d = await r.json();
+    if (d.success) {
+      showToast(`YouTube upload triggered`,'success');
+      setTimeout(loadEpisodes, 2000);
+    } else throw new Error(d.error||'Edge function error');
+  } catch(e) { showToast(`Error: ${e.message}`,'error'); }
+}
+
+async function quickSet(n, status) {
+  try {
+    await patch(n, {status});
+    showToast(`Episode ${n} → ${STATUS_LABELS[status]}`,'success');
+    loadEpisodes();
+  } catch(e) { showToast(`Error: ${e.message}`,'error'); }
+}
+
+async function uploadVoice(n, input) {
+  const file = input.files[0];
+  if (!file) return;
+  const btn = input.closest('.btn-upload, .btn-regen');
+  if (btn) { btn.textContent = '⏳ Uploading...'; }
+  try {
+    const ext  = file.name.split('.').pop();
+    const path = `ep${String(n).padStart(3,'0')}_${lang}.${ext}`;
+    const { error } = await SB.storage.from('episode-voices').upload(path, file, {upsert:true});
+    if (error) throw error;
+    const { data: {publicUrl} } = SB.storage.from('episode-voices').getPublicUrl(path);
+    await patch(n, {voice_url: publicUrl, status: 'voice_uploaded'});
+    showToast(`Voice uploaded successfully`,'success');
+    loadEpisodes();
   } catch(e) {
-    showToast(`Error: ${e.message}`,'error');
-    await patchIdea(id,{status:'pending',status_shorts:'pending',status_x:'pending'});
-    if (btn) { btn.disabled=false; btn.textContent='⚡ Generate All Scripts'; }
+    showToast(`Upload failed: ${e.message}`,'error');
+    if (btn) btn.textContent = btn.classList.contains('btn-regen') ? '↺ Re-upload Voice' : '🎙 Upload Voice Recording';
   }
 }
 
-// ── Script Modal ──────────────────────────────────────────────
-function openModal(n, isIdea=false, platform=null) {
-  const p   = platform || activePlatform;
-  const cfg = PLATFORMS[p];
-  const item = isIdea ? ideas.find(i=>i.id===n) : episodes.find(e=>e.episode_number===n);
-  if (!item) return;
-  modalEp   = item;
-  modalLang = lang;
-  modalPlatform = p;
-
-  const label = isIdea ? `Idea · ${p==='x'?'X Thread':cfg.label}` : `Episode ${n} · ${p==='x'?'X Thread':cfg.label}`;
-  document.getElementById('modal-ep-num').textContent = label;
-  document.getElementById('modal-title').textContent  = isIdea ? item.title : item.title_tamil;
-  document.getElementById('modal-subtitle').textContent = isIdea ? '' : (item.title_english||'');
-
-  const tScript = item[cfg.scriptColTa] || '';
-  const eScript = item[cfg.scriptColEn] || '';
-  const fmt = p==='x' ? formatXThread : s=>s;
-
-  document.getElementById('script-content-ta').innerHTML = tScript ? fmt(tScript) : '<div class="script-empty">— Script not generated yet —</div>';
-  document.getElementById('script-content-en').innerHTML = eScript ? fmt(eScript) : '<div class="script-empty">— Script not generated yet —</div>';
-
-  if (p !== 'x') {
-    document.getElementById('script-content-ta').className = tScript?'script-text':'';
-    document.getElementById('script-content-en').className = eScript?'script-text':'';
+async function uploadYtImage(n, type, input) {
+  const file = input.files[0];
+  if (!file) return;
+  const slot = input.closest('.upload-slot');
+  if (slot) { slot.querySelector('.upload-slot-status').textContent = '⏳ Uploading...'; }
+  try {
+    const ext  = file.name.split('.').pop();
+    const path = `ep${String(n).padStart(3,'0')}/yt_${type}.${ext}`;
+    const { error } = await SB.storage.from('episode-images').upload(path, file, {upsert:true});
+    if (error) throw error;
+    const { data: {publicUrl} } = SB.storage.from('episode-images').getPublicUrl(path);
+    const col = type === 'intro' ? 'intro_image_url' : 'outro_image_url';
+    await patch(n, {[col]: publicUrl});
+    if (slot) {
+      slot.classList.add('has-file');
+      slot.querySelector('.upload-slot-status').textContent = '✓ Custom uploaded';
+    }
+    showToast(`${type} image uploaded`,'success');
+  } catch(e) {
+    showToast(`Upload failed: ${e.message}`,'error');
+    if (slot) slot.querySelector('.upload-slot-status').textContent = 'Upload failed — try again';
   }
+}
 
-  document.getElementById('regen-ta').classList.remove('open');
-  document.getElementById('regen-en').classList.remove('open');
-  document.getElementById('modal-lang-tabs').style.display='';
-  document.getElementById('modal-approve-btn').style.display='';
-  document.getElementById('modal-regen-btn').style.display='';
-  document.getElementById('modal-approve-btn').onclick = () => approveScript();
+// ── Script Modal ───────────────────────────────────────────
+function openScriptMod(n) {
+  const ep = episodes.find(e => e.episode_number === n);
+  if (!ep) return;
+  modalEp = ep;
 
-  const statusCol = isIdea ? (p==='youtube'?'status':cfg.statusCol) : cfg.statusCol;
-  const status = item[statusCol]||'pending';
-  document.getElementById('modal-status-note').textContent = `status: ${STATUS_LABELS[status]||status}`;
-  document.getElementById('modal-approve-btn').textContent = status==='script_ready'?'✓ Approve Script':'✓ Approved ✅';
-  document.getElementById('modal-approve-btn').disabled = status==='script_approved';
+  const scriptCol = lang === 'ta' ? 'script_tamil' : 'script_english';
+  const script    = ep[scriptCol] || '';
+  const title     = lang === 'ta' ? (ep.title_tamil||ep.title_english) : ep.title_english;
+  const status    = ep.status || 'pending';
 
-  switchModalLang(lang);
+  document.getElementById('mod-ep').textContent     = `Episode ${n} · ${lang.toUpperCase()}`;
+  document.getElementById('mod-title').textContent  = title||'';
+  document.getElementById('mod-sub').textContent    = ep.bridge||'';
+  document.getElementById('mod-script').textContent = script || '— Script not generated yet —';
+  document.getElementById('mod-note').textContent   = `status: ${STATUS_LABELS[status]||status}`;
+
+  const approveBtn = document.getElementById('mod-approve-btn');
+  approveBtn.textContent = status === 'script_ready' ? '✓ Approve Script' : '✓ Approved ✅';
+  approveBtn.disabled    = status === 'script_approved';
+
+  document.getElementById('regen-box').classList.remove('open');
   document.getElementById('modal-overlay').classList.add('open');
-  document.body.style.overflow='hidden';
+  document.body.style.overflow = 'hidden';
 }
 
-function formatXThread(script) {
-  const tweets = script.split('\n\n').filter(Boolean);
-  if (!tweets.length) return `<div class="script-text">${script}</div>`;
-  return `<div class="x-thread-preview">${tweets.map((t,i)=>`
-    <div class="x-tweet">
-      <div class="x-tweet-num">Tweet ${i+1} of ${tweets.length}</div>
-      ${t}
-    </div>`).join('')}</div>`;
-}
-
-function switchModalLang(l) {
-  modalLang = l;
-  document.getElementById('modal-script-ta').style.display = l==='ta'?'block':'none';
-  document.getElementById('modal-script-en').style.display = l==='en'?'block':'none';
-  document.getElementById('mtab-ta').className = 'modal-lang-tab'+(l==='ta'?' active-ta':'');
-  document.getElementById('mtab-en').className = 'modal-lang-tab'+(l==='en'?' active-en':'');
-}
-
-function closeModal(event) {
-  if (event && event.target!==document.getElementById('modal-overlay')) return;
+function closeMod(event) {
+  if (event && event.target !== document.getElementById('modal-overlay')) return;
   document.getElementById('modal-overlay').classList.remove('open');
-  document.body.style.overflow=''; modalEp=null;
+  document.body.style.overflow = '';
+  modalEp = null;
 }
 
-function openRegen() {
-  document.getElementById(`regen-${modalLang}`)?.classList.toggle('open');
-}
-function toggleRegen(l) {
-  document.getElementById(`regen-${l}`)?.classList.remove('open');
+function toggleRegen() {
+  document.getElementById('regen-box').classList.toggle('open');
 }
 
 async function approveScript() {
   if (!modalEp) return;
-  const isIdea = !!modalEp.title && !modalEp.episode_number;
-  const n = isIdea ? modalEp.id : modalEp.episode_number;
-  await quickApprove(n,'script_approved',isIdea);
-  closeModal();
+  await quickSet(modalEp.episode_number, 'script_approved');
+  closeMod();
 }
 
-async function submitRegen(l) {
+async function submitRegen() {
   if (!modalEp) return;
-  const note = document.getElementById(`regen-note-${l}`)?.value.trim();
-  if (!note) { showToast('Please enter a note','error'); return; }
-  const isIdea = !modalEp.episode_number;
-  const n = isIdea ? modalEp.id : modalEp.episode_number;
+  const note = document.getElementById('regen-note').value.trim();
+  if (!note) { showToast('Please describe what to change','error'); return; }
   try {
-    const table = l==='ta'?'tamil_episodes':'english_episodes';
-    if (!isIdea) {
-      await patchTable(table,n,{regenerate_note:note,status:'pending',[PLATFORMS[modalPlatform].scriptColTa]:null});
-    }
-    await fetch(EDGE_FN,{method:'POST',headers:EDGE_H,body:JSON.stringify({episode_number:n})});
-    showToast(`Queued for regeneration`,'success');
-    closeModal(); load();
+    await patch(modalEp.episode_number, {regenerate_note: note, status: 'pending'});
+    await triggerScript(modalEp.episode_number);
+    closeMod();
   } catch(e) { showToast(`Error: ${e.message}`,'error'); }
 }
 
-// ── Images Modal ──────────────────────────────────────────────
-function openImagesModal(n, isIdea=false, orientation='landscape') {
-  const item = isIdea ? ideas.find(i=>i.id===n) : episodes.find(e=>e.episode_number===n);
-  if (!item) return;
-  let imageData = [];
-  try {
-    const src = orientation==='vertical' ? item.image_urls_vertical : item.image_urls;
-    imageData = typeof src==='string' ? JSON.parse(src) : (src||[]);
-  } catch(e) {}
+// ── Images Modal ───────────────────────────────────────────
+function openImgMod(n) {
+  const ep = episodes.find(e => e.episode_number === n);
+  if (!ep) return;
+  imgModalEp = ep;
 
-  const imgHtml = imageData.map((img,i)=>`
-    <div style="margin-bottom:24px;background:var(--surface2);border:1px solid var(--border2);border-radius:12px;overflow:hidden">
-      <div style="padding:10px 14px;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--border)">
-        <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted)">Scene ${img.id||i+1}</span>
-        <span style="font-size:12px;font-weight:600;color:var(--text)">${img.label||''}</span>
-      </div>
-      <img src="${img.url}" style="width:100%;display:block" loading="lazy"/>
+  let images = ep.image_urls || [];
+  if (typeof images === 'string') { try { images = JSON.parse(images); } catch(e) { images = []; } }
+
+  const html = images.map(img => `
+    <div class="img-item">
+      <img src="${img.url}" loading="lazy" alt="Scene ${img.id}"/>
+      <div class="img-label">Scene ${img.id} — ${img.label||''}</div>
+    </div>`).join('') || '<div style="color:var(--muted);text-align:center;padding:30px;font-family:var(--font-mono);font-size:13px">No images yet</div>';
+
+  document.getElementById('img-mod-ep').textContent  = `Episode ${n} · ${lang.toUpperCase()}`;
+  document.getElementById('img-mod-sub').textContent = `${images.length} scenes generated`;
+  document.getElementById('img-grid').innerHTML      = html;
+  document.getElementById('img-regen-box').classList.remove('open');
+  document.getElementById('img-modal-overlay').classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeImgMod(event) {
+  if (event && event.target !== document.getElementById('img-modal-overlay')) return;
+  document.getElementById('img-modal-overlay').classList.remove('open');
+  document.body.style.overflow = '';
+  imgModalEp = null;
+}
+
+function toggleImgRegen() {
+  document.getElementById('img-regen-box').classList.toggle('open');
+}
+
+async function approveImages() {
+  if (!imgModalEp) return;
+  await quickSet(imgModalEp.episode_number, 'images_approved');
+  closeImgMod();
+}
+
+async function submitImgRegen() {
+  if (!imgModalEp) return;
+  const note = document.getElementById('img-regen-note').value.trim();
+  if (!note) { showToast('Describe which scene to regenerate','error'); return; }
+  try {
+    await patch(imgModalEp.episode_number, {regenerate_note: note, status:'script_approved'});
+    await triggerImages(imgModalEp.episode_number);
+    closeImgMod();
+  } catch(e) { showToast(`Error: ${e.message}`,'error'); }
+}
+
+// ── Stats ──────────────────────────────────────────────────
+function renderStats(ta, en) {
+  const cnt = (arr, s) => arr.filter(e => (e.status||'pending') === s).length;
+  const pub_ta  = cnt(ta, 'published');
+  const pub_en  = cnt(en, 'published');
+  const pipe_ta = ta.filter(e => !['pending','published'].includes(e.status||'pending')).length;
+  const total   = 200;
+
+  const stageRows = ['script_ready','script_approved','images_ready','images_approved',
+    'voice_uploaded','voice_approved','video_ready','video_approved']
+    .map(s => `<div class="pp-row">
+      <span style="color:var(--muted2)">${STATUS_LABELS[s]}</span>
+      <span class="pp-num" style="color:var(--blue)">${cnt(ta,s)}</span>
     </div>`).join('');
 
-  const title = isIdea ? item.title : item.title_tamil;
-  document.getElementById('modal-ep-num').textContent = isIdea?'Idea · Images':`Episode ${n} · Images`;
-  document.getElementById('modal-title').textContent  = '🖼 Image Review';
-  document.getElementById('modal-subtitle').textContent = title;
-  document.getElementById('modal-lang-tabs').style.display='none';
-  document.getElementById('modal-script-ta').style.display='block';
-  document.getElementById('modal-script-en').style.display='none';
-  document.getElementById('script-content-ta').innerHTML = imgHtml||'<div class="script-empty">No images yet</div>';
-  document.getElementById('script-content-ta').className='';
-  document.getElementById('script-content-ta').style.cssText='white-space:normal;background:none;border:none;padding:0';
-  document.getElementById('modal-approve-btn').style.display='';
-  document.getElementById('modal-regen-btn').style.display='none';
-  document.getElementById('modal-approve-btn').textContent='✓ Approve Images';
-  document.getElementById('modal-approve-btn').disabled=false;
-  document.getElementById('modal-approve-btn').onclick=()=>{ closeModal(); quickApprove(n,'images_approved',isIdea); };
-  document.getElementById('modal-status-note').textContent=`${orientation} images`;
-  document.getElementById('modal-overlay').classList.add('open');
-  document.body.style.overflow='hidden';
+  document.getElementById('main').innerHTML = `
+  <div class="stats-grid">
+    <div class="stat"><div class="stat-lbl">Tamil Published</div><div class="stat-val" style="color:var(--yt)">${pub_ta}</div><div class="stat-bar"><div class="stat-bar-fill" style="width:${Math.round(pub_ta/total*100)}%;background:var(--yt)"></div></div></div>
+    <div class="stat"><div class="stat-lbl">English Published</div><div class="stat-val" style="color:var(--en)">${pub_en}</div><div class="stat-bar"><div class="stat-bar-fill" style="width:${Math.round(pub_en/total*100)}%;background:var(--en)"></div></div></div>
+    <div class="stat"><div class="stat-lbl">In Pipeline</div><div class="stat-val" style="color:var(--orange)">${pipe_ta}</div><div class="stat-bar"><div class="stat-bar-fill" style="width:${Math.round(pipe_ta/total*100)}%;background:var(--orange)"></div></div></div>
+    <div class="stat"><div class="stat-lbl">Total Pending</div><div class="stat-val" style="color:var(--muted)">${cnt(ta,'pending')}</div><div class="stat-bar"><div class="stat-bar-fill" style="width:${Math.round(cnt(ta,'pending')/total*100)}%;background:var(--muted)"></div></div></div>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+    <div class="pipeline-panel">
+      <div class="pp-title">Tamil Pipeline Breakdown</div>
+      ${stageRows}
+      <div class="pp-row"><span style="color:var(--muted2)">Published</span><span class="pp-num" style="color:var(--green)">${pub_ta}</span></div>
+    </div>
+    <div class="pipeline-panel">
+      <div class="pp-title">Channel Summary</div>
+      <div class="pp-row"><span style="color:var(--muted2)">Tamil published</span><span class="pp-num" style="color:var(--yt)">${pub_ta} / ${total}</span></div>
+      <div class="pp-row"><span style="color:var(--muted2)">English published</span><span class="pp-num" style="color:var(--en)">${pub_en} / ${total}</span></div>
+      <div class="pp-row"><span style="color:var(--muted2)">Tamil in pipeline</span><span class="pp-num" style="color:var(--orange)">${pipe_ta}</span></div>
+      <div class="pp-row"><span style="color:var(--muted2)">English in pipeline</span><span class="pp-num" style="color:var(--orange)">${en.filter(e=>!['pending','published'].includes(e.status||'pending')).length}</span></div>
+    </div>
+  </div>
+  <div class="progress-big">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted);letter-spacing:.8px;text-transform:uppercase">Series Progress — Tamil</span>
+      <span style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:500;color:var(--accent)">${pub_ta} / ${total} episodes published</span>
+    </div>
+    <div class="pb-bar"><div class="pb-fill" style="width:${Math.round(pub_ta/total*100)}%"></div></div>
+    <div class="pb-labels"><span>0</span><span>50</span><span>100</span><span>150</span><span>200</span></div>
+  </div>`;
 }
 
-// ── Supabase helpers ──────────────────────────────────────────
-async function patchEpisode(n,data) { return patchTable(TABLE(),n,data); }
-async function patchTable(table,n,data) {
-  const r = await fetch(`${SB_URL}/rest/v1/${table}?episode_number=eq.${n}`,{
-    method:'PATCH',headers:{...H,'Prefer':'return=minimal'},body:JSON.stringify(data)
+// ── Supabase patch ─────────────────────────────────────────
+async function patch(n, data) {
+  const r = await fetch(`${SB_URL}/rest/v1/${TABLE()}?episode_number=eq.${n}`, {
+    method:'PATCH', headers:{...H,'Prefer':'return=minimal'}, body:JSON.stringify(data)
   });
   if (!r.ok) throw new Error(`Supabase ${r.status}`);
 }
-async function patchIdea(id,data) {
-  const r = await fetch(`${SB_URL}/rest/v1/ideas?id=eq.${id}`,{
-    method:'PATCH',headers:{...H,'Prefer':'return=minimal'},body:JSON.stringify(data)
-  });
-  if (!r.ok) throw new Error(`Supabase ${r.status}`);
-}
 
-// ── Utilities ─────────────────────────────────────────────────
-function showLoader(on) { document.getElementById('loadbar').classList.toggle('show',on); }
-function showToast(msg,type='info') {
-  const t=document.getElementById('toast');
-  t.textContent=msg; t.className=`toast ${type}`;
-  t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),3500);
+// ── Utilities ──────────────────────────────────────────────
+function showLoad(on) { document.getElementById('lb').classList.toggle('show', on); }
+function showToast(msg, type='info') {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.className = `toast ${type} show`;
+  setTimeout(() => t.classList.remove('show'), 3500);
 }
-document.addEventListener('keydown',e=>{
-  if (e.key==='Escape') { closeModal(); closeIdeaModal(); closeXModal(); }
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') { closeMod(); closeImgMod(); }
 });
 
-// ── Init ──────────────────────────────────────────────────────
-updateFilterPills();
+// ── Init ───────────────────────────────────────────────────
 load();
-setInterval(load,60000);
+setInterval(load, 60000);
 </script>
 </body>
 </html>

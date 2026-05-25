@@ -1,12 +1,20 @@
-name: Generate Episode Script
+name: Generate Script (New YouTube)
 
 on:
   workflow_dispatch:
     inputs:
       episode_number:
-        description: 'Episode number to generate script for'
+        description: 'Episode number'
         required: true
         type: string
+      language:
+        description: 'Language: ta (Tamil) or en (English)'
+        required: true
+        default: 'ta'
+        type: choice
+        options:
+          - ta
+          - en
 
 jobs:
   generate-script:
@@ -22,8 +30,14 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-script-v2
+
       - name: Install dependencies
-        run: pip install requests google-auth google-cloud-aiplatform
+        run: pip install requests google-genai google-auth
 
       - name: Generate script
         env:
@@ -31,7 +45,8 @@ jobs:
           SUPABASE_KEY:                        ${{ secrets.SUPABASE_KEY }}
           GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
           EPISODE_NUMBER:                      ${{ inputs.episode_number }}
-        run: python script_generator.py
+          LANGUAGE:                            ${{ inputs.language }}
+        run: python "New YouTube/scripts/generate_script.py"
 
       - name: Summary
-        run: echo "✅ Episode ${{ inputs.episode_number }} — all scripts generated"
+        run: echo "✅ Script done — Episode ${{ inputs.episode_number }} (${{ inputs.language }})"

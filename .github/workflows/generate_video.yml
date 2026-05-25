@@ -1,15 +1,26 @@
-name: Generate Episode Video
+name: Generate Video (New YouTube)
+
 on:
   workflow_dispatch:
     inputs:
       episode_number:
-        description: 'Episode number to render video for'
+        description: 'Episode number'
         required: true
         type: string
+      language:
+        description: 'Language: ta (Tamil) or en (English)'
+        required: true
+        default: 'ta'
+        type: choice
+        options:
+          - ta
+          - en
+
 jobs:
-  render-video:
+  generate-video:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 90
+
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
@@ -22,31 +33,28 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends \
-            ffmpeg \
-            fonts-noto \
-            fonts-noto-extra \
-            fonts-noto-color-emoji \
-            fonts-indic \
-            libcairo2-dev \
-            libpango1.0-dev \
-            libgdk-pixbuf2.0-dev \
-            libffi-dev
+          sudo apt-get install -y ffmpeg fonts-noto-tamil fonts-noto-cjk
+          ffmpeg -version | head -1
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-video-v2-${{ hashFiles('**/generate_video.yml') }}
 
       - name: Install Python dependencies
         run: |
-          pip install \
-            requests \
-            google-auth \
-            Pillow \
-            numpy \
-            cairosvg \
-            faster-whisper
+          pip install requests torch torchaudio --index-url https://download.pytorch.org/whl/cpu
+          pip install whisperx
 
-      - name: Render video
+      - name: Generate video
         env:
           SUPABASE_URL:                        ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY:                        ${{ secrets.SUPABASE_KEY }}
           GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
           EPISODE_NUMBER:                      ${{ inputs.episode_number }}
-        run: python video_pipeline_new.py
+          LANGUAGE:                            ${{ inputs.language }}
+        run: python "New YouTube/scripts/generate_video.py"
+
+      - name: Summary
+        run: echo "✅ Video done — Episode ${{ inputs.episode_number }} (${{ inputs.language }})"
