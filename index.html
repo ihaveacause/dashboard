@@ -556,7 +556,7 @@ function buildYtImagesSection(ep, n) {
 
     <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
       <button class="btn btn-regen" onclick="addImgSlot(${n})">+ Add another image</button>
-      <button class="btn btn-approve" onclick="saveEpImages(${n},'${lang}')">💾 Save all images</button>
+      <button class="btn btn-regen" onclick="autoSaveAllImages(${n},'${lang}')" style="font-size:11px">💾 Force save</button>
     </div>
 
     <div style="height:1px;background:var(--border);margin:14px 0"></div>
@@ -605,19 +605,100 @@ function removeImgSlot(n, order) {
   if (slot) slot.remove();
 }
 
-function previewImg(n, order, input) {
+async function previewImg(n, order, input) {
   const file = input.files[0];
   if (!file) return;
+
+  // Show preview immediately
   const reader = new FileReader();
   reader.onload = e => {
     const preview = document.getElementById(`img-preview-${n}-${order}`);
     const placeholder = document.getElementById(`thumb-${n}-${order}`);
     if (preview) { preview.src = e.target.result; preview.style.display='block'; }
     if (placeholder) placeholder.style.display='none';
-    // Store file on input for later upload
-    input._file = file;
   };
   reader.readAsDataURL(file);
+
+  // Auto-upload and save immediately
+  const slot = document.getElementById(`img-slot-${n}-${order}`);
+  const statusEl = slot?.querySelector('.img-trigger-hint') || slot?.querySelector('.img-order-badge');
+  try {
+    const ext      = file.name.split('.').pop().toLowerCase();
+    const lang_code = lang;
+    const path     = `ep${String(n).padStart(3,'0')}/${lang_code}/ep_img_${order}.${ext}`;
+
+    // Upload file
+    const { error } = await SB.storage.from('episode-voices').upload(path, file, {upsert:true});
+    if (error) throw new Error(error.message);
+    const { data: {publicUrl} } = SB.storage.from('episode-voices').getPublicUrl(path);
+
+    // Store url on input for saveEpImages to use
+    input._url     = publicUrl;
+    input._uploaded = true;
+
+    // Mark slot as saved
+    if (slot) slot.classList.add('saved');
+    const badge = document.getElementById(`img-slot-${n}-${order}`)?.querySelector('.img-order-badge');
+    if (badge) badge.innerHTML = `Image ${order} <span class="img-saved-badge">✓ uploaded</span>`;
+
+    // Auto-save all current images to database
+    await autoSaveAllImages(n, lang_code);
+    showToast(`Image ${order} saved ✓`, 'success');
+
+  } catch(e) {
+    showToast(`Image ${order} upload failed: ${e.message}`, 'error');
+  }
+}
+
+async function autoSaveAllImages(n, language) {
+  // Collect all uploaded images across all slots
+  const container = document.getElementById(`img-slots-${n}`);
+  if (!container) return;
+  const slots = container.querySelectorAll('.img-upload-row');
+  const results = [];
+
+  // Also include previously saved images
+  const ep = episodes.find(e => e.episode_number === n);
+  let existing = ep?.episode_images || [];
+  if (typeof existing === 'string') { try { existing = JSON.parse(existing); } catch(e) { existing = []; } }
+
+  let order = 1;
+  for (const slot of slots) {
+    const slotOrder  = slot.dataset.order;
+    const fileInput  = slot.querySelector('input[type=file]');
+    const triggerInput = document.getElementById(`trigger-${n}-${slotOrder}`);
+    const trigger    = triggerInput ? triggerInput.value.trim() : '';
+    const url        = fileInput?._url || existing.find(i => i.order == order)?.url;
+    if (!url) { order++; continue; }
+    results.push({ order, url, trigger, filename: fileInput?.files?.[0]?.name || '' });
+    order++;
+  }
+
+  if (!results.length) return;
+
+  const table = language === 'en' ? 'english_episodes' : 'tamil_episodes';
+  const resp = await fetch(`${SB_URL}/rest/v1/${table}?episode_number=eq.${n}`, {
+    method: 'PATCH',
+    headers: {...H, 'Prefer':'return=minimal'},
+    body: JSON.stringify({ episode_images: results })
+  });
+  if (!resp.ok) {
+    const err = await resp.text();
+    throw new Error(`DB save failed: ${err.slice(0,100)}`);
+  }
+
+  // Update local state
+  const epIdx = episodes.findIndex(e => e.episode_number === n);
+  if (epIdx >= 0) episodes[epIdx].episode_images = results;
+
+  // Refresh generate video button state
+  const panel = document.getElementById(`img-panel-${n}`);
+  const genBtn = panel?.querySelector('.btn-gen');
+  if (genBtn) {
+    genBtn.disabled = false;
+    const note = panel?.querySelector('.btn-gen + span');
+    if (note) { note.textContent = `${results.length} image${results.length>1?'s':''} ready`; note.style.color='var(--green)'; }
+  }
 }
 
 async function saveEpImages(n, language) {
@@ -651,10 +732,10 @@ async function saveEpImages(n, language) {
       const path = `ep${String(n).padStart(3,'0')}/${lang_code}/ep_img_${order}.${ext}`;
 
       showToast(`Uploading image ${order}...`, 'info');
-      const { error } = await SB.storage.from('episode-images').upload(path, file, {upsert:true});
+      const { error } = await SB.storage.from('episode-voices').upload(path, file, {upsert:true});
       if (error) throw new Error(`Image ${order}: ${error.message}`);
 
-      const { data: {publicUrl} } = SB.storage.from('episode-images').getPublicUrl(path);
+      const { data: {publicUrl} } = SB.storage.from('episode-voices').getPublicUrl(path);
       results.push({ order, url: publicUrl, trigger, filename: file.name });
       order++;
     }
