@@ -577,7 +577,7 @@ function buildYtImagesSection(ep, n) {
     <div style="height:1px;background:var(--border);margin:14px 0"></div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
       <button class="btn btn-gen" onclick="triggerVideo(${n},'${lang}')" ${!hasImages?'disabled':''}>🎬 Generate Video</button>
-      ${!hasImages ? '<span style="font-size:11px;color:var(--red);font-family:'JetBrains Mono',monospace">Save images first</span>' : '<span style="font-size:11px;color:var(--green);font-family:'JetBrains Mono',monospace">'+saved.length+' images ready</span>'}
+      ${!hasImages ? '<span style="font-size:11px;color:var(--red);font-family:monospace">Save images first</span>' : '<span style="font-size:11px;color:var(--green);font-family:monospace">'+saved.length+' images ready</span>'}
     </div>
   </div>`;
 }
