@@ -227,47 +227,48 @@ def find_trigger_timestamp(words, trigger_text):
 
 def build_image_timeline(episode_images, words, audio_duration):
     """
-    Build image timeline: list of (image_path_placeholder, start_time, end_time).
-    Uses trigger lines matched against WhisperX timestamps.
-    Image 1 always starts at 0. Each image ends when the next one starts.
-    Last image ends at audio_duration.
-    Returns list of {url, start, end, trigger}
+    Build image timeline with trigger-based or equal-spacing timing.
+    Always copies local_path from input so render_video can find the file.
     """
     if not episode_images:
         return []
 
+    n = len(episode_images)
     timeline = []
+
     for i, img in enumerate(episode_images):
         trigger = img.get("trigger", "").strip()
+
         if i == 0:
-            start = 0.0  # First image always starts immediately
+            start = 0.0
         else:
-            ts = find_trigger_timestamp(words, trigger) if trigger else None
-            if ts is None:
-                # Fallback: divide remaining time equally
-                prev_end = timeline[-1]["end"] if timeline else 0
-                remaining = audio_duration - prev_end
-                remaining_imgs = len(episode_images) - i
-                start = prev_end + (remaining / (remaining_imgs + 1))
-                print(f"   ⚠️  Image {i+1} fallback timing: {start:.2f}s")
-            else:
+            ts = find_trigger_timestamp(words, trigger) if (trigger and words) else None
+            if ts is not None:
                 start = ts
+            else:
+                # Equal spacing fallback
+                start = round((audio_duration / n) * i, 3)
+                if not trigger:
+                    print(f"   Info: Image {i+1} no trigger — equal spacing {start:.2f}s")
+                else:
+                    print(f"   Warning: Image {i+1} trigger not found — fallback {start:.2f}s")
 
         timeline.append({
-            "url":     img["url"],
-            "start":   start,
-            "end":     audio_duration,  # Will be updated
-            "trigger": trigger,
-            "order":   img.get("order", i+1),
+            "url":        img.get("url", ""),
+            "local_path": img.get("local_path", ""),
+            "start":      start,
+            "end":        audio_duration,
+            "trigger":    trigger,
+            "order":      img.get("order", i + 1),
         })
 
-    # Set end times
     for i in range(len(timeline) - 1):
-        timeline[i]["end"] = timeline[i+1]["start"]
+        timeline[i]["end"] = timeline[i + 1]["start"]
 
-    print(f"\n   📋 Image timeline:")
+    print(f"\n   Image timeline:")
     for t in timeline:
-        print(f"      Image {t['order']}: {t['start']:.2f}s → {t['end']:.2f}s ({t['end']-t['start']:.1f}s)")
+        dur = t["end"] - t["start"]
+        print(f"      Image {t['order']}: {t['start']:.1f}s to {t['end']:.1f}s ({dur:.1f}s)")
 
     return timeline
 
