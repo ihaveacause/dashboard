@@ -717,14 +717,20 @@ async function saveAllImages(n, language) {
 
     // Save to database
     const table = language === 'en' ? 'english_episodes' : 'tamil_episodes';
-    const dbResp = await fetch(`${SB_URL}/rest/v1/${table}?episode_number=eq.${n}`, {
+    const dbUrl = `${SB_URL}/rest/v1/${table}?episode_number=eq.${n}`;
+    const dbBody = JSON.stringify({episode_images: results});
+    console.log('DB PATCH url:', dbUrl);
+    console.log('DB PATCH body:', dbBody.slice(0,200));
+    console.log('DB PATCH headers:', JSON.stringify({...H,'Prefer':'return=minimal'}).slice(0,200));
+    const dbResp = await fetch(dbUrl, {
       method:'PATCH',
       headers:{...H,'Prefer':'return=minimal'},
-      body:JSON.stringify({episode_images: results})
+      body: dbBody
     });
+    const dbRespText = await dbResp.text();
+    console.log('DB PATCH response:', dbResp.status, dbRespText.slice(0,300));
     if (!dbResp.ok) {
-      const errText = await dbResp.text();
-      throw new Error(`Database save failed (${dbResp.status}): ${errText.slice(0,150)}`);
+      throw new Error(`Database save failed (${dbResp.status}): ${dbRespText.slice(0,150)}`);
     }
 
     // Update local episodes array
