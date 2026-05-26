@@ -659,16 +659,24 @@ async function saveEpImages(n, language) {
       order++;
     }
 
-    // Save to database
+    // Save to database — pass raw array (not stringified) for JSONB column
     const table = language === 'en' ? 'english_episodes' : 'tamil_episodes';
-    await fetch(`${SB_URL}/rest/v1/${table}?episode_number=eq.${n}`, {
+    const saveResp = await fetch(`${SB_URL}/rest/v1/${table}?episode_number=eq.${n}`, {
       method: 'PATCH',
       headers: {...H, 'Prefer':'return=minimal'},
-      body: JSON.stringify({ episode_images: JSON.stringify(results) })
+      body: JSON.stringify({ episode_images: results })
     });
+    if (!saveResp.ok) {
+      const errText = await saveResp.text();
+      throw new Error(`Database save failed (${saveResp.status}): ${errText.slice(0,200)}`);
+    }
 
     showToast(`✅ ${results.length} images saved successfully`, 'success');
-    setTimeout(loadEpisodes, 1500);
+    // Update local episodes array so card re-renders correctly without full reload
+    const epIdx = episodes.findIndex(e => e.episode_number === n);
+    if (epIdx >= 0) episodes[epIdx].episode_images = results;
+    render();
+    setTimeout(loadEpisodes, 3000);
 
   } catch(e) {
     showToast(`Save failed: ${e.message}`, 'error');
