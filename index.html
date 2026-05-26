@@ -231,8 +231,6 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
     <button class="fpill" onclick="setFilter('pending',this)">Pending</button>
     <button class="fpill" onclick="setFilter('script_ready',this)">Script Ready</button>
     <button class="fpill" onclick="setFilter('script_approved',this)">Script Approved</button>
-    <button class="fpill" onclick="setFilter('images_ready',this)">Images Ready</button>
-    <button class="fpill" onclick="setFilter('images_approved',this)">Images Approved</button>
     <button class="fpill" onclick="setFilter('voice_uploaded',this)">Voice Uploaded</button>
     <button class="fpill" onclick="setFilter('voice_approved',this)">Voice Approved</button>
     <button class="fpill" onclick="setFilter('video_ready',this)">Video Ready</button>
@@ -469,24 +467,10 @@ function buildActions(ep, s, n) {
       <button class="btn btn-approve" onclick="quickSet(${n},'script_approved')">✓ Approve</button>
     </div>`;
 
-  // ── Script approved ───────────────────────────────────────
+  // ── Script approved → Upload voice next ──────────────────
   if (s === 'script_approved')
     return `<div class="ep-actions">
       <button class="btn btn-review" onclick="openScriptMod(${n})">📄 View Script</button>
-      <button class="btn btn-gen" onclick="triggerImages(${n},'${lang}')">🖼 Generate Images</button>
-    </div>`;
-
-  // ── Images ready ──────────────────────────────────────────
-  if (s === 'images_ready')
-    return `<div class="ep-actions">
-      <button class="btn btn-review" onclick="openImgMod(${n})">🖼 Review Images</button>
-      <button class="btn btn-approve" onclick="quickSet(${n},'images_approved')">✓ Approve</button>
-    </div>`;
-
-  // ── Images approved ───────────────────────────────────────
-  if (s === 'images_approved')
-    return `<div class="ep-actions">
-      <button class="btn btn-review" onclick="openImgMod(${n})">🖼 View Images</button>
       <label class="btn btn-upload" style="cursor:pointer">
         🎙 Upload Voice Recording
         <input type="file" accept="audio/*" style="display:none" onchange="uploadVoice(${n},this)">
@@ -497,7 +481,8 @@ function buildActions(ep, s, n) {
   if (s === 'voice_uploaded') {
     const voiceUrl = ep.voice_url || '';
     return `<div class="ep-actions">
-      ${voiceUrl?`<a href="${voiceUrl}" target="_blank" class="btn btn-listen">▶ Listen</a>`:''}
+      <button class="btn btn-review" onclick="openScriptMod(${n})">📄 View Script</button>
+      ${voiceUrl?`<a href="${voiceUrl}" target="_blank" class="btn btn-listen">▶ Listen to Voice</a>`:''}
       <label class="btn btn-regen" style="cursor:pointer">
         ↺ Re-upload Voice
         <input type="file" accept="audio/*" style="display:none" onchange="uploadVoice(${n},this)">
