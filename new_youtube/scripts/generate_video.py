@@ -265,8 +265,7 @@ def build_image_timeline(episode_images, words, audio_duration):
     for i in range(len(timeline) - 1):
         timeline[i]["end"] = timeline[i+1]["start"]
 
-    print(f"
-   📋 Image timeline:")
+    print(f"\n   📋 Image timeline:")
     for t in timeline:
         print(f"      Image {t['order']}: {t['start']:.2f}s → {t['end']:.2f}s ({t['end']-t['start']:.1f}s)")
 
