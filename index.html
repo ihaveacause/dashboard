@@ -540,21 +540,33 @@ function buildYtImagesSection(ep, n) {
     saved.forEach(img => { epImgStore[key][img.order] = {...img}; });
   }
 
+  // Build editable rows for saved images
   const savedSection = hasImages ? `
-    <div style="margin-bottom:14px">
-      <div style="font-family:monospace;font-size:10px;color:var(--green);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">
-        ✓ ${saved.length} image${saved.length>1?'s':''} currently saved
-      </div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap">
-        ${saved.map(img => `
-          <div style="position:relative;border:1px solid var(--green);border-radius:8px;overflow:hidden;width:100px">
-            <img src="${img.url}" style="width:100px;height:60px;object-fit:cover;display:block" loading="lazy"/>
-            <div style="padding:3px 5px;font-size:9px;font-family:monospace;color:var(--muted);background:var(--surface2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
-              ${img.trigger ? `↳ "${img.trigger.slice(0,20)}..."` : 'plays from start'}
-            </div>
-          </div>`).join('')}
-      </div>
-    </div>` : '';
+    <div style="margin-bottom:10px;font-family:monospace;font-size:10px;color:var(--green);text-transform:uppercase;letter-spacing:.5px">
+      ✓ ${saved.length} image${saved.length>1?'s':''} saved — edit trigger lines below then click Save all
+    </div>
+    ${saved.map((img,i) => `
+      <div class="img-upload-row saved" id="saved-slot-${n}-${img.order}" style="margin-bottom:8px">
+        <div>
+          <div class="img-order-badge">Image ${img.order} <span class="img-saved-badge">✓ saved</span></div>
+          <img class="img-thumb" src="${img.url}" style="cursor:pointer" title="Click to replace image"
+            onclick="document.getElementById('replace-file-${n}-${img.order}').click()"/>
+          <input type="file" accept="image/*" id="replace-file-${n}-${img.order}" style="display:none"
+            onchange="replaceImg(${n},${img.order},this)">
+        </div>
+        <div class="img-row-right">
+          <div class="img-trigger-label">
+            ${img.order===1 ? 'Trigger line — leave blank, plays from very start' : 'Trigger line — first words of paragraph where this image appears'}
+          </div>
+          <input class="img-trigger-input" id="saved-trigger-${n}-${img.order}"
+            value="${(img.trigger||'').replace(/"/g,'&quot;')}"
+            placeholder="${img.order===1 ? 'Leave blank — plays from beginning' : 'e.g. Many of us when we hear the word...'}">
+          <div class="img-trigger-hint">
+            ${img.order===1 ? '↳ plays from start of video' : '↳ image switches when WhisperX finds this line'}
+          </div>
+        </div>
+        <div></div>
+      </div>`).join('')}` : '';
 
   return `
   <div class="ep-img-panel" id="img-panel-${n}">
@@ -675,8 +687,27 @@ async function saveAllImages(n, language) {
   try {
     const key   = epImgKey(n);
     const store = epImgStore[key] || {};
-    const items = Object.values(store).filter(i => i.file || i.url).sort((a,b)=>a.order-b.order);
 
+    // Merge saved images (from DB) with any new ones from store
+    const ep = episodes.find(e => e.episode_number === n);
+    let savedImgs = ep?.episode_images || [];
+    if (typeof savedImgs === 'string') { try { savedImgs = JSON.parse(savedImgs); } catch(e) { savedImgs = []; } }
+
+    // Update store with saved images that aren't already there
+    savedImgs.forEach(img => {
+      if (!store[img.order]) store[img.order] = {...img};
+      else if (!store[img.order].url) store[img.order].url = img.url;
+    });
+
+    // Update trigger lines from editable saved inputs
+    savedImgs.forEach(img => {
+      const savedTriggerEl = document.getElementById(`saved-trigger-${n}-${img.order}`);
+      if (savedTriggerEl && store[img.order]) {
+        store[img.order].trigger = savedTriggerEl.value.trim();
+      }
+    });
+
+    const items = Object.values(store).filter(i => i.file || i.url).sort((a,b)=>a.order-b.order);
     if (!items.length) { showToast('No images to save','error'); return; }
 
     const results = [];
@@ -757,6 +788,26 @@ async function saveAllImages(n, language) {
 }
 
 function saveTriggerLine(n, order, language) {} // kept for compatibility
+
+function replaceImg(n, order, input) {
+  // Replace a saved image with a new file
+  const file = input.files[0];
+  if (!file) return;
+  const key = epImgKey(n);
+  if (!epImgStore[key]) epImgStore[key] = {};
+  epImgStore[key][order] = epImgStore[key][order] || {order};
+  epImgStore[key][order].file = file;
+  epImgStore[key][order].filename = file.name;
+  // Show preview
+  const reader = new FileReader();
+  reader.onload = e => {
+    const thumb = document.querySelector(`#saved-slot-${n}-${order} .img-thumb`);
+    if (thumb) { thumb.src = e.target.result; }
+    const badge = document.querySelector(`#saved-slot-${n}-${order} .img-order-badge`);
+    if (badge) badge.innerHTML = `Image ${order} <span style="color:var(--orange)">● will replace on Save</span>`;
+  };
+  reader.readAsDataURL(file);
+}
 
 
 
