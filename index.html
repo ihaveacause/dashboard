@@ -523,67 +523,84 @@ function buildActions(ep, s, n) {
   return `<div class="ep-actions"><span class="wait-msg">${STATUS_LABELS[s]||s}</span></div>`;
 }
 
+// ── In-memory image store ─────────────────────────────────────
+// Key: `${episodeNumber}_${lang}` → {order: {url, trigger, filename, localSrc}}
+const epImgStore = {};
+function epImgKey(n) { return `${n}_${lang}`; }
+
 function buildYtImagesSection(ep, n) {
-  // Parse saved episode images
   let saved = ep.episode_images || [];
   if (typeof saved === 'string') { try { saved = JSON.parse(saved); } catch(e) { saved = []; } }
   const hasImages = saved.length > 0;
 
-  const savedHtml = saved.map((img, i) => `
-    <div class="img-upload-row saved">
-      <div>
-        <div class="img-order-badge">Image ${i+1} <span class="img-saved-badge">✓ saved</span></div>
-        <img class="img-thumb" src="${img.url}" loading="lazy"/>
+  // Pre-populate memory store from saved data on first render
+  const key = epImgKey(n);
+  if (!epImgStore[key] && hasImages) {
+    epImgStore[key] = {};
+    saved.forEach(img => { epImgStore[key][img.order] = {...img}; });
+  }
+
+  const savedSection = hasImages ? `
+    <div style="margin-bottom:14px">
+      <div style="font-family:monospace;font-size:10px;color:var(--green);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">
+        ✓ ${saved.length} image${saved.length>1?'s':''} currently saved
       </div>
-      <div class="img-row-right">
-        <div class="img-trigger-label">Trigger line — when spoken, this image appears</div>
-        <div style="font-size:12px;color:var(--muted2);background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:7px 10px">${img.trigger || '(starts immediately)'}</div>
-        ${img.trigger ? `<div class="img-trigger-hint">↳ switches when "${img.trigger.slice(0,40)}..." is spoken</div>` : '<div class="img-trigger-hint">↳ this image plays from the start</div>'}
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        ${saved.map(img => `
+          <div style="position:relative;border:1px solid var(--green);border-radius:8px;overflow:hidden;width:100px">
+            <img src="${img.url}" style="width:100px;height:60px;object-fit:cover;display:block" loading="lazy"/>
+            <div style="padding:3px 5px;font-size:9px;font-family:monospace;color:var(--muted);background:var(--surface2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+              ${img.trigger ? `↳ "${img.trigger.slice(0,20)}..."` : 'plays from start'}
+            </div>
+          </div>`).join('')}
       </div>
-      <div></div>
-    </div>`).join('');
+    </div>` : '';
 
   return `
   <div class="ep-img-panel" id="img-panel-${n}">
-    <div class="ep-img-panel-title">Episode images — upload in order, one per scene change</div>
+    <div class="ep-img-panel-title">Episode images — add in order, set trigger lines, then Save all</div>
 
-    ${hasImages ? `<div id="saved-imgs-${n}">${savedHtml}</div>
-    <div style="font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace;margin-bottom:12px">${saved.length} images saved · click below to replace all</div>` : ''}
+    ${savedSection}
 
-    <div id="img-slots-${n}">
-      ${buildImgSlot(n, 1, true)}
-    </div>
+    <div id="img-slots-${n}"></div>
 
-    <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
-      <button class="btn btn-regen" onclick="addImgSlot(${n})">+ Add another image</button>
-      <button class="btn btn-regen" onclick="autoSaveAllImages(${n},'${lang}')" style="font-size:11px">💾 Force save</button>
+    <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;align-items:center">
+      <button class="btn btn-regen" onclick="addImgSlot(${n})">+ Add image</button>
+      <button class="btn btn-approve" id="save-btn-${n}" onclick="saveAllImages(${n},'${lang}')" disabled>💾 Save all</button>
+      <span id="save-status-${n}" style="font-size:11px;font-family:monospace;color:var(--muted)">Add images above then save</span>
     </div>
 
     <div style="height:1px;background:var(--border);margin:14px 0"></div>
-    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-      <button class="btn btn-gen" onclick="triggerVideo(${n},'${lang}')" ${!hasImages?'disabled':''}>🎬 Generate Video</button>
-      ${!hasImages ? '<span style="font-size:11px;color:var(--red);font-family:monospace">Save images first</span>' : '<span style="font-size:11px;color:var(--green);font-family:monospace">'+saved.length+' images ready</span>'}
+    <div style="display:flex;gap:8px;align-items:center">
+      <button class="btn btn-gen" id="gen-btn-${n}" onclick="triggerVideo(${n},'${lang}')" ${!hasImages?'disabled':''}>🎬 Generate Video</button>
+      <span style="font-size:11px;font-family:monospace;color:${hasImages?'var(--green)':'var(--red)'}">
+        ${hasImages ? saved.length+' images saved — ready to generate' : 'Save images first'}
+      </span>
     </div>
   </div>`;
 }
 
-function buildImgSlot(n, order, isFirst=false) {
+function buildImgSlot(n, order) {
   return `
   <div class="img-upload-row" id="img-slot-${n}-${order}" data-order="${order}">
     <div>
-      <div class="img-order-badge">Image ${order}</div>
-      <label style="cursor:pointer">
-        <div class="img-thumb-placeholder" id="thumb-${n}-${order}">🖼</div>
-        <img class="img-thumb" id="img-preview-${n}-${order}" style="display:none" />
-        <input type="file" accept="image/*" style="display:none" onchange="previewImg(${n},${order},this)">
+      <div class="img-order-badge" id="badge-${n}-${order}">Image ${order}</div>
+      <label style="cursor:pointer" title="Click to select or change image">
+        <div class="img-thumb-placeholder" id="thumb-${n}-${order}" style="display:flex">🖼<br><span style="font-size:10px;color:var(--muted)">click to select</span></div>
+        <img class="img-thumb" id="img-preview-${n}-${order}" style="display:none;cursor:pointer" title="Click to change image"/>
+        <input type="file" accept="image/*" style="display:none" id="file-${n}-${order}" onchange="selectImg(${n},${order},this)">
       </label>
     </div>
     <div class="img-row-right">
-      <div class="img-trigger-label">Trigger line ${isFirst ? '(leave blank — image plays from start)' : '(first words of paragraph where this image appears)'}</div>
+      <div class="img-trigger-label">
+        ${order===1 ? 'Trigger line — leave blank, this image plays from the very start' : 'Trigger line — paste first few words of paragraph where this image should appear'}
+      </div>
       <input class="img-trigger-input" id="trigger-${n}-${order}"
-        placeholder="${isFirst ? 'No trigger needed — plays from beginning' : 'e.g. Many of us when we hear the word'}"
-        ${isFirst ? 'disabled style="opacity:.5"' : ''} onblur="saveTriggerLine(${n},${order},'${lang}')" >
-      ${!isFirst ? '<div class="img-trigger-hint">Paste the first few words of the paragraph where this image should appear</div>' : ''}
+        placeholder="${order===1 ? 'Leave blank — plays from beginning of video' : 'e.g. Many of us when we hear the word...'}"
+        oninput="updateSaveBtn(${n})">
+      <div class="img-trigger-hint" id="trigger-hint-${n}-${order}">
+        ${order===1 ? '↳ This image appears at the start of the video' : '↳ WhisperX will find this line in the voice recording and switch the image exactly then'}
+      </div>
     </div>
     <button class="img-del-btn" onclick="removeImgSlot(${n},${order})" title="Remove">✕</button>
   </div>`;
@@ -592,198 +609,150 @@ function buildImgSlot(n, order, isFirst=false) {
 let imgSlotCounts = {};
 
 function addImgSlot(n) {
-  if (!imgSlotCounts[n]) imgSlotCounts[n] = 1;
+  if (!imgSlotCounts[n]) imgSlotCounts[n] = 0;
   imgSlotCounts[n]++;
   const order = imgSlotCounts[n];
   const container = document.getElementById(`img-slots-${n}`);
   if (!container) return;
-  container.insertAdjacentHTML('beforeend', buildImgSlot(n, order, false));
+  container.insertAdjacentHTML('beforeend', buildImgSlot(n, order));
+  updateSaveBtn(n);
 }
 
 function removeImgSlot(n, order) {
-  const slot = document.getElementById(`img-slot-${n}-${order}`);
-  if (slot) slot.remove();
+  document.getElementById(`img-slot-${n}-${order}`)?.remove();
+  // Remove from memory store
+  const key = epImgKey(n);
+  if (epImgStore[key]) delete epImgStore[key][order];
+  updateSaveBtn(n);
 }
 
-async function previewImg(n, order, input) {
+function selectImg(n, order, input) {
   const file = input.files[0];
   if (!file) return;
-
-  // Show preview immediately
+  // Show preview
   const reader = new FileReader();
   reader.onload = e => {
     const preview = document.getElementById(`img-preview-${n}-${order}`);
     const placeholder = document.getElementById(`thumb-${n}-${order}`);
-    if (preview) { preview.src = e.target.result; preview.style.display='block'; }
+    if (preview) { preview.src = e.target.result; preview.style.display='block'; preview.onclick = () => input.click(); }
     if (placeholder) placeholder.style.display='none';
+    const badge = document.getElementById(`badge-${n}-${order}`);
+    if (badge) badge.innerHTML = `Image ${order} <span style="color:var(--orange)">● ready to save</span>`;
   };
   reader.readAsDataURL(file);
-
-  // Auto-upload and save immediately
-  const slot = document.getElementById(`img-slot-${n}-${order}`);
-  const statusEl = slot?.querySelector('.img-trigger-hint') || slot?.querySelector('.img-order-badge');
-  try {
-    const ext      = file.name.split('.').pop().toLowerCase();
-    const lang_code = lang;
-    const path     = `ep${String(n).padStart(3,'0')}/${lang_code}/ep_img_${order}.${ext}`;
-
-    // Upload file using plain fetch (same as voice upload — no Supabase JS client)
-    const uploadResp = await fetch(`${SB_URL}/storage/v1/object/episode-images/${path}`, {
-      method: 'POST',
-      headers: {
-        'apikey': SB_KEY,
-        'Authorization': `Bearer ${SB_KEY}`,
-        'Content-Type': file.type || 'image/jpeg',
-        'x-upsert': 'true'
-      },
-      body: file
-    });
-    if (!uploadResp.ok) {
-      const errText = await uploadResp.text();
-      throw new Error(`Upload failed ${uploadResp.status}: ${errText.slice(0,100)}`);
-    }
-    const publicUrl = `${SB_URL}/storage/v1/object/public/episode-images/${path}`;
-
-    // Store url on input for saveEpImages to use
-    input._url     = publicUrl;
-    input._uploaded = true;
-
-    // Mark slot as saved
-    if (slot) slot.classList.add('saved');
-    const badge = document.getElementById(`img-slot-${n}-${order}`)?.querySelector('.img-order-badge');
-    if (badge) badge.innerHTML = `Image ${order} <span class="img-saved-badge">✓ uploaded</span>`;
-
-    // Auto-save all current images to database
-    await autoSaveAllImages(n, lang_code);
-    showToast(`Image ${order} saved ✓`, 'success');
-
-  } catch(e) {
-    showToast(`Image ${order} upload failed: ${e.message}`, 'error');
-  }
+  // Store file reference in memory
+  const key = epImgKey(n);
+  if (!epImgStore[key]) epImgStore[key] = {};
+  if (!epImgStore[key][order]) epImgStore[key][order] = {order};
+  epImgStore[key][order].file = file;
+  epImgStore[key][order].filename = file.name;
+  updateSaveBtn(n);
 }
 
-function saveTriggerLine(n, order, language) {
-  // Called when user clicks out of trigger input — re-saves all images with updated trigger
-  autoSaveAllImages(n, language);
-}
-
-async function autoSaveAllImages(n, language) {
-  // Collect all uploaded images across all slots
+function updateSaveBtn(n) {
   const container = document.getElementById(`img-slots-${n}`);
-  if (!container) return;
+  const saveBtn   = document.getElementById(`save-btn-${n}`);
+  const status    = document.getElementById(`save-status-${n}`);
+  if (!container || !saveBtn) return;
   const slots = container.querySelectorAll('.img-upload-row');
-  const results = [];
-
-  // Also include previously saved images
-  const ep = episodes.find(e => e.episode_number === n);
-  let existing = ep?.episode_images || [];
-  if (typeof existing === 'string') { try { existing = JSON.parse(existing); } catch(e) { existing = []; } }
-
-  let order = 1;
-  for (const slot of slots) {
-    const slotOrder  = slot.dataset.order;
-    const fileInput  = slot.querySelector('input[type=file]');
-    const triggerInput = document.getElementById(`trigger-${n}-${slotOrder}`);
-    const trigger    = triggerInput ? triggerInput.value.trim() : '';
-    const url        = fileInput?._url || existing.find(i => i.order == order)?.url;
-    if (!url) { order++; continue; }
-    results.push({ order, url, trigger, filename: fileInput?.files?.[0]?.name || '' });
-    order++;
-  }
-
-  if (!results.length) return;
-
-  const table = language === 'en' ? 'english_episodes' : 'tamil_episodes';
-  const resp = await fetch(`${SB_URL}/rest/v1/${table}?episode_number=eq.${n}`, {
-    method: 'PATCH',
-    headers: {...H, 'Prefer':'return=minimal'},
-    body: JSON.stringify({ episode_images: results })
-  });
-  if (!resp.ok) {
-    const err = await resp.text();
-    throw new Error(`DB save failed: ${err.slice(0,100)}`);
-  }
-
-  // Update local state
-  const epIdx = episodes.findIndex(e => e.episode_number === n);
-  if (epIdx >= 0) episodes[epIdx].episode_images = results;
-
-  // Refresh generate video button state
-  const panel = document.getElementById(`img-panel-${n}`);
-  const genBtn = panel?.querySelector('.btn-gen');
-  if (genBtn) {
-    genBtn.disabled = false;
-    const note = panel?.querySelector('.btn-gen + span');
-    if (note) { note.textContent = `${results.length} image${results.length>1?'s':''} ready`; note.style.color='var(--green)'; }
+  const key   = epImgKey(n);
+  const store = epImgStore[key] || {};
+  const readyCount = Object.values(store).filter(i => i.file || i.url).length;
+  if (readyCount > 0) {
+    saveBtn.disabled = false;
+    if (status) status.textContent = `${readyCount} image${readyCount>1?'s':''} ready — click Save all`;
+  } else {
+    saveBtn.disabled = true;
+    if (status) status.textContent = 'Add images above then save';
   }
 }
 
-async function saveEpImages(n, language) {
-  const container = document.getElementById(`img-slots-${n}`);
-  if (!container) return;
-  const slots = container.querySelectorAll('.img-upload-row');
-  if (!slots.length) { showToast('Add at least one image','error'); return; }
-
-  const saveBtn = container.closest('.ep-img-panel')?.querySelector('.btn-approve');
+async function saveAllImages(n, language) {
+  const saveBtn = document.getElementById(`save-btn-${n}`);
+  const status  = document.getElementById(`save-status-${n}`);
   if (saveBtn) { saveBtn.disabled=true; saveBtn.textContent='⏳ Saving...'; }
 
   try {
+    const key   = epImgKey(n);
+    const store = epImgStore[key] || {};
+    const items = Object.values(store).filter(i => i.file || i.url).sort((a,b)=>a.order-b.order);
+
+    if (!items.length) { showToast('No images to save','error'); return; }
+
     const results = [];
-    let order = 1;
+    let savedCount = 0;
 
-    for (const slot of slots) {
-      const slotOrder = slot.dataset.order;
-      const fileInput = slot.querySelector('input[type=file]');
-      const triggerInput = document.getElementById(`trigger-${n}-${slotOrder}`);
-      const trigger = triggerInput ? triggerInput.value.trim() : '';
+    for (const item of items) {
+      const order = item.order;
+      const triggerEl = document.getElementById(`trigger-${n}-${order}`);
+      const trigger   = triggerEl ? triggerEl.value.trim() : (item.trigger || '');
+      const badge     = document.getElementById(`badge-${n}-${order}`);
 
-      if (!fileInput?._file && !fileInput?.files?.[0]) {
-        showToast(`Image ${slotOrder} has no file selected`,'error');
-        if (saveBtn) { saveBtn.disabled=false; saveBtn.textContent='💾 Save all images'; }
-        return;
+      // If new file selected, upload it
+      if (item.file) {
+        if (badge) badge.innerHTML = `Image ${order} <span style="color:var(--orange)">⏳ uploading...</span>`;
+        const ext  = item.file.name.split('.').pop().toLowerCase();
+        const path = `ep${String(n).padStart(3,'0')}/${language}/ep_img_${order}.${ext}`;
+        const resp = await fetch(`${SB_URL}/storage/v1/object/episode-images/${path}`, {
+          method:'POST',
+          headers:{'apikey':SB_KEY,'Authorization':`Bearer ${SB_KEY}`,'Content-Type':item.file.type||'image/jpeg','x-upsert':'true'},
+          body:item.file
+        });
+        if (!resp.ok) {
+          const errText = await resp.text();
+          throw new Error(`Image ${order} upload failed (${resp.status}): ${errText.slice(0,100)}`);
+        }
+        item.url  = `${SB_URL}/storage/v1/object/public/episode-images/${path}`;
+        item.file = null; // clear file reference after upload
+        if (badge) badge.innerHTML = `Image ${order} <span class="img-saved-badge">✓ uploaded</span>`;
       }
 
-      const file = fileInput._file || fileInput.files[0];
-      const ext  = file.name.split('.').pop().toLowerCase();
-      const lang_code = language || lang;
-      const path = `ep${String(n).padStart(3,'0')}/${lang_code}/ep_img_${order}.${ext}`;
-
-      showToast(`Uploading image ${order}...`, 'info');
-      const upR = await fetch(`${SB_URL}/storage/v1/object/episode-images/${path}`, {
-        method:'POST',
-        headers:{'apikey':SB_KEY,'Authorization':`Bearer ${SB_KEY}`,'Content-Type':file.type||'image/jpeg','x-upsert':'true'},
-        body:file
-      });
-      if (!upR.ok) throw new Error(`Image ${order} upload failed: ${upR.status}`);
-      const publicUrl = `${SB_URL}/storage/v1/object/public/episode-images/${path}`;
-      results.push({ order, url: publicUrl, trigger, filename: file.name });
-      order++;
+      if (item.url) {
+        results.push({order, url:item.url, trigger, filename:item.filename||''});
+        savedCount++;
+      }
     }
 
-    // Save to database — pass raw array (not stringified) for JSONB column
+    if (!results.length) throw new Error('No images were uploaded successfully');
+
+    // Save to database
     const table = language === 'en' ? 'english_episodes' : 'tamil_episodes';
-    const saveResp = await fetch(`${SB_URL}/rest/v1/${table}?episode_number=eq.${n}`, {
-      method: 'PATCH',
-      headers: {...H, 'Prefer':'return=minimal'},
-      body: JSON.stringify({ episode_images: results })
+    const dbResp = await fetch(`${SB_URL}/rest/v1/${table}?episode_number=eq.${n}`, {
+      method:'PATCH',
+      headers:{...H,'Prefer':'return=minimal'},
+      body:JSON.stringify({episode_images: results})
     });
-    if (!saveResp.ok) {
-      const errText = await saveResp.text();
-      throw new Error(`Database save failed (${saveResp.status}): ${errText.slice(0,200)}`);
+    if (!dbResp.ok) {
+      const errText = await dbResp.text();
+      throw new Error(`Database save failed (${dbResp.status}): ${errText.slice(0,150)}`);
     }
 
-    showToast(`✅ ${results.length} images saved successfully`, 'success');
-    // Update local episodes array so card re-renders correctly without full reload
+    // Update local episodes array
     const epIdx = episodes.findIndex(e => e.episode_number === n);
     if (epIdx >= 0) episodes[epIdx].episode_images = results;
-    render();
-    setTimeout(loadEpisodes, 3000);
+
+    // Enable generate video button
+    const genBtn = document.getElementById(`gen-btn-${n}`);
+    if (genBtn) { genBtn.disabled = false; }
+    if (status) { status.textContent = `✅ ${savedCount} images saved`; status.style.color='var(--green)'; }
+    if (saveBtn) { saveBtn.disabled=false; saveBtn.textContent='💾 Save all'; }
+
+    showToast(`✅ ${savedCount} images saved successfully`, 'success');
+
+    // Refresh card after 2s to show updated saved section
+    setTimeout(loadEpisodes, 2000);
 
   } catch(e) {
+    console.error('saveAllImages error:', e);
     showToast(`Save failed: ${e.message}`, 'error');
-    if (saveBtn) { saveBtn.disabled=false; saveBtn.textContent='💾 Save all images'; }
+    if (saveBtn) { saveBtn.disabled=false; saveBtn.textContent='💾 Save all'; }
+    if (status) { status.textContent = `Error: ${e.message.slice(0,60)}`; status.style.color='var(--red)'; }
   }
 }
+
+function saveTriggerLine(n, order, language) {} // kept for compatibility
+
+
 
 // ── Actions ────────────────────────────────────────────────
 async function triggerScript(n, language=lang) {
