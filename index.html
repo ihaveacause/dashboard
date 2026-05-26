@@ -117,6 +117,23 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 .upload-slot-status{font-size:11px;color:var(--muted)}
 .upload-slot.has-file .upload-slot-status{color:var(--green)}
 .upload-input{display:none}
+/* Episode images panel */
+.ep-img-panel{padding:16px 18px;border-top:1px solid var(--border);background:var(--surface2)}
+.ep-img-panel-title{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:12px}
+.img-upload-row{display:grid;grid-template-columns:160px 1fr 32px;gap:10px;align-items:start;margin-bottom:10px;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 12px}
+.img-upload-row.saved{border-color:var(--green)}
+.img-thumb{width:140px;height:80px;object-fit:cover;border-radius:7px;display:block;background:var(--surface2);border:1px solid var(--border2)}
+.img-thumb-placeholder{width:140px;height:80px;border-radius:7px;border:1px dashed var(--border2);display:flex;align-items:center;justify-content:center;font-size:22px;cursor:pointer;background:var(--surface2);transition:all .2s}
+.img-thumb-placeholder:hover{border-color:var(--accent);background:rgba(232,65,42,.05)}
+.img-row-right{display:flex;flex-direction:column;gap:6px}
+.img-trigger-label{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--muted2);text-transform:uppercase;letter-spacing:.4px}
+.img-trigger-input{width:100%;background:var(--surface2);border:1px solid var(--border2);border-radius:7px;color:var(--text);font-family:'Inter',sans-serif;font-size:12px;padding:7px 10px;outline:none;transition:border-color .2s}
+.img-trigger-input:focus{border-color:var(--accent)}
+.img-trigger-hint{font-size:11px;color:var(--muted);font-style:italic}
+.img-del-btn{background:var(--red-dim);border:1px solid rgba(239,68,68,.3);color:var(--red);border-radius:7px;width:28px;height:28px;cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .2s;margin-top:4px}
+.img-del-btn:hover{opacity:.7}
+.img-order-badge{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--muted);margin-bottom:4px}
+.img-saved-badge{font-size:10px;color:var(--green);font-family:'JetBrains Mono',monospace}
 
 /* Bucket label */
 .bucket{font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:500;color:var(--muted);letter-spacing:1px;text-transform:uppercase;padding:18px 0 10px}
@@ -522,38 +539,156 @@ function buildActions(ep, s, n) {
 }
 
 function buildYtImagesSection(ep, n) {
-  const hasIntro  = !!ep.intro_image_url;
-  const hasOutro  = !!ep.outro_image_url;
-  // Narrator photo is always in channel-assets — no upload needed
-  return `
-  <div class="upload-section">
-    <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">
-      YouTube images — upload episode-specific or use channel defaults
-    </div>
-    <div class="upload-grid">
-      <label class="upload-slot ${hasIntro?'has-file':''}" style="cursor:pointer">
-        <input type="file" accept="image/*" class="upload-input" onchange="uploadYtImage(${n},'intro',this)">
-        <div class="upload-slot-icon">🎬</div>
-        <div class="upload-slot-label">Intro image (2s)</div>
-        <div class="upload-slot-status">${hasIntro?'✓ Custom uploaded':'Using channel default'}</div>
-      </label>
-      <div class="upload-slot has-file" style="cursor:default">
-        <div class="upload-slot-icon">👤</div>
-        <div class="upload-slot-label">Narrator photo</div>
-        <div class="upload-slot-status">✓ From channel-assets</div>
+  // Parse saved episode images
+  let saved = ep.episode_images || [];
+  if (typeof saved === 'string') { try { saved = JSON.parse(saved); } catch(e) { saved = []; } }
+  const hasImages = saved.length > 0;
+
+  const savedHtml = saved.map((img, i) => `
+    <div class="img-upload-row saved">
+      <div>
+        <div class="img-order-badge">Image ${i+1} <span class="img-saved-badge">✓ saved</span></div>
+        <img class="img-thumb" src="${img.url}" loading="lazy"/>
       </div>
-      <label class="upload-slot ${hasOutro?'has-file':''}" style="cursor:pointer">
-        <input type="file" accept="image/*" class="upload-input" onchange="uploadYtImage(${n},'outro',this)">
-        <div class="upload-slot-icon">🏁</div>
-        <div class="upload-slot-label">Outro image (3s)</div>
-        <div class="upload-slot-status">${hasOutro?'✓ Custom uploaded':'Using channel default'}</div>
-      </label>
+      <div class="img-row-right">
+        <div class="img-trigger-label">Trigger line — when spoken, this image appears</div>
+        <div style="font-size:12px;color:var(--muted2);background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:7px 10px">${img.trigger || '(starts immediately)'}</div>
+        ${img.trigger ? `<div class="img-trigger-hint">↳ switches when "${img.trigger.slice(0,40)}..." is spoken</div>` : '<div class="img-trigger-hint">↳ this image plays from the start</div>'}
+      </div>
+      <div></div>
+    </div>`).join('');
+
+  return `
+  <div class="ep-img-panel" id="img-panel-${n}">
+    <div class="ep-img-panel-title">Episode images — upload in order, one per scene change</div>
+
+    ${hasImages ? `<div id="saved-imgs-${n}">${savedHtml}</div>
+    <div style="font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace;margin-bottom:12px">${saved.length} images saved · click below to replace all</div>` : ''}
+
+    <div id="img-slots-${n}">
+      ${buildImgSlot(n, 1, true)}
     </div>
-    <div class="ep-actions" style="border-top:none;padding-top:0">
-      <button class="btn btn-gen" onclick="triggerVideo(${n},'${lang}')">🎬 Generate Video</button>
-      <span style="font-size:11px;color:var(--muted);font-family:'JetBrains Mono',monospace">Defaults used if no custom images uploaded</span>
+
+    <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+      <button class="btn btn-regen" onclick="addImgSlot(${n})">+ Add another image</button>
+      <button class="btn btn-approve" onclick="saveEpImages(${n},'${lang}')">💾 Save all images</button>
+    </div>
+
+    <div style="height:1px;background:var(--border);margin:14px 0"></div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <button class="btn btn-gen" onclick="triggerVideo(${n},'${lang}')" ${!hasImages?'disabled':''}>🎬 Generate Video</button>
+      ${!hasImages ? '<span style="font-size:11px;color:var(--red);font-family:'JetBrains Mono',monospace">Save images first</span>' : '<span style="font-size:11px;color:var(--green);font-family:'JetBrains Mono',monospace">'+saved.length+' images ready</span>'}
     </div>
   </div>`;
+}
+
+function buildImgSlot(n, order, isFirst=false) {
+  return `
+  <div class="img-upload-row" id="img-slot-${n}-${order}" data-order="${order}">
+    <div>
+      <div class="img-order-badge">Image ${order}</div>
+      <label style="cursor:pointer">
+        <div class="img-thumb-placeholder" id="thumb-${n}-${order}">🖼</div>
+        <img class="img-thumb" id="img-preview-${n}-${order}" style="display:none" />
+        <input type="file" accept="image/*" style="display:none" onchange="previewImg(${n},${order},this)">
+      </label>
+    </div>
+    <div class="img-row-right">
+      <div class="img-trigger-label">Trigger line ${isFirst ? '(leave blank — image plays from start)' : '(first words of paragraph where this image appears)'}</div>
+      <input class="img-trigger-input" id="trigger-${n}-${order}"
+        placeholder="${isFirst ? 'No trigger needed — plays from beginning' : 'e.g. Many of us when we hear the word'}"
+        ${isFirst ? 'disabled style="opacity:.5"' : ''}>
+      ${!isFirst ? '<div class="img-trigger-hint">Paste the first few words of the paragraph where this image should appear</div>' : ''}
+    </div>
+    <button class="img-del-btn" onclick="removeImgSlot(${n},${order})" title="Remove">✕</button>
+  </div>`;
+}
+
+let imgSlotCounts = {};
+
+function addImgSlot(n) {
+  if (!imgSlotCounts[n]) imgSlotCounts[n] = 1;
+  imgSlotCounts[n]++;
+  const order = imgSlotCounts[n];
+  const container = document.getElementById(`img-slots-${n}`);
+  if (!container) return;
+  container.insertAdjacentHTML('beforeend', buildImgSlot(n, order, false));
+}
+
+function removeImgSlot(n, order) {
+  const slot = document.getElementById(`img-slot-${n}-${order}`);
+  if (slot) slot.remove();
+}
+
+function previewImg(n, order, input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const preview = document.getElementById(`img-preview-${n}-${order}`);
+    const placeholder = document.getElementById(`thumb-${n}-${order}`);
+    if (preview) { preview.src = e.target.result; preview.style.display='block'; }
+    if (placeholder) placeholder.style.display='none';
+    // Store file on input for later upload
+    input._file = file;
+  };
+  reader.readAsDataURL(file);
+}
+
+async function saveEpImages(n, language) {
+  const container = document.getElementById(`img-slots-${n}`);
+  if (!container) return;
+  const slots = container.querySelectorAll('.img-upload-row');
+  if (!slots.length) { showToast('Add at least one image','error'); return; }
+
+  const saveBtn = container.closest('.ep-img-panel')?.querySelector('.btn-approve');
+  if (saveBtn) { saveBtn.disabled=true; saveBtn.textContent='⏳ Saving...'; }
+
+  try {
+    const results = [];
+    let order = 1;
+
+    for (const slot of slots) {
+      const slotOrder = slot.dataset.order;
+      const fileInput = slot.querySelector('input[type=file]');
+      const triggerInput = document.getElementById(`trigger-${n}-${slotOrder}`);
+      const trigger = triggerInput ? triggerInput.value.trim() : '';
+
+      if (!fileInput?._file && !fileInput?.files?.[0]) {
+        showToast(`Image ${slotOrder} has no file selected`,'error');
+        if (saveBtn) { saveBtn.disabled=false; saveBtn.textContent='💾 Save all images'; }
+        return;
+      }
+
+      const file = fileInput._file || fileInput.files[0];
+      const ext  = file.name.split('.').pop().toLowerCase();
+      const lang_code = language || lang;
+      const path = `ep${String(n).padStart(3,'0')}/${lang_code}/ep_img_${order}.${ext}`;
+
+      showToast(`Uploading image ${order}...`, 'info');
+      const { error } = await SB.storage.from('episode-images').upload(path, file, {upsert:true});
+      if (error) throw new Error(`Image ${order}: ${error.message}`);
+
+      const { data: {publicUrl} } = SB.storage.from('episode-images').getPublicUrl(path);
+      results.push({ order, url: publicUrl, trigger, filename: file.name });
+      order++;
+    }
+
+    // Save to database
+    const table = language === 'en' ? 'english_episodes' : 'tamil_episodes';
+    await fetch(`${SB_URL}/rest/v1/${table}?episode_number=eq.${n}`, {
+      method: 'PATCH',
+      headers: {...H, 'Prefer':'return=minimal'},
+      body: JSON.stringify({ episode_images: JSON.stringify(results) })
+    });
+
+    showToast(`✅ ${results.length} images saved successfully`, 'success');
+    setTimeout(loadEpisodes, 1500);
+
+  } catch(e) {
+    showToast(`Save failed: ${e.message}`, 'error');
+    if (saveBtn) { saveBtn.disabled=false; saveBtn.textContent='💾 Save all images'; }
+  }
 }
 
 // ── Actions ────────────────────────────────────────────────
