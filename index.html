@@ -523,291 +523,313 @@ function buildActions(ep, s, n) {
   return `<div class="ep-actions"><span class="wait-msg">${STATUS_LABELS[s]||s}</span></div>`;
 }
 
-// ── In-memory image store ─────────────────────────────────────
-// Key: `${episodeNumber}_${lang}` → {order: {url, trigger, filename, localSrc}}
-const epImgStore = {};
-function epImgKey(n) { return `${n}_${lang}`; }
+// ── Episode Image Manager ─────────────────────────────────────
+// State: 'upload' | 'preview'
+// No auto-refresh. No auto-save. User controls everything.
 
+const epImgStore = {};  // {`${n}_${lang}`: [{order, file, url, trigger, filename}]}
+function epImgKey(n) { return `${n}_${lang}`; }
+function getStore(n) {
+  const key = epImgKey(n);
+  if (!epImgStore[key]) epImgStore[key] = [];
+  return epImgStore[key];
+}
+
+// ── Build the upload/preview section ─────────────────────────
 function buildYtImagesSection(ep, n) {
   let saved = ep.episode_images || [];
   if (typeof saved === 'string') { try { saved = JSON.parse(saved); } catch(e) { saved = []; } }
-  const hasImages = saved.length > 0;
 
-  // Pre-populate memory store from saved data on first render
+  // Pre-populate store from DB on first render (if store is empty)
   const key = epImgKey(n);
-  if (!epImgStore[key] && hasImages) {
-    epImgStore[key] = {};
-    saved.forEach(img => { epImgStore[key][img.order] = {...img}; });
+  if (!epImgStore[key] && saved.length) {
+    epImgStore[key] = saved.map(img => ({...img, file: null}));
   }
 
-  // Build editable rows for saved images
-  const savedSection = hasImages ? `
-    <div style="margin-bottom:10px;font-family:monospace;font-size:10px;color:var(--green);text-transform:uppercase;letter-spacing:.5px">
-      ✓ ${saved.length} image${saved.length>1?'s':''} saved — edit trigger lines below then click Save all
+  const hasImages = saved.length > 0;
+  const genDisabled = !hasImages;
+
+  return `<div class="ep-img-panel" id="img-panel-${n}">
+    <div id="img-view-${n}">
+      ${renderUploadView(n, saved)}
     </div>
-    ${saved.map((img,i) => `
-      <div class="img-upload-row saved" id="saved-slot-${n}-${img.order}" style="margin-bottom:8px">
-        <div>
-          <div class="img-order-badge">Image ${img.order} <span class="img-saved-badge">✓ saved</span></div>
-          <img class="img-thumb" src="${img.url}" style="cursor:pointer" title="Click to replace image"
-            onclick="document.getElementById('replace-file-${n}-${img.order}').click()"/>
-          <input type="file" accept="image/*" id="replace-file-${n}-${img.order}" style="display:none"
-            onchange="replaceImg(${n},${img.order},this)">
-        </div>
-        <div class="img-row-right">
-          <div class="img-trigger-label">
-            ${img.order===1 ? 'Trigger line — leave blank, plays from very start' : 'Trigger line — first words of paragraph where this image appears'}
-          </div>
-          <input class="img-trigger-input" id="saved-trigger-${n}-${img.order}"
-            value="${(img.trigger||'').replace(/"/g,'&quot;')}"
-            placeholder="${img.order===1 ? 'Leave blank — plays from beginning' : 'e.g. Many of us when we hear the word...'}">
-          <div class="img-trigger-hint">
-            ${img.order===1 ? '↳ plays from start of video' : '↳ image switches when WhisperX finds this line'}
-          </div>
-        </div>
-        <div></div>
-      </div>`).join('')}` : '';
-
-  return `
-  <div class="ep-img-panel" id="img-panel-${n}">
-    <div class="ep-img-panel-title">Episode images — add in order, set trigger lines, then Save all</div>
-
-    ${savedSection}
-
-    <div id="img-slots-${n}"></div>
-
-    <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;align-items:center">
-      <button class="btn btn-regen" onclick="addImgSlot(${n})">+ Add image</button>
-      <button class="btn btn-approve" id="save-btn-${n}" onclick="saveAllImages(${n},'${lang}')" disabled>💾 Save all</button>
-      <span id="save-status-${n}" style="font-size:11px;font-family:monospace;color:var(--muted)">Add images above then save</span>
-    </div>
-
     <div style="height:1px;background:var(--border);margin:14px 0"></div>
     <div style="display:flex;gap:8px;align-items:center">
-      <button class="btn btn-gen" id="gen-btn-${n}" onclick="triggerVideo(${n},'${lang}')" ${!hasImages?'disabled':''}>🎬 Generate Video</button>
-      <span style="font-size:11px;font-family:monospace;color:${hasImages?'var(--green)':'var(--red)'}">
-        ${hasImages ? saved.length+' images saved — ready to generate' : 'Save images first'}
+      <button class="btn btn-gen" id="gen-btn-${n}"
+        onclick="triggerVideo(${n},'${lang}')"
+        ${genDisabled ? 'disabled' : ''}>🎬 Generate Video</button>
+      <span id="gen-status-${n}" style="font-size:11px;font-family:monospace;color:${hasImages?'var(--green)':'var(--red)'}">
+        ${hasImages ? saved.length+' images saved — ready' : 'Save images first'}
       </span>
     </div>
   </div>`;
 }
 
-function buildImgSlot(n, order) {
+function renderUploadView(n, existing) {
+  const store = getStore(n);
+  // Merge existing saved with store
+  if (store.length === 0 && existing.length > 0) {
+    existing.forEach(img => store.push({...img, file: null}));
+  }
+
+  const slots = store.length > 0
+    ? store.map((item, i) => renderSlot(n, i+1, item)).join('')
+    : renderSlot(n, 1, null);
+
   return `
-  <div class="img-upload-row" id="img-slot-${n}-${order}" data-order="${order}">
+    <div class="ep-img-panel-title">
+      Episode images — upload in order, set trigger lines, then Save all
+    </div>
+    <div id="img-slots-${n}">${slots}</div>
+    <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;align-items:center">
+      <button class="btn btn-regen" onclick="addImgSlot(${n})">+ Add image</button>
+      <button class="btn btn-approve" id="save-btn-${n}"
+        onclick="saveAllImages(${n},'${lang}')">💾 Save all</button>
+      <span id="save-status-${n}" style="font-size:11px;font-family:monospace;color:var(--muted)"></span>
+    </div>`;
+}
+
+function renderSlot(n, order, item) {
+  const hasFile  = item?.file != null;
+  const hasUrl   = item?.url != null;
+  const trigger  = item?.trigger || '';
+  const filename = item?.filename || '';
+  const imgSrc   = item?._localSrc || item?.url || '';
+  const isFirst  = order === 1;
+
+  return `
+  <div class="img-upload-row ${hasUrl||hasFile?'saved':''}" id="img-slot-${n}-${order}" data-order="${order}">
     <div>
-      <div class="img-order-badge" id="badge-${n}-${order}">Image ${order}</div>
+      <div class="img-order-badge" id="badge-${n}-${order}">
+        Image ${order}${hasUrl?' <span class="img-saved-badge">✓</span>':''}
+      </div>
       <label style="cursor:pointer" title="Click to select or change image">
-        <div class="img-thumb-placeholder" id="thumb-${n}-${order}" style="display:flex">🖼<br><span style="font-size:10px;color:var(--muted)">click to select</span></div>
-        <img class="img-thumb" id="img-preview-${n}-${order}" style="display:none;cursor:pointer" title="Click to change image"/>
-        <input type="file" accept="image/*" style="display:none" id="file-${n}-${order}" onchange="selectImg(${n},${order},this)">
+        ${imgSrc
+          ? `<img class="img-thumb" src="${imgSrc}" id="img-preview-${n}-${order}"
+               style="cursor:pointer" onclick="this.nextElementSibling.click()"/>`
+          : `<div class="img-thumb-placeholder" id="img-preview-${n}-${order}">🖼<br>
+               <span style="font-size:10px;color:var(--muted)">click to select</span></div>`}
+        <input type="file" accept="image/*" style="display:none"
+          onchange="selectImg(${n},${order},this)">
       </label>
     </div>
     <div class="img-row-right">
       <div class="img-trigger-label">
-        ${order===1 ? 'Trigger line — leave blank, this image plays from the very start' : 'Trigger line — paste first few words of paragraph where this image should appear'}
+        ${isFirst ? 'Trigger line — leave blank, plays from the very start'
+                  : 'Trigger line — first words of the paragraph where this image should appear'}
       </div>
       <input class="img-trigger-input" id="trigger-${n}-${order}"
-        placeholder="${order===1 ? 'Leave blank — plays from beginning of video' : 'e.g. Many of us when we hear the word...'}"
-        oninput="updateSaveBtn(${n})">
-      <div class="img-trigger-hint" id="trigger-hint-${n}-${order}">
-        ${order===1 ? '↳ This image appears at the start of the video' : '↳ WhisperX will find this line in the voice recording and switch the image exactly then'}
+        value="${trigger.replace(/"/g,'&quot;')}"
+        placeholder="${isFirst ? 'Leave blank — plays from start of video'
+                                : 'e.g. Many of us when we hear the word...'}">
+      <div class="img-trigger-hint">
+        ${isFirst ? '↳ this image plays from the very beginning'
+                  : '↳ WhisperX finds this line in voice recording and switches image exactly then'}
       </div>
     </div>
-    <button class="img-del-btn" onclick="removeImgSlot(${n},${order})" title="Remove">✕</button>
+    <button class="img-del-btn" onclick="removeSlot(${n},${order})" title="Remove">✕</button>
   </div>`;
 }
 
-let imgSlotCounts = {};
+function renderPreviewView(n, results) {
+  const rows = results.map((img, i) => `
+    <div style="display:grid;grid-template-columns:180px 1fr;gap:12px;background:var(--surface2);
+         border:1px solid var(--border2);border-radius:10px;overflow:hidden;margin-bottom:10px">
+      <img src="${img.url}" style="width:180px;height:101px;object-fit:cover;display:block"/>
+      <div style="padding:12px 14px">
+        <div style="font-family:monospace;font-size:10px;color:var(--muted);margin-bottom:6px">
+          IMAGE ${img.order}
+        </div>
+        <div style="font-size:13px;color:var(--text);margin-bottom:4px">
+          ${img.trigger
+            ? `<span style="color:var(--green)">↳</span> When spoken: "<strong>${img.trigger}</strong>"`
+            : `<span style="color:var(--muted2)">Plays from the very start of the video</span>`}
+        </div>
+        <div style="font-size:11px;color:var(--muted);font-family:monospace">${img.filename||''}</div>
+      </div>
+    </div>`).join('');
 
-function addImgSlot(n) {
-  if (!imgSlotCounts[n]) imgSlotCounts[n] = 0;
-  imgSlotCounts[n]++;
-  const order = imgSlotCounts[n];
-  const container = document.getElementById(`img-slots-${n}`);
-  if (!container) return;
-  container.insertAdjacentHTML('beforeend', buildImgSlot(n, order));
-  updateSaveBtn(n);
+  return `
+    <div style="font-family:monospace;font-size:10px;color:var(--muted2);text-transform:uppercase;
+         letter-spacing:.5px;margin-bottom:12px">Preview — ${results.length} images</div>
+    ${rows}
+    <div style="display:flex;gap:10px;margin-top:14px">
+      <button class="btn btn-approve" onclick="confirmImages(${n},'${lang}')">
+        ✓ Looks good — proceed to Generate Video
+      </button>
+      <button class="btn btn-regen" onclick="backToEdit(${n})">
+        ← Edit images
+      </button>
+    </div>`;
 }
 
-function removeImgSlot(n, order) {
-  document.getElementById(`img-slot-${n}-${order}`)?.remove();
-  // Remove from memory store
-  const key = epImgKey(n);
-  if (epImgStore[key]) delete epImgStore[key][order];
-  updateSaveBtn(n);
+// ── Slot management ───────────────────────────────────────────
+let slotCounters = {};
+
+function addImgSlot(n) {
+  const store = getStore(n);
+  const order = store.length + 1;
+  store.push({order, file: null, url: null, trigger: '', filename: ''});
+  const container = document.getElementById(`img-slots-${n}`);
+  if (container) container.insertAdjacentHTML('beforeend', renderSlot(n, order, store[order-1]));
+}
+
+function removeSlot(n, order) {
+  const store = getStore(n);
+  const idx = store.findIndex(i => i.order === order);
+  if (idx >= 0) store.splice(idx, 1);
+  // Re-number remaining
+  store.forEach((item, i) => { item.order = i + 1; });
+  // Re-render slots
+  const container = document.getElementById(`img-slots-${n}`);
+  if (container) container.innerHTML = store.map((item,i) => renderSlot(n, i+1, item)).join('');
 }
 
 function selectImg(n, order, input) {
   const file = input.files[0];
   if (!file) return;
-  // Show preview
+  const store = getStore(n);
+  let item = store.find(i => i.order === order);
+  if (!item) { item = {order, file:null, url:null, trigger:'', filename:''}; store.push(item); }
+
+  item.file     = file;
+  item.filename = file.name;
+
+  // Show preview locally
   const reader = new FileReader();
   reader.onload = e => {
-    const preview = document.getElementById(`img-preview-${n}-${order}`);
-    const placeholder = document.getElementById(`thumb-${n}-${order}`);
-    if (preview) { preview.src = e.target.result; preview.style.display='block'; preview.onclick = () => input.click(); }
-    if (placeholder) placeholder.style.display='none';
+    item._localSrc = e.target.result;
+    const slot = document.getElementById(`img-slot-${n}-${order}`);
+    if (!slot) return;
+    const previewEl = document.getElementById(`img-preview-${n}-${order}`);
+    if (previewEl) {
+      if (previewEl.tagName === 'IMG') {
+        previewEl.src = e.target.result;
+      } else {
+        // Replace placeholder div with img
+        previewEl.outerHTML = `<img class="img-thumb" src="${e.target.result}"
+          id="img-preview-${n}-${order}" style="cursor:pointer"
+          onclick="this.nextElementSibling.click()"/>`;
+      }
+    }
     const badge = document.getElementById(`badge-${n}-${order}`);
-    if (badge) badge.innerHTML = `Image ${order} <span style="color:var(--orange)">● ready to save</span>`;
+    if (badge) badge.innerHTML = `Image ${order} <span style="color:var(--orange)">● ready</span>`;
+    slot.classList.add('saved');
   };
   reader.readAsDataURL(file);
-  // Store file reference in memory
-  const key = epImgKey(n);
-  if (!epImgStore[key]) epImgStore[key] = {};
-  if (!epImgStore[key][order]) epImgStore[key][order] = {order};
-  epImgStore[key][order].file = file;
-  epImgStore[key][order].filename = file.name;
-  updateSaveBtn(n);
 }
 
-function updateSaveBtn(n) {
-  const container = document.getElementById(`img-slots-${n}`);
-  const saveBtn   = document.getElementById(`save-btn-${n}`);
-  const status    = document.getElementById(`save-status-${n}`);
-  if (!container || !saveBtn) return;
-  const slots = container.querySelectorAll('.img-upload-row');
-  const key   = epImgKey(n);
-  const store = epImgStore[key] || {};
-  const readyCount = Object.values(store).filter(i => i.file || i.url).length;
-  if (readyCount > 0) {
-    saveBtn.disabled = false;
-    if (status) status.textContent = `${readyCount} image${readyCount>1?'s':''} ready — click Save all`;
-  } else {
-    saveBtn.disabled = true;
-    if (status) status.textContent = 'Add images above then save';
-  }
-}
-
+// ── Save all ──────────────────────────────────────────────────
 async function saveAllImages(n, language) {
-  const saveBtn = document.getElementById(`save-btn-${n}`);
-  const status  = document.getElementById(`save-status-${n}`);
+  const saveBtn    = document.getElementById(`save-btn-${n}`);
+  const saveStatus = document.getElementById(`save-status-${n}`);
+
+  // Collect trigger lines from inputs before saving
+  const store = getStore(n);
+  store.forEach(item => {
+    const triggerEl = document.getElementById(`trigger-${n}-${item.order}`);
+    if (triggerEl) item.trigger = triggerEl.value.trim();
+  });
+
+  const toSave = store.filter(i => i.file || i.url);
+  if (!toSave.length) { showToast('Add at least one image first','error'); return; }
+
   if (saveBtn) { saveBtn.disabled=true; saveBtn.textContent='⏳ Saving...'; }
+  if (saveStatus) { saveStatus.textContent='Uploading...'; saveStatus.style.color='var(--orange)'; }
 
   try {
-    const key   = epImgKey(n);
-    const store = epImgStore[key] || {};
-
-    // Merge saved images (from DB) with any new ones from store
-    const ep = episodes.find(e => e.episode_number === n);
-    let savedImgs = ep?.episode_images || [];
-    if (typeof savedImgs === 'string') { try { savedImgs = JSON.parse(savedImgs); } catch(e) { savedImgs = []; } }
-
-    // Update store with saved images that aren't already there
-    savedImgs.forEach(img => {
-      if (!store[img.order]) store[img.order] = {...img};
-      else if (!store[img.order].url) store[img.order].url = img.url;
-    });
-
-    // Update trigger lines from editable saved inputs
-    savedImgs.forEach(img => {
-      const savedTriggerEl = document.getElementById(`saved-trigger-${n}-${img.order}`);
-      if (savedTriggerEl && store[img.order]) {
-        store[img.order].trigger = savedTriggerEl.value.trim();
-      }
-    });
-
-    const items = Object.values(store).filter(i => i.file || i.url).sort((a,b)=>a.order-b.order);
-    if (!items.length) { showToast('No images to save','error'); return; }
-
     const results = [];
-    let savedCount = 0;
-
-    for (const item of items) {
-      const order = item.order;
-      const triggerEl = document.getElementById(`trigger-${n}-${order}`);
-      const trigger   = triggerEl ? triggerEl.value.trim() : (item.trigger || '');
-      const badge     = document.getElementById(`badge-${n}-${order}`);
-
-      // If new file selected, upload it
+    for (const item of toSave) {
+      // Upload new file if selected
       if (item.file) {
-        if (badge) badge.innerHTML = `Image ${order} <span style="color:var(--orange)">⏳ uploading...</span>`;
         const ext  = item.file.name.split('.').pop().toLowerCase();
-        const path = `ep${String(n).padStart(3,'0')}/${language}/ep_img_${order}.${ext}`;
+        const path = `ep${String(n).padStart(3,'0')}/${language}/ep_img_${item.order}.${ext}`;
+        if (saveStatus) saveStatus.textContent = `Uploading image ${item.order}...`;
         const resp = await fetch(`${SB_URL}/storage/v1/object/episode-images/${path}`, {
           method:'POST',
-          headers:{'apikey':SB_KEY,'Authorization':`Bearer ${SB_KEY}`,'Content-Type':item.file.type||'image/jpeg','x-upsert':'true'},
-          body:item.file
+          headers:{'apikey':SB_KEY,'Authorization':`Bearer ${SB_KEY}`,
+                   'Content-Type':item.file.type||'image/jpeg','x-upsert':'true'},
+          body: item.file
         });
         if (!resp.ok) {
-          const errText = await resp.text();
-          throw new Error(`Image ${order} upload failed (${resp.status}): ${errText.slice(0,100)}`);
+          const err = await resp.text();
+          throw new Error(`Image ${item.order} upload failed (${resp.status}): ${err.slice(0,100)}`);
         }
-        item.url  = `${SB_URL}/storage/v1/object/public/episode-images/${path}`;
-        item.file = null; // clear file reference after upload
-        if (badge) badge.innerHTML = `Image ${order} <span class="img-saved-badge">✓ uploaded</span>`;
+        item.url      = `${SB_URL}/storage/v1/object/public/episode-images/${path}`;
+        item.file     = null;
+        item.filename = item.filename || path.split('/').pop();
       }
-
       if (item.url) {
-        results.push({order, url:item.url, trigger, filename:item.filename||''});
-        savedCount++;
+        results.push({order:item.order, url:item.url, trigger:item.trigger||'', filename:item.filename||''});
       }
     }
 
-    if (!results.length) throw new Error('No images were uploaded successfully');
+    if (!results.length) throw new Error('No images uploaded successfully');
 
-    // Save to database
+    // Save to DB
     const table = language === 'en' ? 'english_episodes' : 'tamil_episodes';
-    const dbUrl = `${SB_URL}/rest/v1/${table}?episode_number=eq.${n}`;
-    const dbBody = JSON.stringify({episode_images: results});
-    console.log('DB PATCH url:', dbUrl);
-    console.log('DB PATCH body:', dbBody.slice(0,200));
-    console.log('DB PATCH headers:', JSON.stringify({...H,'Prefer':'return=minimal'}).slice(0,200));
-    const dbResp = await fetch(dbUrl, {
+    const dbResp = await fetch(`${SB_URL}/rest/v1/${table}?episode_number=eq.${n}`, {
       method:'PATCH',
       headers:{...H,'Prefer':'return=minimal'},
-      body: dbBody
+      body: JSON.stringify({episode_images: results})
     });
-    const dbRespText = await dbResp.text();
-    console.log('DB PATCH response:', dbResp.status, dbRespText.slice(0,300));
     if (!dbResp.ok) {
-      throw new Error(`Database save failed (${dbResp.status}): ${dbRespText.slice(0,150)}`);
+      const err = await dbResp.text();
+      throw new Error(`DB save failed (${dbResp.status}): ${err.slice(0,150)}`);
     }
 
-    // Update local episodes array
+    // Update local episodes array (no re-render)
     const epIdx = episodes.findIndex(e => e.episode_number === n);
     if (epIdx >= 0) episodes[epIdx].episode_images = results;
 
-    // Enable generate video button
-    const genBtn = document.getElementById(`gen-btn-${n}`);
-    if (genBtn) { genBtn.disabled = false; }
-    if (status) { status.textContent = `✅ ${savedCount} images saved`; status.style.color='var(--green)'; }
-    if (saveBtn) { saveBtn.disabled=false; saveBtn.textContent='💾 Save all'; }
-
-    showToast(`✅ ${savedCount} images saved successfully`, 'success');
-
-    // Refresh card after 2s to show updated saved section
-    setTimeout(loadEpisodes, 2000);
+    // Show preview — no page reload
+    showPreview(n, results);
+    showToast(`✅ ${results.length} images saved`, 'success');
 
   } catch(e) {
-    console.error('saveAllImages error:', e);
+    console.error('saveAllImages:', e);
     showToast(`Save failed: ${e.message}`, 'error');
+    if (saveStatus) { saveStatus.textContent=`Error: ${e.message.slice(0,60)}`; saveStatus.style.color='var(--red)'; }
     if (saveBtn) { saveBtn.disabled=false; saveBtn.textContent='💾 Save all'; }
-    if (status) { status.textContent = `Error: ${e.message.slice(0,60)}`; status.style.color='var(--red)'; }
   }
 }
 
-function saveTriggerLine(n, order, language) {} // kept for compatibility
-
-function replaceImg(n, order, input) {
-  // Replace a saved image with a new file
-  const file = input.files[0];
-  if (!file) return;
-  const key = epImgKey(n);
-  if (!epImgStore[key]) epImgStore[key] = {};
-  epImgStore[key][order] = epImgStore[key][order] || {order};
-  epImgStore[key][order].file = file;
-  epImgStore[key][order].filename = file.name;
-  // Show preview
-  const reader = new FileReader();
-  reader.onload = e => {
-    const thumb = document.querySelector(`#saved-slot-${n}-${order} .img-thumb`);
-    if (thumb) { thumb.src = e.target.result; }
-    const badge = document.querySelector(`#saved-slot-${n}-${order} .img-order-badge`);
-    if (badge) badge.innerHTML = `Image ${order} <span style="color:var(--orange)">● will replace on Save</span>`;
-  };
-  reader.readAsDataURL(file);
+function showPreview(n, results) {
+  const view = document.getElementById(`img-view-${n}`);
+  if (!view) return;
+  view.innerHTML = renderPreviewView(n, results);
+  // Enable generate video button
+  const genBtn    = document.getElementById(`gen-btn-${n}`);
+  const genStatus = document.getElementById(`gen-status-${n}`);
+  if (genBtn)    genBtn.disabled = false;
+  if (genStatus) { genStatus.textContent=`${results.length} images saved — ready`; genStatus.style.color='var(--green)'; }
 }
+
+function confirmImages(n, language) {
+  // User confirmed preview — just close preview, generate video button is already enabled
+  const view = document.getElementById(`img-view-${n}`);
+  const ep   = episodes.find(e => e.episode_number === n);
+  let saved  = ep?.episode_images || [];
+  if (typeof saved === 'string') { try { saved = JSON.parse(saved); } catch(e) { saved=[]; } }
+  if (view) view.innerHTML = `
+    <div style="font-family:monospace;font-size:11px;color:var(--green);padding:10px 0">
+      ✓ ${saved.length} images confirmed — click Generate Video below
+    </div>`;
+}
+
+function backToEdit(n) {
+  const view = document.getElementById(`img-view-${n}`);
+  const ep   = episodes.find(e => e.episode_number === n);
+  let saved  = ep?.episode_images || [];
+  if (typeof saved === 'string') { try { saved = JSON.parse(saved); } catch(e) { saved=[]; } }
+  // Reset store to saved state so edits start from saved data
+  epImgStore[epImgKey(n)] = saved.map(img => ({...img, file:null}));
+  if (view) view.innerHTML = renderUploadView(n, saved);
+}
+
+function saveTriggerLine() {} // compatibility stub
+function autoSaveAllImages() {} // compatibility stub
+function replaceImg() {} // compatibility stub
 
 
 
