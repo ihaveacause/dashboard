@@ -187,6 +187,91 @@ def get_audio_duration(audio_path):
     )
     return float(result.stdout.strip())
 
+def find_trigger_timestamp(words, trigger_text):
+    """
+    Find exact timestamp when a trigger line is spoken.
+    Searches for the trigger words in the WhisperX word sequence.
+    Returns the start time of the first matching word, or None if not found.
+    """
+    import re as _re
+    if not trigger_text or not words:
+        return None
+
+    def normalize(text):
+        return _re.sub(r"[^\w\s]", "", text.lower()).split()
+
+    trigger_words = normalize(trigger_text)
+    if not trigger_words:
+        return None
+
+    n = len(trigger_words)
+    word_list = [normalize(w["word"])[0] if normalize(w["word"]) else "" for w in words]
+
+    for i in range(len(word_list) - n + 1):
+        if word_list[i:i+n] == trigger_words:
+            ts = words[i]["start"]
+            print(f"   🎯 Trigger '{trigger_text[:40]}...' → {ts:.2f}s")
+            return ts
+
+    # Fuzzy fallback — match first 3 words only
+    if n >= 3:
+        short = trigger_words[:3]
+        for i in range(len(word_list) - 3 + 1):
+            if word_list[i:i+3] == short:
+                ts = words[i]["start"]
+                print(f"   🎯 Trigger (fuzzy) '{trigger_text[:40]}' → {ts:.2f}s")
+                return ts
+
+    print(f"   ⚠️  Trigger not found: '{trigger_text[:60]}'")
+    return None
+
+def build_image_timeline(episode_images, words, audio_duration):
+    """
+    Build image timeline: list of (image_path_placeholder, start_time, end_time).
+    Uses trigger lines matched against WhisperX timestamps.
+    Image 1 always starts at 0. Each image ends when the next one starts.
+    Last image ends at audio_duration.
+    Returns list of {url, start, end, trigger}
+    """
+    if not episode_images:
+        return []
+
+    timeline = []
+    for i, img in enumerate(episode_images):
+        trigger = img.get("trigger", "").strip()
+        if i == 0:
+            start = 0.0  # First image always starts immediately
+        else:
+            ts = find_trigger_timestamp(words, trigger) if trigger else None
+            if ts is None:
+                # Fallback: divide remaining time equally
+                prev_end = timeline[-1]["end"] if timeline else 0
+                remaining = audio_duration - prev_end
+                remaining_imgs = len(episode_images) - i
+                start = prev_end + (remaining / (remaining_imgs + 1))
+                print(f"   ⚠️  Image {i+1} fallback timing: {start:.2f}s")
+            else:
+                start = ts
+
+        timeline.append({
+            "url":     img["url"],
+            "start":   start,
+            "end":     audio_duration,  # Will be updated
+            "trigger": trigger,
+            "order":   img.get("order", i+1),
+        })
+
+    # Set end times
+    for i in range(len(timeline) - 1):
+        timeline[i]["end"] = timeline[i+1]["start"]
+
+    print(f"
+   📋 Image timeline:")
+    for t in timeline:
+        print(f"      Image {t['order']}: {t['start']:.2f}s → {t['end']:.2f}s ({t['end']-t['start']:.1f}s)")
+
+    return timeline
+
 def build_karaoke_screens(words, script_text, audio_duration):
     """
     Build karaoke screens from word timestamps.
@@ -286,20 +371,20 @@ def pitch_shift_audio(input_path, output_path, semitones):
 
 # ── Main FFmpeg render ────────────────────────────────────────
 def render_video(
-    image_paths, audio_path, music_path,
+    image_timeline, audio_path, music_path,
     intro_path, outro_path,
     photo_path, logo_path,
     screens, audio_duration, output_path
 ):
     print(f"\n🎬 Rendering video with FFmpeg...")
 
-    n_images = len(image_paths)
-    per_img  = audio_duration / n_images
+    n_images = len(image_timeline)
 
-    # Build input list
+    # Build input list — each image runs for its exact duration from timeline
     inputs = []
-    for img in image_paths:
-        inputs += ["-loop", "1", "-t", str(per_img), "-i", img]
+    for item in image_timeline:
+        dur = item["end"] - item["start"]
+        inputs += ["-loop", "1", "-t", str(dur + 0.1), "-i", item["local_path"]]
 
     inputs += ["-i", audio_path]
     inputs += ["-i", music_path]
@@ -307,13 +392,16 @@ def render_video(
     audio_idx = n_images
     music_idx = n_images + 1
 
-    # ── Scale + concat images ────────────────────────────────
+    # ── Scale + set duration + concat images ────────────────
+    # Each image scaled to fill frame (handles both 1:1 and 16:9 inputs)
     scale_filters = ""
     for i in range(n_images):
+        dur = image_timeline[i]["end"] - image_timeline[i]["start"]
         scale_filters += (
             f"[{i}:v]scale={WIDTH}:{HEIGHT}:"
             f"force_original_aspect_ratio=increase,"
-            f"crop={WIDTH}:{HEIGHT},setsar=1,fps={FPS}[sv{i}];"
+            f"crop={WIDTH}:{HEIGHT},setsar=1,fps={FPS},"
+            f"trim=duration={dur},setpts=PTS-STARTPTS[sv{i}];"
         )
 
     # Concat all images into one stream
@@ -530,29 +618,30 @@ def main():
         words = run_whisperx(voice_path, whisper_lang, tmpdir)
         screens = build_karaoke_screens(words, script_text, audio_duration)
 
-        # 6. Download images
-        raw_images = episode.get("image_urls") or episode.get("image_urls_landscape") or []
-        if isinstance(raw_images, str):
+        # 6. Load episode images (user-uploaded with trigger lines)
+        raw_ep_images = episode.get("episode_images") or []
+        if isinstance(raw_ep_images, str):
             try:
-                raw_images = json.loads(raw_images)
+                raw_ep_images = json.loads(raw_ep_images)
             except:
-                raw_images = []
+                raw_ep_images = []
 
-        if not raw_images:
-            print("❌ No images found — generate images first")
-            db_patch(table, EPISODE_NUMBER, {"status": "images_approved"})
+        if not raw_ep_images:
+            print("❌ No episode images found — upload images first")
+            db_patch(table, EPISODE_NUMBER, {"status": "voice_approved"})
             return
 
-        print(f"\n📸 Downloading {len(raw_images)} scene images...")
+        print(f"\n📸 Downloading {len(raw_ep_images)} episode images...")
+        # Download each image and build local path map
         image_paths = []
-        for img in sorted(raw_images, key=lambda x: x.get("id", 0)):
-            dest = os.path.join(tmpdir, f"scene_{img['id']}.jpg")
-            if download_file(img["url"], dest, f"Scene {img['id']}"):
-                image_paths.append(dest)
+        for img in sorted(raw_ep_images, key=lambda x: x.get("order", 0)):
+            dest = os.path.join(tmpdir, f"ep_img_{img.get('order',len(image_paths)+1)}.jpg")
+            if download_file(img["url"], dest, f"Image {img.get('order','')} — trigger: '{img.get('trigger','(start)')[:30]}'"):
+                image_paths.append({**img, "local_path": dest})
 
         if not image_paths:
             print("❌ Could not download any images")
-            db_patch(table, EPISODE_NUMBER, {"status": "images_approved"})
+            db_patch(table, EPISODE_NUMBER, {"status": "voice_approved"})
             return
 
         # 7. Download intro image (episode-specific or default)
@@ -609,8 +698,11 @@ def main():
         # 11. Render video
         output_path = os.path.join(tmpdir, f"ep{EPISODE_NUMBER:03d}_{lang_code}.mp4")
 
+        # Build image timeline using WhisperX trigger matching
+        image_timeline = build_image_timeline(image_paths, words or [], audio_duration)
+
         success = render_video(
-            image_paths  = image_paths,
+            image_timeline = image_timeline,
             audio_path   = voice_path,
             music_path   = music_path,
             intro_path   = intro_path,
