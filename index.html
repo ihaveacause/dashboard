@@ -582,7 +582,7 @@ function buildImgSlot(n, order, isFirst=false) {
       <div class="img-trigger-label">Trigger line ${isFirst ? '(leave blank — image plays from start)' : '(first words of paragraph where this image appears)'}</div>
       <input class="img-trigger-input" id="trigger-${n}-${order}"
         placeholder="${isFirst ? 'No trigger needed — plays from beginning' : 'e.g. Many of us when we hear the word'}"
-        ${isFirst ? 'disabled style="opacity:.5"' : ''}>
+        ${isFirst ? 'disabled style="opacity:.5"' : ''} onblur="saveTriggerLine(${n},${order},'${lang}')" >
       ${!isFirst ? '<div class="img-trigger-hint">Paste the first few words of the paragraph where this image should appear</div>' : ''}
     </div>
     <button class="img-del-btn" onclick="removeImgSlot(${n},${order})" title="Remove">✕</button>
@@ -660,6 +660,11 @@ async function previewImg(n, order, input) {
   } catch(e) {
     showToast(`Image ${order} upload failed: ${e.message}`, 'error');
   }
+}
+
+function saveTriggerLine(n, order, language) {
+  // Called when user clicks out of trigger input — re-saves all images with updated trigger
+  autoSaveAllImages(n, language);
 }
 
 async function autoSaveAllImages(n, language) {
