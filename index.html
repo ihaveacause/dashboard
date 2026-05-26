@@ -666,7 +666,17 @@ function renderPreviewView(n, results) {
 // ── Slot management ───────────────────────────────────────────
 let slotCounters = {};
 
+// Sync all trigger inputs from DOM → store before any re-render
+function syncTriggers(n) {
+  const store = getStore(n);
+  store.forEach(item => {
+    const el = document.getElementById(`trigger-${n}-${item.order}`);
+    if (el) item.trigger = el.value.trim();
+  });
+}
+
 function addImgSlot(n) {
+  syncTriggers(n);  // save current trigger values before DOM changes
   const store = getStore(n);
   const order = store.length + 1;
   store.push({order, file: null, url: null, trigger: '', filename: ''});
@@ -675,12 +685,13 @@ function addImgSlot(n) {
 }
 
 function removeSlot(n, order) {
+  syncTriggers(n);  // save current trigger values before re-render
   const store = getStore(n);
   const idx = store.findIndex(i => i.order === order);
   if (idx >= 0) store.splice(idx, 1);
   // Re-number remaining
   store.forEach((item, i) => { item.order = i + 1; });
-  // Re-render slots
+  // Re-render slots — trigger values are now in store so they will persist
   const container = document.getElementById(`img-slots-${n}`);
   if (container) container.innerHTML = store.map((item,i) => renderSlot(n, i+1, item)).join('');
 }
@@ -724,12 +735,9 @@ async function saveAllImages(n, language) {
   const saveBtn    = document.getElementById(`save-btn-${n}`);
   const saveStatus = document.getElementById(`save-status-${n}`);
 
-  // Collect trigger lines from inputs before saving
+  // Sync ALL trigger lines from DOM to store before saving
+  syncTriggers(n);
   const store = getStore(n);
-  store.forEach(item => {
-    const triggerEl = document.getElementById(`trigger-${n}-${item.order}`);
-    if (triggerEl) item.trigger = triggerEl.value.trim();
-  });
 
   const toSave = store.filter(i => i.file || i.url);
   if (!toSave.length) { showToast('Add at least one image first','error'); return; }
@@ -822,7 +830,7 @@ function backToEdit(n) {
   const ep   = episodes.find(e => e.episode_number === n);
   let saved  = ep?.episode_images || [];
   if (typeof saved === 'string') { try { saved = JSON.parse(saved); } catch(e) { saved=[]; } }
-  // Reset store to saved state so edits start from saved data
+  // Reset store to saved state — trigger lines come from DB saved data
   epImgStore[epImgKey(n)] = saved.map(img => ({...img, file:null}));
   if (view) view.innerHTML = renderUploadView(n, saved);
 }
@@ -1131,7 +1139,7 @@ document.addEventListener('keydown', e => {
 
 // ── Init ───────────────────────────────────────────────────
 load();
-setInterval(load, 60000);
+// Auto-reload removed — dashboard only refreshes when user clicks a button
 </script>
 </body>
 </html>
