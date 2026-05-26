@@ -627,10 +627,22 @@ async function previewImg(n, order, input) {
     const lang_code = lang;
     const path     = `ep${String(n).padStart(3,'0')}/${lang_code}/ep_img_${order}.${ext}`;
 
-    // Upload file
-    const { error } = await SB.storage.from('episode-voices').upload(path, file, {upsert:true});
-    if (error) throw new Error(error.message);
-    const { data: {publicUrl} } = SB.storage.from('episode-voices').getPublicUrl(path);
+    // Upload file using plain fetch (same as voice upload — no Supabase JS client)
+    const uploadResp = await fetch(`${SB_URL}/storage/v1/object/episode-images/${path}`, {
+      method: 'POST',
+      headers: {
+        'apikey': SB_KEY,
+        'Authorization': `Bearer ${SB_KEY}`,
+        'Content-Type': file.type || 'image/jpeg',
+        'x-upsert': 'true'
+      },
+      body: file
+    });
+    if (!uploadResp.ok) {
+      const errText = await uploadResp.text();
+      throw new Error(`Upload failed ${uploadResp.status}: ${errText.slice(0,100)}`);
+    }
+    const publicUrl = `${SB_URL}/storage/v1/object/public/episode-images/${path}`;
 
     // Store url on input for saveEpImages to use
     input._url     = publicUrl;
@@ -732,10 +744,13 @@ async function saveEpImages(n, language) {
       const path = `ep${String(n).padStart(3,'0')}/${lang_code}/ep_img_${order}.${ext}`;
 
       showToast(`Uploading image ${order}...`, 'info');
-      const { error } = await SB.storage.from('episode-voices').upload(path, file, {upsert:true});
-      if (error) throw new Error(`Image ${order}: ${error.message}`);
-
-      const { data: {publicUrl} } = SB.storage.from('episode-voices').getPublicUrl(path);
+      const upR = await fetch(`${SB_URL}/storage/v1/object/episode-images/${path}`, {
+        method:'POST',
+        headers:{'apikey':SB_KEY,'Authorization':`Bearer ${SB_KEY}`,'Content-Type':file.type||'image/jpeg','x-upsert':'true'},
+        body:file
+      });
+      if (!upR.ok) throw new Error(`Image ${order} upload failed: ${upR.status}`);
+      const publicUrl = `${SB_URL}/storage/v1/object/public/episode-images/${path}`;
       results.push({ order, url: publicUrl, trigger, filename: file.name });
       order++;
     }
@@ -847,9 +862,13 @@ async function uploadVoice(n, input) {
   try {
     const ext  = file.name.split('.').pop();
     const path = `ep${String(n).padStart(3,'0')}_${lang}.${ext}`;
-    const { error } = await SB.storage.from('episode-voices').upload(path, file, {upsert:true});
-    if (error) throw error;
-    const { data: {publicUrl} } = SB.storage.from('episode-voices').getPublicUrl(path);
+    const vUpResp = await fetch(`${SB_URL}/storage/v1/object/episode-voices/${path}`, {
+      method: 'POST',
+      headers: {'apikey':SB_KEY,'Authorization':`Bearer ${SB_KEY}`,'Content-Type':file.type||'audio/mpeg','x-upsert':'true'},
+      body: file
+    });
+    if (!vUpResp.ok) throw new Error(`Voice upload failed ${vUpResp.status}: ${await vUpResp.text()}`);
+    const publicUrl = `${SB_URL}/storage/v1/object/public/episode-voices/${path}`;
     await patch(n, {voice_url: publicUrl, status: 'voice_uploaded'});
     showToast(`Voice uploaded successfully`,'success');
     loadEpisodes();
@@ -867,9 +886,13 @@ async function uploadYtImage(n, type, input) {
   try {
     const ext  = file.name.split('.').pop();
     const path = `ep${String(n).padStart(3,'0')}/yt_${type}.${ext}`;
-    const { error } = await SB.storage.from('episode-images').upload(path, file, {upsert:true});
-    if (error) throw error;
-    const { data: {publicUrl} } = SB.storage.from('episode-images').getPublicUrl(path);
+    const iResp = await fetch(`${SB_URL}/storage/v1/object/episode-images/${path}`, {
+      method:'POST',
+      headers:{'apikey':SB_KEY,'Authorization':`Bearer ${SB_KEY}`,'Content-Type':file.type||'image/jpeg','x-upsert':'true'},
+      body:file
+    });
+    if (!iResp.ok) throw new Error(`Image upload failed ${iResp.status}: ${await iResp.text()}`);
+    const publicUrl = `${SB_URL}/storage/v1/object/public/episode-images/${path}`;
     const col = type === 'intro' ? 'intro_image_url' : 'outro_image_url';
     await patch(n, {[col]: publicUrl});
     if (slot) {
