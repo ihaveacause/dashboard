@@ -393,7 +393,6 @@ def render_video(
     music_idx = n_images + 1
 
     # ── Scale + set duration + concat images ────────────────
-    # Each image scaled to fill frame (handles both 1:1 and 16:9 inputs)
     scale_filters = ""
     for i in range(n_images):
         dur = image_timeline[i]["end"] - image_timeline[i]["start"]
@@ -424,7 +423,20 @@ def render_video(
             font_path = "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"
 
     def esc(s):
-        return s.replace("'", "\\'").replace(":", "\\:").replace("\\", "\\\\")
+        """
+        Escape text safely for FFmpeg drawtext filter.
+        Order matters:
+          1. Backslash first (avoid double-escaping)
+          2. Single quotes → Unicode curly apostrophe (FFmpeg-safe, visually identical)
+          3. Double quotes → Unicode curly quote (FFmpeg-safe)
+          4. Colon → escaped colon
+        """
+        return (
+            s.replace("\\", "\\\\")   # 1. backslash — must be first
+             .replace("'", "\u2019")  # 2. apostrophe → ' (curly, FFmpeg-safe)
+             .replace('"', "\u201c")  # 3. double quote → " (curly, FFmpeg-safe)
+             .replace(":", "\\:")     # 4. colon
+        )
 
     drawtext_chain = "[bg_bar]"
     for idx, screen in enumerate(screens):
