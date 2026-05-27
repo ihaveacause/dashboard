@@ -41,6 +41,8 @@ import requests
 from datetime import datetime
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
+from google.cloud import storage as gcs
+from google.oauth2 import service_account
 
 # ── Config ────────────────────────────────────────────────────
 SUPABASE_URL   = os.environ["SUPABASE_URL"]
@@ -48,6 +50,8 @@ SUPABASE_KEY   = os.environ["SUPABASE_KEY"]
 GCP_CREDS_JSON = os.environ["GOOGLE_APPLICATION_CREDENTIALS_JSON"]
 EPISODE_NUMBER = int(os.environ["EPISODE_NUMBER"])
 LANGUAGE       = os.environ.get("LANGUAGE", "ta")
+
+GCS_BUCKET     = "ihaveacause-media"
 
 # ── Video settings ────────────────────────────────────────────
 WIDTH          = 1920
@@ -94,22 +98,6 @@ def db_patch(table, val, data):
     )
     return r.status_code in (200, 204)
 
-def upload_to_storage(bucket, path, data_bytes, content_type="video/mp4"):
-    r = requests.post(
-        f"{SUPABASE_URL}/storage/v1/object/{bucket}/{path}",
-        headers={
-            "apikey":        SUPABASE_KEY,
-            "Authorization": f"Bearer {SUPABASE_KEY}",
-            "Content-Type":  content_type,
-            "x-upsert":      "true",
-        },
-        data=data_bytes, timeout=600
-    )
-    if r.status_code in (200, 201):
-        return f"{SUPABASE_URL}/storage/v1/object/public/{bucket}/{path}"
-    print(f"  ❌ Upload failed {r.status_code}: {r.text[:200]}")
-    return None
-
 def download_file(url, dest_path, desc="file"):
     headers = {
         "apikey":        SUPABASE_KEY,
@@ -128,6 +116,33 @@ def download_file(url, dest_path, desc="file"):
 
 def storage_url(bucket, path):
     return f"{SUPABASE_URL}/storage/v1/object/public/{bucket}/{path}"
+
+# ── GCS upload ────────────────────────────────────────────────
+def upload_to_gcs(local_path, gcs_path, content_type="video/mp4"):
+    """
+    Upload a file to GCS bucket ihaveacause-media.
+    Uses same credentials pattern as image pipeline.
+    Returns public URL or None on failure.
+    """
+    try:
+        creds_info  = json.loads(GCP_CREDS_JSON)
+        credentials = service_account.Credentials.from_service_account_info(
+            creds_info,
+            scopes=["https://www.googleapis.com/auth/cloud-platform"]
+        )
+        client = gcs.Client(
+            credentials=credentials,
+            project=creds_info.get("project_id")
+        )
+        bucket = client.bucket(GCS_BUCKET)
+        blob   = bucket.blob(gcs_path)
+        blob.upload_from_filename(local_path, content_type=content_type)
+        url = f"https://storage.googleapis.com/{GCS_BUCKET}/{gcs_path}"
+        print(f"   ✅ GCS upload complete: {url}")
+        return url
+    except Exception as e:
+        print(f"   ❌ GCS upload failed: {e}")
+        return None
 
 # ── WhisperX alignment ────────────────────────────────────────
 def run_whisperx(audio_path, language, tmpdir):
@@ -440,47 +455,36 @@ def render_video(
     inputs   = []
     next_idx = 0
 
-    # Episode images (0 … n_images-1)
     for item in image_timeline:
         dur = item["end"] - item["start"]
         inputs += ["-loop", "1", "-t", str(dur + 0.1), "-i", item["local_path"]]
     next_idx = n_images
 
-    # Audio
     inputs   += ["-i", audio_path]
     audio_idx = next_idx; next_idx += 1
 
-    # Music
     inputs   += ["-i", music_path]
     music_idx = next_idx; next_idx += 1
 
-    # Text overlay video
     inputs   += ["-i", text_video_path]
     text_idx  = next_idx; next_idx += 1
 
-    # Narrator photo (optional)
     photo_idx = None
     if photo_path and os.path.exists(photo_path):
         inputs   += ["-i", photo_path]
         photo_idx = next_idx; next_idx += 1
 
-    # Logo (optional)
     logo_idx = None
     if logo_path and os.path.exists(logo_path):
         inputs  += ["-i", logo_path]
         logo_idx = next_idx; next_idx += 1
 
-    # Intro
     inputs   += ["-loop", "1", "-t", str(INTRO_DUR + FADE_DUR), "-i", intro_path]
     intro_idx = next_idx; next_idx += 1
 
-    # Outro
     inputs   += ["-loop", "1", "-t", str(OUTRO_DUR + FADE_DUR), "-i", outro_path]
     outro_idx = next_idx
 
-    # ── Filtergraph ───────────────────────────────────────────
-
-    # 1. Scale + trim each episode image
     scale_filters = ""
     for i in range(n_images):
         dur = image_timeline[i]["end"] - image_timeline[i]["start"]
@@ -491,17 +495,14 @@ def render_video(
             f"trim=duration={dur},setpts=PTS-STARTPTS[sv{i}];"
         )
 
-    # 2. Concat episode images → main background
     concat_in     = "".join(f"[sv{i}]" for i in range(n_images))
     concat_filter = f"{concat_in}concat=n={n_images}:v=1:a=0[bg_raw];"
 
-    # 3. Overlay text bar video at lower third
     text_filter = (
         f"[{text_idx}:v]scale={WIDTH}:{BAR_HEIGHT},setsar=1,fps={FPS}[text_scaled];"
         f"[bg_raw][text_scaled]overlay=0:{LOWER_TOP}[bg_text];"
     )
 
-    # 4. Narrator photo overlay
     video_out    = "[bg_text]"
     photo_filter = ""
     if photo_idx is not None:
@@ -514,7 +515,6 @@ def render_video(
         )
         video_out = "[bg_photo]"
 
-    # 5. Logo overlay
     logo_filter = ""
     if logo_idx is not None:
         logo_w = int(LOGO_HEIGHT * 2.0)
@@ -528,7 +528,6 @@ def render_video(
         )
         video_out = "[bg_logo]"
 
-    # 6. Intro / Outro
     intro_filter = (
         f"[{intro_idx}:v]scale={WIDTH}:{HEIGHT}:"
         f"force_original_aspect_ratio=increase,crop={WIDTH}:{HEIGHT},"
@@ -540,13 +539,11 @@ def render_video(
         f"fade=t=in:st=0:d={FADE_DUR},setsar=1[outro_v];"
     )
 
-    # FIX: use video_out directly — it already contains the brackets e.g. [bg_photo]
     final_concat = (
         f"[intro_v]{video_out}[outro_v]"
         f"concat=n=3:v=1:a=0[video_out];"
     )
 
-    # 7. Audio mix
     total_dur    = INTRO_DUR + audio_duration + OUTRO_DUR
     audio_filter = (
         f"[{audio_idx}:a]adelay={int(INTRO_DUR*1000)}|{int(INTRO_DUR*1000)}[voice_delayed];"
@@ -718,7 +715,7 @@ def main():
         # 10. Channel logo
         print(f"\n🔱 Downloading channel logo...")
         logo_path  = os.path.join(tmpdir, "logo.png")
-        logo_url   = "https://storage.googleapis.com/ihaveacause-media/assets/ihaveacause_logo.png"
+        logo_url   = f"https://storage.googleapis.com/{GCS_BUCKET}/assets/ihaveacause_logo.png"
         logo_final = None
         try:
             r = requests.get(logo_url, timeout=15)
@@ -764,19 +761,17 @@ def main():
             db_patch(table, EPISODE_NUMBER, {"status": "voice_approved"})
             return
 
-        # 14. Upload to Supabase
-        print(f"\n☁️  Uploading video to Supabase...")
-        storage_path = f"ep{EPISODE_NUMBER:03d}/{lang_code}/final.mp4"
-        with open(output_path, "rb") as f:
-            video_data = f.read()
+        # 14. Upload to GCS (no file size limits — replaces Supabase Storage)
+        print(f"\n☁️  Uploading video to GCS...")
+        gcs_video_path = f"episodes/ep{EPISODE_NUMBER:03d}/{lang_code}/final.mp4"
+        video_url = upload_to_gcs(output_path, gcs_video_path)
 
-        video_url = upload_to_storage("episode-videos", storage_path, video_data, "video/mp4")
         if not video_url:
             print("❌ Video upload failed")
             db_patch(table, EPISODE_NUMBER, {"status": "voice_approved"})
             return
 
-        # 15. Save to database
+        # 15. Save URL and status to Supabase database
         db_patch(table, EPISODE_NUMBER, {
             "video_url": video_url,
             "status":    "video_ready",
