@@ -40,4 +40,4 @@ jobs:
           GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
           EPISODE_NUMBER: ${{ inputs.episode_number }}
           LANGUAGE: ${{ inputs.language }}
-       run: python new_youtube/scripts/generate_video.py
+        run: python new_youtube/scripts/generate_video.py
