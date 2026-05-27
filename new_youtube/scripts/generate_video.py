@@ -119,20 +119,21 @@ def storage_url(bucket, path):
 def upload_to_gcs(local_path, gcs_path, content_type="video/mp4"):
     """
     Upload a file to GCS using the JSON API + google-auth.
-    Uses google.oauth2 (already installed via whisperx deps) — no
-    google-cloud-storage SDK needed, so no workflow changes required.
-    Returns public URL or None on failure.
+    Returns a signed URL valid for 30 days (bucket is not public,
+    so signed URL is required for dashboard preview and YouTube upload).
     """
     try:
+        import datetime
         from google.oauth2 import service_account
         import google.auth.transport.requests as google_requests
 
         creds_info  = json.loads(GCP_CREDS_JSON)
+
+        # ── 1. Upload the file ────────────────────────────────
         credentials = service_account.Credentials.from_service_account_info(
             creds_info,
             scopes=["https://www.googleapis.com/auth/cloud-platform"]
         )
-        # Get a fresh access token
         credentials.refresh(google_requests.Request())
 
         upload_url = (
@@ -155,13 +156,63 @@ def upload_to_gcs(local_path, gcs_path, content_type="video/mp4"):
                 timeout=600
             )
 
-        if r.status_code in (200, 201):
-            public_url = f"https://storage.googleapis.com/{GCS_BUCKET}/{gcs_path}"
-            print(f"   ✅ GCS upload complete: {public_url}")
-            return public_url
+        if r.status_code not in (200, 201):
+            print(f"   ❌ GCS upload failed {r.status_code}: {r.text[:200]}")
+            return None
 
-        print(f"   ❌ GCS upload failed {r.status_code}: {r.text[:200]}")
-        return None
+        print(f"   ✅ GCS upload complete")
+
+        # ── 2. Generate signed URL valid for 30 days ─────────
+        signing_creds = service_account.Credentials.from_service_account_info(
+            creds_info
+        )
+        expiry    = datetime.timedelta(days=30)
+        sign_url  = (
+            f"https://storage.googleapis.com/storage/v1/b"
+            f"/{GCS_BUCKET}/o/{requests.utils.quote(gcs_path, safe='')}?"
+            f"alt=media"
+        )
+
+        # Use GCS signing API — no extra SDK needed
+        now        = datetime.datetime.utcnow()
+        expiry_dt  = now + expiry
+        expiry_ts  = int(expiry_dt.timestamp())
+
+        string_to_sign = "\n".join([
+            "GET",
+            "",
+            "",
+            str(expiry_ts),
+            f"/{GCS_BUCKET}/{gcs_path}",
+        ])
+
+        import base64
+        import hashlib
+        from cryptography.hazmat.primitives import hashes, serialization
+        from cryptography.hazmat.primitives.asymmetric import padding
+        from cryptography.hazmat.backends import default_backend
+
+        private_key_data = creds_info["private_key"].encode("utf-8")
+        private_key = serialization.load_pem_private_key(
+            private_key_data, password=None, backend=default_backend()
+        )
+        signature = private_key.sign(
+            string_to_sign.encode("utf-8"),
+            padding.PKCS1v15(),
+            hashes.SHA256()
+        )
+        encoded_sig = base64.urlsafe_b64encode(signature).decode("utf-8")
+
+        client_email = creds_info["client_email"]
+        signed_url = (
+            f"https://storage.googleapis.com/{GCS_BUCKET}/{gcs_path}"
+            f"?GoogleAccessId={client_email}"
+            f"&Expires={expiry_ts}"
+            f"&Signature={encoded_sig}"
+        )
+
+        print(f"   ✅ Signed URL generated (valid 30 days)")
+        return signed_url
 
     except Exception as e:
         print(f"   ❌ GCS upload error: {e}")
