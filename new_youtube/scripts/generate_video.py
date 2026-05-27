@@ -201,7 +201,7 @@ def upload_to_gcs(local_path, gcs_path, content_type="video/mp4"):
             padding.PKCS1v15(),
             hashes.SHA256()
         )
-        encoded_sig = base64.b64encode(signature).decode("utf-8")
+        encoded_sig = requests.utils.quote(base64.b64encode(signature).decode("utf-8"), safe="")
 
         client_email = creds_info["client_email"]
         signed_url = (
