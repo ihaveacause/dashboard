@@ -148,7 +148,6 @@ def run_whisperx(audio_path, language, tmpdir):
 
     if result.returncode != 0:
         print(f"   ⚠️  WhisperX stderr: {result.stderr[:300]}")
-        # Fall back to simple duration-based sync
         return None
 
     # Find output JSON
@@ -246,7 +245,6 @@ def build_image_timeline(episode_images, words, audio_duration):
             if ts is not None:
                 start = ts
             else:
-                # Equal spacing fallback
                 start = round((audio_duration / n) * i, 3)
                 if not trigger:
                     print(f"   Info: Image {i+1} no trigger — equal spacing {start:.2f}s")
@@ -280,7 +278,6 @@ def build_karaoke_screens(words, script_text, audio_duration):
     Returns list of {start, end, lines: [line1, line2, line3]}
     """
     if words:
-        # Group words into lines
         lines = []
         current_line = []
         for w in words:
@@ -291,20 +288,17 @@ def build_karaoke_screens(words, script_text, audio_duration):
         if current_line:
             lines.append(current_line)
 
-        # Group lines into screens of MAX_LINES
         screens = []
         for i in range(0, len(lines), MAX_LINES):
             screen_lines = lines[i:i + MAX_LINES]
             start = screen_lines[0][0]["start"]
             end   = screen_lines[-1][-1]["end"]
             text_lines = [" ".join(w["word"] for w in line) for line in screen_lines]
-            # Pad to MAX_LINES
             while len(text_lines) < MAX_LINES:
                 text_lines.append("")
             screens.append({"start": start, "end": end, "lines": text_lines})
 
     else:
-        # Fallback: simple duration-based sync from script text
         print("   ℹ️  Using duration-based sync (no WhisperX timestamps)")
         words_list = script_text.split()
         lines = []
@@ -347,8 +341,8 @@ def make_circle_photo(input_path, output_path, size):
 # ── Image cycle list ──────────────────────────────────────────
 def build_image_cycle(image_paths, audio_duration):
     """Return list of (image_path, start, end) for cycling images."""
-    n       = len(image_paths)
-    main_dur = audio_duration  # intro/outro handled separately
+    n        = len(image_paths)
+    main_dur = audio_duration
     per_img  = main_dur / n
     cycles   = []
     for i, path in enumerate(image_paths):
@@ -380,7 +374,6 @@ def render_video(
 
     n_images = len(image_timeline)
 
-    # Build input list — each image runs for its exact duration from timeline
     inputs = []
     for item in image_timeline:
         dur = item["end"] - item["start"]
@@ -403,11 +396,10 @@ def render_video(
             f"trim=duration={dur},setpts=PTS-STARTPTS[sv{i}];"
         )
 
-    # Concat all images into one stream
-    concat_in  = "".join(f"[sv{i}]" for i in range(n_images))
+    concat_in     = "".join(f"[sv{i}]" for i in range(n_images))
     concat_filter = f"{concat_in}concat=n={n_images}:v=1:a=0[bg_raw];"
 
-    # ── Dark lower third bar (semi-transparent) ──────────────
+    # ── Dark lower third bar ──────────────────────────────────
     lower_top = HEIGHT - int(HEIGHT * LOWER_THIRD)
     bar_filter = (
         f"[bg_raw]drawbox="
@@ -428,21 +420,20 @@ def render_video(
         Order matters:
           1. Backslash first (avoid double-escaping)
           2. Single quotes → Unicode curly apostrophe (FFmpeg-safe, visually identical)
-          3. Double quotes → Unicode curly quote (FFmpeg-safe)
+          3. Double quotes → removed entirely (unicode replacements unreliable in FFmpeg)
           4. Colon → escaped colon
         """
         return (
-            s.replace("\\", "\\\\")   # 1. backslash — must be first
-             .replace("'", "\u2019")  # 2. apostrophe → ' (curly, FFmpeg-safe)
-             .replace('"', "\u201c")  # 3. double quote → " (curly, FFmpeg-safe)
-             .replace(":", "\\:")     # 4. colon
+            s.replace("\\", "\\\\")  # 1. backslash — must be first
+             .replace("'", "\u2019") # 2. apostrophe → ' (curly, FFmpeg-safe)
+             .replace('"', "")       # 3. double quote → removed (FFmpeg-safe)
+             .replace(":", "\\:")    # 4. colon
         )
 
     drawtext_chain = "[bg_bar]"
     for idx, screen in enumerate(screens):
         out_label = f"[kt{idx+1}]" if idx < len(screens) - 1 else "[bg_text]"
         in_label  = drawtext_chain
-        # Draw 3 lines
         filter_parts = []
         for li, line_text in enumerate(screen["lines"]):
             if not line_text.strip():
@@ -488,9 +479,9 @@ def render_video(
     if logo_path and os.path.exists(logo_path):
         logo_input_idx = n_images + 2 + (1 if photo_input_idx else 0)
         inputs += ["-i", logo_path]
-        logo_w  = int(LOGO_HEIGHT * 2.0)  # approximate
-        lx      = WIDTH - logo_w - LOGO_MARGIN
-        ly      = HEIGHT - LOGO_HEIGHT - LOGO_MARGIN
+        logo_w = int(LOGO_HEIGHT * 2.0)
+        lx     = WIDTH - logo_w - LOGO_MARGIN
+        ly     = HEIGHT - LOGO_HEIGHT - LOGO_MARGIN
         logo_filter = (
             f"[{logo_input_idx}:v]scale={logo_w}:{LOGO_HEIGHT},"
             f"format=yuva420p[logo_scaled];"
@@ -517,7 +508,6 @@ def render_video(
         f"fade=t=in:st=0:d={FADE_DUR},setsar=1[outro_v];"
     )
 
-    # Final concat: intro + main + outro
     final_concat = (
         f"[intro_v]{video_out[1:-1]}[outro_v]"
         f"concat=n=3:v=1:a=0[video_out];"
@@ -622,15 +612,15 @@ def main():
         print(f"\n   Audio duration: {audio_duration:.1f}s")
 
         # 4. Get script for WhisperX
-        script_col = "script_tamil" if LANGUAGE == "ta" else "script_english"
+        script_col  = "script_tamil" if LANGUAGE == "ta" else "script_english"
         script_text = episode.get(script_col, "") or ""
 
         # 5. WhisperX alignment
         whisper_lang = "ta" if LANGUAGE == "ta" else "en"
-        words = run_whisperx(voice_path, whisper_lang, tmpdir)
+        words   = run_whisperx(voice_path, whisper_lang, tmpdir)
         screens = build_karaoke_screens(words, script_text, audio_duration)
 
-        # 6. Load episode images (user-uploaded with trigger lines)
+        # 6. Load episode images
         raw_ep_images = episode.get("episode_images") or []
         if isinstance(raw_ep_images, str):
             try:
@@ -644,10 +634,9 @@ def main():
             return
 
         print(f"\n📸 Downloading {len(raw_ep_images)} episode images...")
-        # Download each image and build local path map
         image_paths = []
         for img in sorted(raw_ep_images, key=lambda x: x.get("order", 0)):
-            dest = os.path.join(tmpdir, f"ep_img_{img.get('order',len(image_paths)+1)}.jpg")
+            dest = os.path.join(tmpdir, f"ep_img_{img.get('order', len(image_paths)+1)}.jpg")
             if download_file(img["url"], dest, f"Image {img.get('order','')} — trigger: '{img.get('trigger','(start)')[:30]}'"):
                 image_paths.append({**img, "local_path": dest})
 
@@ -656,7 +645,7 @@ def main():
             db_patch(table, EPISODE_NUMBER, {"status": "voice_approved"})
             return
 
-        # 7. Download intro image (episode-specific or default)
+        # 7. Download intro/outro images
         print(f"\n🖼️  Downloading intro/outro images...")
         intro_path = os.path.join(tmpdir, "intro.png")
         outro_path = os.path.join(tmpdir, "outro.png")
@@ -669,10 +658,10 @@ def main():
 
         # 8. Download narrator photo
         print(f"\n👤 Downloading narrator photo...")
-        photo_file = "photo_tamil.jpg" if LANGUAGE == "ta" else "photo_english.jpg"
-        photo_path = os.path.join(tmpdir, "narrator.jpg")
+        photo_file   = "photo_tamil.jpg" if LANGUAGE == "ta" else "photo_english.jpg"
+        photo_path   = os.path.join(tmpdir, "narrator.jpg")
         photo_circle = os.path.join(tmpdir, "narrator_circle.png")
-        photo_url  = storage_url("channel-assets", photo_file)
+        photo_url    = storage_url("channel-assets", photo_file)
 
         if download_file(photo_url, photo_path, f"Narrator photo ({photo_file})"):
             make_circle_photo(photo_path, photo_circle, PHOTO_SIZE)
@@ -682,8 +671,8 @@ def main():
 
         # 9. Download channel logo
         print(f"\n🔱 Downloading channel logo...")
-        logo_path = os.path.join(tmpdir, "logo.png")
-        logo_url  = "https://storage.googleapis.com/ihaveacause-media/assets/ihaveacause_logo.png"
+        logo_path  = os.path.join(tmpdir, "logo.png")
+        logo_url   = "https://storage.googleapis.com/ihaveacause-media/assets/ihaveacause_logo.png"
         logo_final = None
         try:
             r = requests.get(logo_url, timeout=15)
@@ -701,29 +690,26 @@ def main():
         music_url  = storage_url("episode-music", "background.mp3")
         if not download_file(music_url, music_path, "Background music"):
             print("   ⚠️  Music not found — rendering without music")
-            # Create 1 second of silence as fallback
             subprocess.run([
                 "ffmpeg", "-y", "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo",
                 "-t", "1", music_path
             ], capture_output=True)
 
         # 11. Render video
-        output_path = os.path.join(tmpdir, f"ep{EPISODE_NUMBER:03d}_{lang_code}.mp4")
-
-        # Build image timeline using WhisperX trigger matching
+        output_path    = os.path.join(tmpdir, f"ep{EPISODE_NUMBER:03d}_{lang_code}.mp4")
         image_timeline = build_image_timeline(image_paths, words or [], audio_duration)
 
         success = render_video(
             image_timeline = image_timeline,
-            audio_path   = voice_path,
-            music_path   = music_path,
-            intro_path   = intro_path,
-            outro_path   = outro_path,
-            photo_path   = photo_final,
-            logo_path    = logo_final,
-            screens      = screens,
+            audio_path     = voice_path,
+            music_path     = music_path,
+            intro_path     = intro_path,
+            outro_path     = outro_path,
+            photo_path     = photo_final,
+            logo_path      = logo_final,
+            screens        = screens,
             audio_duration = audio_duration,
-            output_path  = output_path,
+            output_path    = output_path,
         )
 
         if not success:
