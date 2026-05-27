@@ -53,9 +53,9 @@ LANGUAGE       = os.environ.get("LANGUAGE", "ta")
 WIDTH          = 1920
 HEIGHT         = 1080
 FPS            = 24
-LOWER_THIRD    = 0.30      # 30% of height for text bar
+LOWER_THIRD    = 0.30
 BAR_HEIGHT     = int(HEIGHT * LOWER_THIRD)   # 324px
-LOWER_TOP      = HEIGHT - BAR_HEIGHT         # 756px  (where bar starts)
+LOWER_TOP      = HEIGHT - BAR_HEIGHT         # 756px
 LINE_HEIGHT    = 65
 FONT_SIZE      = 42
 WORDS_PER_LINE = 6
@@ -64,7 +64,7 @@ MUSIC_VOL      = 0.12
 INTRO_DUR      = 2.0
 OUTRO_DUR      = 3.0
 FADE_DUR       = 0.5
-PITCH_SHIFT    = -3        # semitones for English voice deepening
+PITCH_SHIFT    = -3
 PHOTO_SIZE     = 140
 PHOTO_MARGIN   = 20
 LOGO_HEIGHT    = 55
@@ -131,12 +131,6 @@ def storage_url(bucket, path):
 
 # ── WhisperX alignment ────────────────────────────────────────
 def run_whisperx(audio_path, language, tmpdir):
-    """
-    Run WhisperX to get word-level timestamps.
-    FIX: --align_model removed — let WhisperX pick its default per-language
-    model. Forcing a specific model caused silent failures in GitHub Actions.
-    Returns list of word dicts, or None (triggers duration-based fallback).
-    """
     print(f"\n🎙️  Running WhisperX alignment ({language})...")
 
     result = subprocess.run(
@@ -155,12 +149,10 @@ def run_whisperx(audio_path, language, tmpdir):
     if result.returncode != 0:
         print(f"   ⚠️  WhisperX exit code {result.returncode}")
         print(f"   ⚠️  stderr: {result.stderr[:800]}")
-        # Still check for JSON — WhisperX sometimes exits non-zero but writes output
     else:
         if result.stdout.strip():
             print(f"   ℹ️  WhisperX stdout: {result.stdout[:300]}")
 
-    # Find output JSON
     audio_stem = Path(audio_path).stem
     json_path  = os.path.join(tmpdir, f"{audio_stem}.json")
     if not os.path.exists(json_path):
@@ -188,7 +180,6 @@ def run_whisperx(audio_path, language, tmpdir):
     if not words:
         print(f"   ⚠️  WhisperX produced no word-level timestamps")
         print(f"   ℹ️  Segments in JSON: {len(data.get('segments', []))}")
-        # Print first segment for debugging
         segs = data.get("segments", [])
         if segs:
             print(f"   ℹ️  First segment sample: {segs[0]}")
@@ -281,11 +272,6 @@ def build_image_timeline(episode_images, words, audio_duration):
     return timeline
 
 def build_karaoke_screens(words, script_text, audio_duration):
-    """
-    Build karaoke screens from word timestamps.
-    Each screen: max 3 lines × 6 words.
-    When 3 lines fill → all clear → fresh start.
-    """
     if words:
         lines        = []
         current_line = []
@@ -331,25 +317,16 @@ def build_karaoke_screens(words, script_text, audio_duration):
 
 # ── Pillow: render one karaoke screen → PNG ───────────────────
 def render_screen_png(lines, font_path, output_path):
-    """
-    Render 3 lines of text onto a PNG (WIDTH × BAR_HEIGHT) using Pillow.
-    Black semi-transparent bar + white centered text.
-    Works for Tamil and English — no FFmpeg text escaping involved.
-    """
     img  = Image.new("RGB", (WIDTH, BAR_HEIGHT), (0, 0, 0))
     draw = ImageDraw.Draw(img)
-
-    # Semi-transparent feel: dark bar (matching drawbox black@0.72)
     draw.rectangle([(0, 0), (WIDTH, BAR_HEIGHT)], fill=(18, 18, 18))
 
-    # Load font — fall back gracefully if path missing
     try:
         font = ImageFont.truetype(font_path, FONT_SIZE)
     except Exception as e:
         print(f"   ⚠️  Font load failed ({e}) — using default font")
         font = ImageFont.load_default()
 
-    # Draw each line centered horizontally
     for li, line in enumerate(lines):
         if not line.strip():
             continue
@@ -366,21 +343,11 @@ def render_screen_png(lines, font_path, output_path):
 
 # ── Build text overlay video from Pillow PNGs ─────────────────
 def build_text_overlay_video(screens, audio_duration, font_path, tmpdir):
-    """
-    For each karaoke screen, render a PNG via Pillow, then stitch them
-    into a video (WIDTH × BAR_HEIGHT) using FFmpeg concat demuxer.
-    The video covers exactly audio_duration seconds — overlaid on bg_raw
-    before intro/outro are concatenated.
-
-    Returns path to text_overlay.mp4, or None on failure.
-    """
     print(f"\n✏️  Rendering {len(screens)} karaoke screen PNGs (Pillow)...")
 
-    # Blank black frame for gaps between screens
     blank_path = os.path.join(tmpdir, "text_blank.png")
     Image.new("RGB", (WIDTH, BAR_HEIGHT), (0, 0, 0)).save(blank_path, "PNG")
 
-    # Render each screen
     screen_paths = []
     for idx, screen in enumerate(screens):
         png_path = os.path.join(tmpdir, f"screen_{idx:04d}.png")
@@ -389,8 +356,6 @@ def build_text_overlay_video(screens, audio_duration, font_path, tmpdir):
 
     print(f"   ✅ {len(screen_paths)} PNGs rendered")
 
-    # Build FFmpeg concat demuxer file
-    # Covers audio_duration exactly; screen timestamps are audio-relative
     concat_path = os.path.join(tmpdir, "text_concat.txt")
     with open(concat_path, "w") as f:
         cursor = 0.0
@@ -398,24 +363,19 @@ def build_text_overlay_video(screens, audio_duration, font_path, tmpdir):
             s_start = screen["start"]
             s_end   = screen["end"]
 
-            # Gap before this screen → blank frame
             if s_start > cursor + 0.001:
                 gap = s_start - cursor
                 f.write(f"file '{blank_path}'\nduration {gap:.4f}\n")
 
-            # Screen itself
             dur = max(s_end - s_start, 1.0 / FPS)
             f.write(f"file '{screen_paths[idx]}'\nduration {dur:.4f}\n")
             cursor = s_end
 
-        # Tail gap after last screen
         if cursor < audio_duration - 0.001:
             f.write(f"file '{blank_path}'\nduration {audio_duration - cursor:.4f}\n")
 
-        # FFmpeg concat demuxer always needs a final entry with no duration
         f.write(f"file '{blank_path}'\n")
 
-    # Encode text overlay video
     text_video = os.path.join(tmpdir, "text_overlay.mp4")
     print(f"   🎬 Encoding text overlay video ({WIDTH}×{BAR_HEIGHT})...")
     result = subprocess.run([
@@ -474,16 +434,9 @@ def render_video(
     text_video_path,
     audio_duration, output_path
 ):
-    """
-    Assemble final video.
-    Text is overlaid via a pre-rendered Pillow video (text_video_path)
-    instead of FFmpeg drawtext — no text escaping, works for Tamil + English.
-    """
     print(f"\n🎬 Rendering video with FFmpeg...")
 
     n_images = len(image_timeline)
-
-    # ── Build input list with explicit indices ────────────────
     inputs   = []
     next_idx = 0
 
@@ -502,8 +455,8 @@ def render_video(
     music_idx = next_idx; next_idx += 1
 
     # Text overlay video
-    inputs    += ["-i", text_video_path]
-    text_idx   = next_idx; next_idx += 1
+    inputs   += ["-i", text_video_path]
+    text_idx  = next_idx; next_idx += 1
 
     # Narrator photo (optional)
     photo_idx = None
@@ -518,12 +471,12 @@ def render_video(
         logo_idx = next_idx; next_idx += 1
 
     # Intro
-    inputs    += ["-loop", "1", "-t", str(INTRO_DUR + FADE_DUR), "-i", intro_path]
-    intro_idx  = next_idx; next_idx += 1
+    inputs   += ["-loop", "1", "-t", str(INTRO_DUR + FADE_DUR), "-i", intro_path]
+    intro_idx = next_idx; next_idx += 1
 
     # Outro
-    inputs    += ["-loop", "1", "-t", str(OUTRO_DUR + FADE_DUR), "-i", outro_path]
-    outro_idx  = next_idx
+    inputs   += ["-loop", "1", "-t", str(OUTRO_DUR + FADE_DUR), "-i", outro_path]
+    outro_idx = next_idx
 
     # ── Filtergraph ───────────────────────────────────────────
 
@@ -542,8 +495,7 @@ def render_video(
     concat_in     = "".join(f"[sv{i}]" for i in range(n_images))
     concat_filter = f"{concat_in}concat=n={n_images}:v=1:a=0[bg_raw];"
 
-    # 3. Overlay text bar video at lower third position
-    #    (replaces old drawbox + 381-filter drawtext chain)
+    # 3. Overlay text bar video at lower third
     text_filter = (
         f"[{text_idx}:v]scale={WIDTH}:{BAR_HEIGHT},setsar=1,fps={FPS}[text_scaled];"
         f"[bg_raw][text_scaled]overlay=0:{LOWER_TOP}[bg_text];"
@@ -587,12 +539,14 @@ def render_video(
         f"force_original_aspect_ratio=increase,crop={WIDTH}:{HEIGHT},"
         f"fade=t=in:st=0:d={FADE_DUR},setsar=1[outro_v];"
     )
+
+    # FIX: use video_out directly — it already contains the brackets e.g. [bg_photo]
     final_concat = (
-        f"[intro_v]{video_out[1:-1]}[outro_v]"
+        f"[intro_v]{video_out}[outro_v]"
         f"concat=n=3:v=1:a=0[video_out];"
     )
 
-    # 7. Audio: voice delayed by intro + music loop
+    # 7. Audio mix
     total_dur    = INTRO_DUR + audio_duration + OUTRO_DUR
     audio_filter = (
         f"[{audio_idx}:a]adelay={int(INTRO_DUR*1000)}|{int(INTRO_DUR*1000)}[voice_delayed];"
@@ -697,14 +651,14 @@ def main():
         audio_duration = get_audio_duration(voice_path)
         print(f"\n   Audio duration: {audio_duration:.1f}s")
 
-        # 4. Get script text for fallback sync
+        # 4. Script text for fallback sync
         script_col  = "script_tamil" if LANGUAGE == "ta" else "script_english"
         script_text = episode.get(script_col, "") or ""
 
-        # 5. WhisperX alignment (fixed — no --align_model)
-        whisper_lang = "ta" if LANGUAGE == "ta" else "en"
-        words        = run_whisperx(voice_path, whisper_lang, tmpdir)
-        screens      = build_karaoke_screens(words, script_text, audio_duration)
+        # 5. WhisperX alignment
+        whisper_lang    = "ta" if LANGUAGE == "ta" else "en"
+        words           = run_whisperx(voice_path, whisper_lang, tmpdir)
+        screens         = build_karaoke_screens(words, script_text, audio_duration)
 
         # 6. Build Pillow text overlay video
         text_video_path = build_text_overlay_video(
