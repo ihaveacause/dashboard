@@ -60,9 +60,9 @@ BAR_HEIGHT     = int(HEIGHT * LOWER_THIRD)   # 324px
 LOWER_TOP      = HEIGHT - BAR_HEIGHT         # 756px
 LINE_HEIGHT    = 65
 FONT_SIZE      = 42
-WORDS_PER_LINE = 6
+WORDS_PER_LINE = 11
 MAX_LINES      = 3
-MUSIC_VOL      = 0.12
+MUSIC_VOL      = 0.05
 INTRO_DUR      = 2.0
 OUTRO_DUR      = 3.0
 FADE_DUR       = 0.5
@@ -361,47 +361,68 @@ def build_image_timeline(episode_images, words, audio_duration):
     return timeline
 
 def build_karaoke_screens(words, script_text, audio_duration):
-    if words:
-        lines        = []
-        current_line = []
-        for w in words:
-            current_line.append(w)
-            if len(current_line) >= WORDS_PER_LINE:
-                lines.append(current_line)
-                current_line = []
-        if current_line:
-            lines.append(current_line)
+    """
+    Always show text from the actual script.
+    If WhisperX timestamps are available, use them purely for timing
+    by mapping script word positions to WhisperX timestamps by ratio.
+    Falls back to duration-based timing if no words or counts differ >20%.
+    """
+    script_words = script_text.split()
+    if not script_words:
+        print("   ⚠️  No script text — skipping karaoke")
+        return []
 
+    # Build script lines (11 words each)
+    script_lines = []
+    for i in range(0, len(script_words), WORDS_PER_LINE):
+        script_lines.append(" ".join(script_words[i:i + WORDS_PER_LINE]))
+
+    # Group into screens of 3 lines each
+    script_screens = []
+    for i in range(0, len(script_lines), MAX_LINES):
+        block = script_lines[i:i + MAX_LINES]
+        while len(block) < MAX_LINES:
+            block.append("")
+        script_screens.append(block)
+
+    total_screens = len(script_screens)
+
+    # ── Timing via WhisperX ───────────────────────────────────
+    use_whisperx = (
+        words and
+        len(words) > 0 and
+        abs(len(words) - len(script_words)) / max(len(script_words), 1) <= 0.20
+    )
+
+    if use_whisperx:
+        print(f"   ℹ️  Script: {len(script_words)} words | WhisperX: {len(words)} words — using WhisperX timing")
         screens = []
-        for i in range(0, len(lines), MAX_LINES):
-            screen_lines = lines[i:i + MAX_LINES]
-            start      = screen_lines[0][0]["start"]
-            end        = screen_lines[-1][-1]["end"]
-            text_lines = [" ".join(w["word"] for w in line) for line in screen_lines]
-            while len(text_lines) < MAX_LINES:
-                text_lines.append("")
-            screens.append({"start": start, "end": end, "lines": text_lines})
+        for idx, block in enumerate(script_screens):
+            # Map this screen's position to WhisperX word range by ratio
+            wx_start_idx = int((idx / total_screens) * len(words))
+            wx_end_idx   = int(((idx + 1) / total_screens) * len(words)) - 1
+            wx_end_idx   = min(wx_end_idx, len(words) - 1)
+            wx_start_idx = min(wx_start_idx, len(words) - 1)
+
+            start = words[wx_start_idx]["start"]
+            end   = words[wx_end_idx]["end"]
+            screens.append({"start": start, "end": end, "lines": block})
 
     else:
-        print("   ℹ️  Using duration-based sync (no WhisperX timestamps)")
-        words_list = script_text.split()
-        lines      = []
-        for i in range(0, len(words_list), WORDS_PER_LINE):
-            lines.append(" ".join(words_list[i:i + WORDS_PER_LINE]))
+        if words:
+            print(f"   ⚠️  Word count mismatch too large (script: {len(script_words)}, WhisperX: {len(words)}) — using duration sync")
+        else:
+            print("   ℹ️  No WhisperX timestamps — using duration-based sync")
 
-        total_lines   = len(lines)
-        time_per_line = (audio_duration - INTRO_DUR - OUTRO_DUR) / max(total_lines, 1)
-
+        usable_dur    = audio_duration - INTRO_DUR - OUTRO_DUR
+        time_per_screen = usable_dur / max(total_screens, 1)
         screens = []
-        for i in range(0, len(lines), MAX_LINES):
-            screen_lines = lines[i:i + MAX_LINES]
-            start = INTRO_DUR + (i * time_per_line)
-            end   = start + (len(screen_lines) * time_per_line)
-            while len(screen_lines) < MAX_LINES:
-                screen_lines.append("")
-            screens.append({"start": start, "end": end, "lines": screen_lines})
+        for idx, block in enumerate(script_screens):
+            start = INTRO_DUR + idx * time_per_screen
+            end   = start + time_per_screen
+            screens.append({"start": start, "end": end, "lines": block})
 
-    print(f"   ✅ {len(screens)} karaoke screens built")
+    print(f"   ✅ {len(screens)} karaoke screens built from script")
     return screens
 
 # ── Pillow: render one karaoke screen → PNG ───────────────────
@@ -563,18 +584,21 @@ def render_video(
     for i in range(n_images):
         dur = image_timeline[i]["end"] - image_timeline[i]["start"]
         scale_filters += (
-            f"[{i}:v]scale={WIDTH}:{HEIGHT}:"
+            f"[{i}:v]scale={WIDTH}:{LOWER_TOP}:"
             f"force_original_aspect_ratio=increase,"
-            f"crop={WIDTH}:{HEIGHT},setsar=1,fps={FPS},"
+            f"crop={WIDTH}:{LOWER_TOP},setsar=1,fps={FPS},"
             f"trim=duration={dur},setpts=PTS-STARTPTS[sv{i}];"
         )
 
     concat_in     = "".join(f"[sv{i}]" for i in range(n_images))
-    concat_filter = f"{concat_in}concat=n={n_images}:v=1:a=0[bg_raw];"
+    concat_filter = f"{concat_in}concat=n={n_images}:v=1:a=0[bg_top];"
 
+    # Place image (756px) on black 1920x1080 canvas at top, text bar overlaid at y=756
     text_filter = (
+        f"color=black:size={WIDTH}x{HEIGHT}:rate={FPS}[canvas];"
+        f"[canvas][bg_top]overlay=0:0[bg_placed];"
         f"[{text_idx}:v]scale={WIDTH}:{BAR_HEIGHT},setsar=1,fps={FPS}[text_scaled];"
-        f"[bg_raw][text_scaled]overlay=0:{LOWER_TOP}[bg_text];"
+        f"[bg_placed][text_scaled]overlay=0:{LOWER_TOP}[bg_text];"
     )
 
     video_out    = "[bg_text]"
@@ -711,13 +735,8 @@ def main():
             db_patch(table, EPISODE_NUMBER, {"status": "voice_approved"})
             return
 
-        # 3. Pitch shift for English
-        if LANGUAGE == "en":
-            print(f"\n🎚️  Applying {PITCH_SHIFT} semitone pitch shift...")
-            voice_path = os.path.join(tmpdir, "voice.mp3")
-            pitch_shift_audio(voice_raw, voice_path, PITCH_SHIFT)
-        else:
-            voice_path = voice_raw
+        # 3. Use voice as recorded (no pitch shift)
+        voice_path = voice_raw
 
         audio_duration = get_audio_duration(voice_path)
         print(f"\n   Audio duration: {audio_duration:.1f}s")
