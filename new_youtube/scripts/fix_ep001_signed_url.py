@@ -44,7 +44,7 @@ def generate_signed_url(gcs_path, days=30):
         backend=default_backend()
     )
     signature    = private_key.sign(string_to_sign.encode("utf-8"), padding.PKCS1v15(), hashes.SHA256())
-    encoded_sig  = base64.b64encode(signature).decode("utf-8")
+    encoded_sig  = requests.utils.quote(base64.b64encode(signature).decode("utf-8"), safe="")
 
     return (
         f"https://storage.googleapis.com/{GCS_BUCKET}/{gcs_path}"
