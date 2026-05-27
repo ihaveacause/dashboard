@@ -12,6 +12,8 @@ Combines all assets into a final YouTube video:
   - Channel logo — bottom-right corner, always visible
   - Background music at 12% volume
   - Karaoke text: rolling 3 lines, lower third, dark semi-transparent bar
+    Rendered via Pillow (not FFmpeg drawtext) — works for Tamil + English,
+    zero special-character escaping issues.
 
 Layout:
   ┌─────────────────────────────────┐
@@ -31,7 +33,6 @@ Env vars:
 """
 
 import os
-import sys
 import json
 import subprocess
 import tempfile
@@ -39,6 +40,7 @@ import shutil
 import requests
 from datetime import datetime
 from pathlib import Path
+from PIL import Image, ImageDraw, ImageFont
 
 # ── Config ────────────────────────────────────────────────────
 SUPABASE_URL   = os.environ["SUPABASE_URL"]
@@ -48,24 +50,25 @@ EPISODE_NUMBER = int(os.environ["EPISODE_NUMBER"])
 LANGUAGE       = os.environ.get("LANGUAGE", "ta")
 
 # ── Video settings ────────────────────────────────────────────
-WIDTH         = 1920
-HEIGHT        = 1080
-FPS           = 24
-LOWER_THIRD   = 0.30      # 30% of height for text bar
-TEXT_Y_TOP    = HEIGHT - int(HEIGHT * LOWER_THIRD) + 20
-LINE_HEIGHT   = 65
-FONT_SIZE     = 42
-WORDS_PER_LINE= 6
-MAX_LINES     = 3
-MUSIC_VOL     = 0.12
-INTRO_DUR     = 2.0       # seconds
-OUTRO_DUR     = 3.0       # seconds
-FADE_DUR      = 0.5       # fade in/out duration
-PITCH_SHIFT   = -3        # semitones for English voice deepening
-PHOTO_SIZE    = 140       # narrator circle diameter
-PHOTO_MARGIN  = 20
-LOGO_HEIGHT   = 55
-LOGO_MARGIN   = 20
+WIDTH          = 1920
+HEIGHT         = 1080
+FPS            = 24
+LOWER_THIRD    = 0.30      # 30% of height for text bar
+BAR_HEIGHT     = int(HEIGHT * LOWER_THIRD)   # 324px
+LOWER_TOP      = HEIGHT - BAR_HEIGHT         # 756px  (where bar starts)
+LINE_HEIGHT    = 65
+FONT_SIZE      = 42
+WORDS_PER_LINE = 6
+MAX_LINES      = 3
+MUSIC_VOL      = 0.12
+INTRO_DUR      = 2.0
+OUTRO_DUR      = 3.0
+FADE_DUR       = 0.5
+PITCH_SHIFT    = -3        # semitones for English voice deepening
+PHOTO_SIZE     = 140
+PHOTO_MARGIN   = 20
+LOGO_HEIGHT    = 55
+LOGO_MARGIN    = 20
 
 # ── Supabase helpers ──────────────────────────────────────────
 SB_HEADERS = {
@@ -108,7 +111,6 @@ def upload_to_storage(bucket, path, data_bytes, content_type="video/mp4"):
     return None
 
 def download_file(url, dest_path, desc="file"):
-    """Download a file from Supabase storage URL."""
     headers = {
         "apikey":        SUPABASE_KEY,
         "Authorization": f"Bearer {SUPABASE_KEY}",
@@ -129,26 +131,34 @@ def storage_url(bucket, path):
 
 # ── WhisperX alignment ────────────────────────────────────────
 def run_whisperx(audio_path, language, tmpdir):
-    """Run WhisperX to get word-level timestamps. Returns list of word dicts."""
+    """
+    Run WhisperX to get word-level timestamps.
+    FIX: --align_model removed — let WhisperX pick its default per-language
+    model. Forcing a specific model caused silent failures in GitHub Actions.
+    Returns list of word dicts, or None (triggers duration-based fallback).
+    """
     print(f"\n🎙️  Running WhisperX alignment ({language})...")
-    model_size = "medium"
 
     result = subprocess.run(
         [
             "whisperx", audio_path,
-            "--model", model_size,
-            "--language", language,
-            "--output_dir", tmpdir,
-            "--output_format", "json",
-            "--align_model", ("WAV2VEC2_ASR_LARGE_LV60K_400H" if language == "en" else "WAVE2VEC2_BASE_TH"),
+            "--model",        "medium",
+            "--language",     language,
+            "--output_dir",   tmpdir,
+            "--output_format","json",
             "--compute_type", "float32",
+            # --align_model intentionally omitted — default is more reliable
         ],
         capture_output=True, text=True
     )
 
     if result.returncode != 0:
-        print(f"   ⚠️  WhisperX stderr: {result.stderr[:300]}")
-        return None
+        print(f"   ⚠️  WhisperX exit code {result.returncode}")
+        print(f"   ⚠️  stderr: {result.stderr[:800]}")
+        # Still check for JSON — WhisperX sometimes exits non-zero but writes output
+    else:
+        if result.stdout.strip():
+            print(f"   ℹ️  WhisperX stdout: {result.stdout[:300]}")
 
     # Find output JSON
     audio_stem = Path(audio_path).stem
@@ -157,8 +167,9 @@ def run_whisperx(audio_path, language, tmpdir):
         json_files = list(Path(tmpdir).glob("*.json"))
         if json_files:
             json_path = str(json_files[0])
+            print(f"   ℹ️  Found JSON: {Path(json_path).name}")
         else:
-            print("   ⚠️  WhisperX output JSON not found — falling back to duration sync")
+            print(f"   ⚠️  No WhisperX JSON produced — falling back to duration sync")
             return None
 
     with open(json_path) as f:
@@ -174,11 +185,20 @@ def run_whisperx(audio_path, language, tmpdir):
                     "end":   w["end"],
                 })
 
+    if not words:
+        print(f"   ⚠️  WhisperX produced no word-level timestamps")
+        print(f"   ℹ️  Segments in JSON: {len(data.get('segments', []))}")
+        # Print first segment for debugging
+        segs = data.get("segments", [])
+        if segs:
+            print(f"   ℹ️  First segment sample: {segs[0]}")
+        print(f"   ℹ️  Falling back to duration-based sync")
+        return None
+
     print(f"   ✅ WhisperX: {len(words)} words aligned")
-    return words if words else None
+    return words
 
 def get_audio_duration(audio_path):
-    """Get audio duration in seconds."""
     result = subprocess.run(
         ["ffprobe", "-v", "error", "-show_entries", "format=duration",
          "-of", "default=noprint_wrappers=1:nokey=1", audio_path],
@@ -187,11 +207,6 @@ def get_audio_duration(audio_path):
     return float(result.stdout.strip())
 
 def find_trigger_timestamp(words, trigger_text):
-    """
-    Find exact timestamp when a trigger line is spoken.
-    Searches for the trigger words in the WhisperX word sequence.
-    Returns the start time of the first matching word, or None if not found.
-    """
     import re as _re
     if not trigger_text or not words:
         return None
@@ -209,10 +224,9 @@ def find_trigger_timestamp(words, trigger_text):
     for i in range(len(word_list) - n + 1):
         if word_list[i:i+n] == trigger_words:
             ts = words[i]["start"]
-            print(f"   🎯 Trigger '{trigger_text[:40]}...' → {ts:.2f}s")
+            print(f"   🎯 Trigger '{trigger_text[:40]}' → {ts:.2f}s")
             return ts
 
-    # Fuzzy fallback — match first 3 words only
     if n >= 3:
         short = trigger_words[:3]
         for i in range(len(word_list) - 3 + 1):
@@ -225,14 +239,10 @@ def find_trigger_timestamp(words, trigger_text):
     return None
 
 def build_image_timeline(episode_images, words, audio_duration):
-    """
-    Build image timeline with trigger-based or equal-spacing timing.
-    Always copies local_path from input so render_video can find the file.
-    """
     if not episode_images:
         return []
 
-    n = len(episode_images)
+    n        = len(episode_images)
     timeline = []
 
     for i, img in enumerate(episode_images):
@@ -275,10 +285,9 @@ def build_karaoke_screens(words, script_text, audio_duration):
     Build karaoke screens from word timestamps.
     Each screen: max 3 lines × 6 words.
     When 3 lines fill → all clear → fresh start.
-    Returns list of {start, end, lines: [line1, line2, line3]}
     """
     if words:
-        lines = []
+        lines        = []
         current_line = []
         for w in words:
             current_line.append(w)
@@ -291,8 +300,8 @@ def build_karaoke_screens(words, script_text, audio_duration):
         screens = []
         for i in range(0, len(lines), MAX_LINES):
             screen_lines = lines[i:i + MAX_LINES]
-            start = screen_lines[0][0]["start"]
-            end   = screen_lines[-1][-1]["end"]
+            start      = screen_lines[0][0]["start"]
+            end        = screen_lines[-1][-1]["end"]
             text_lines = [" ".join(w["word"] for w in line) for line in screen_lines]
             while len(text_lines) < MAX_LINES:
                 text_lines.append("")
@@ -301,11 +310,11 @@ def build_karaoke_screens(words, script_text, audio_duration):
     else:
         print("   ℹ️  Using duration-based sync (no WhisperX timestamps)")
         words_list = script_text.split()
-        lines = []
+        lines      = []
         for i in range(0, len(words_list), WORDS_PER_LINE):
             lines.append(" ".join(words_list[i:i + WORDS_PER_LINE]))
 
-        total_lines = len(lines)
+        total_lines   = len(lines)
         time_per_line = (audio_duration - INTRO_DUR - OUTRO_DUR) / max(total_lines, 1)
 
         screens = []
@@ -320,38 +329,132 @@ def build_karaoke_screens(words, script_text, audio_duration):
     print(f"   ✅ {len(screens)} karaoke screens built")
     return screens
 
+# ── Pillow: render one karaoke screen → PNG ───────────────────
+def render_screen_png(lines, font_path, output_path):
+    """
+    Render 3 lines of text onto a PNG (WIDTH × BAR_HEIGHT) using Pillow.
+    Black semi-transparent bar + white centered text.
+    Works for Tamil and English — no FFmpeg text escaping involved.
+    """
+    img  = Image.new("RGB", (WIDTH, BAR_HEIGHT), (0, 0, 0))
+    draw = ImageDraw.Draw(img)
+
+    # Semi-transparent feel: dark bar (matching drawbox black@0.72)
+    draw.rectangle([(0, 0), (WIDTH, BAR_HEIGHT)], fill=(18, 18, 18))
+
+    # Load font — fall back gracefully if path missing
+    try:
+        font = ImageFont.truetype(font_path, FONT_SIZE)
+    except Exception as e:
+        print(f"   ⚠️  Font load failed ({e}) — using default font")
+        font = ImageFont.load_default()
+
+    # Draw each line centered horizontally
+    for li, line in enumerate(lines):
+        if not line.strip():
+            continue
+        y = 30 + li * LINE_HEIGHT
+        try:
+            bbox   = draw.textbbox((0, 0), line, font=font)
+            text_w = bbox[2] - bbox[0]
+        except Exception:
+            text_w = len(line) * (FONT_SIZE // 2)
+        x = max(20, (WIDTH - text_w) // 2)
+        draw.text((x, y), line, font=font, fill=(255, 255, 255))
+
+    img.save(output_path, "PNG")
+
+# ── Build text overlay video from Pillow PNGs ─────────────────
+def build_text_overlay_video(screens, audio_duration, font_path, tmpdir):
+    """
+    For each karaoke screen, render a PNG via Pillow, then stitch them
+    into a video (WIDTH × BAR_HEIGHT) using FFmpeg concat demuxer.
+    The video covers exactly audio_duration seconds — overlaid on bg_raw
+    before intro/outro are concatenated.
+
+    Returns path to text_overlay.mp4, or None on failure.
+    """
+    print(f"\n✏️  Rendering {len(screens)} karaoke screen PNGs (Pillow)...")
+
+    # Blank black frame for gaps between screens
+    blank_path = os.path.join(tmpdir, "text_blank.png")
+    Image.new("RGB", (WIDTH, BAR_HEIGHT), (0, 0, 0)).save(blank_path, "PNG")
+
+    # Render each screen
+    screen_paths = []
+    for idx, screen in enumerate(screens):
+        png_path = os.path.join(tmpdir, f"screen_{idx:04d}.png")
+        render_screen_png(screen["lines"], font_path, png_path)
+        screen_paths.append(png_path)
+
+    print(f"   ✅ {len(screen_paths)} PNGs rendered")
+
+    # Build FFmpeg concat demuxer file
+    # Covers audio_duration exactly; screen timestamps are audio-relative
+    concat_path = os.path.join(tmpdir, "text_concat.txt")
+    with open(concat_path, "w") as f:
+        cursor = 0.0
+        for idx, screen in enumerate(screens):
+            s_start = screen["start"]
+            s_end   = screen["end"]
+
+            # Gap before this screen → blank frame
+            if s_start > cursor + 0.001:
+                gap = s_start - cursor
+                f.write(f"file '{blank_path}'\nduration {gap:.4f}\n")
+
+            # Screen itself
+            dur = max(s_end - s_start, 1.0 / FPS)
+            f.write(f"file '{screen_paths[idx]}'\nduration {dur:.4f}\n")
+            cursor = s_end
+
+        # Tail gap after last screen
+        if cursor < audio_duration - 0.001:
+            f.write(f"file '{blank_path}'\nduration {audio_duration - cursor:.4f}\n")
+
+        # FFmpeg concat demuxer always needs a final entry with no duration
+        f.write(f"file '{blank_path}'\n")
+
+    # Encode text overlay video
+    text_video = os.path.join(tmpdir, "text_overlay.mp4")
+    print(f"   🎬 Encoding text overlay video ({WIDTH}×{BAR_HEIGHT})...")
+    result = subprocess.run([
+        "ffmpeg", "-y",
+        "-f", "concat", "-safe", "0", "-i", concat_path,
+        "-vf", f"scale={WIDTH}:{BAR_HEIGHT},setsar=1,fps={FPS}",
+        "-c:v", "libx264",
+        "-preset", "fast",
+        "-crf", "18",
+        "-pix_fmt", "yuv420p",
+        text_video,
+    ], capture_output=True, text=True)
+
+    if result.returncode != 0:
+        print(f"   ❌ Text overlay video failed:")
+        print(result.stderr[-1000:])
+        return None
+
+    size_mb = os.path.getsize(text_video) / 1024 / 1024
+    print(f"   ✅ Text overlay video ready ({size_mb:.1f}MB)")
+    return text_video
+
 # ── Circle mask for narrator photo ───────────────────────────
 def make_circle_photo(input_path, output_path, size):
-    """Create a circular cropped photo using FFmpeg."""
     cmd = [
-        "ffmpeg", "-y",
-        "-i", input_path,
+        "ffmpeg", "-y", "-i", input_path,
         "-vf", (
             f"scale={size}:{size}:force_original_aspect_ratio=increase,"
             f"crop={size}:{size},"
             f"format=yuva420p,"
             f"geq=lum='p(X,Y)':a='if(gt(pow(X-{size//2},2)+pow(Y-{size//2},2),pow({size//2},2)),0,255)'"
         ),
-        "-frames:v", "1",
-        output_path,
+        "-frames:v", "1", output_path,
     ]
     subprocess.run(cmd, capture_output=True)
     return os.path.exists(output_path)
 
-# ── Image cycle list ──────────────────────────────────────────
-def build_image_cycle(image_paths, audio_duration):
-    """Return list of (image_path, start, end) for cycling images."""
-    n        = len(image_paths)
-    main_dur = audio_duration
-    per_img  = main_dur / n
-    cycles   = []
-    for i, path in enumerate(image_paths):
-        cycles.append((path, i * per_img, (i + 1) * per_img))
-    return cycles
-
 # ── FFmpeg: pitch shift ───────────────────────────────────────
 def pitch_shift_audio(input_path, output_path, semitones):
-    """Shift pitch by N semitones. Negative = deeper."""
     factor = 2 ** (semitones / 12.0)
     cmd = [
         "ffmpeg", "-y", "-i", input_path,
@@ -368,24 +471,63 @@ def render_video(
     image_timeline, audio_path, music_path,
     intro_path, outro_path,
     photo_path, logo_path,
-    screens, audio_duration, output_path
+    text_video_path,
+    audio_duration, output_path
 ):
+    """
+    Assemble final video.
+    Text is overlaid via a pre-rendered Pillow video (text_video_path)
+    instead of FFmpeg drawtext — no text escaping, works for Tamil + English.
+    """
     print(f"\n🎬 Rendering video with FFmpeg...")
 
     n_images = len(image_timeline)
 
-    inputs = []
+    # ── Build input list with explicit indices ────────────────
+    inputs   = []
+    next_idx = 0
+
+    # Episode images (0 … n_images-1)
     for item in image_timeline:
         dur = item["end"] - item["start"]
         inputs += ["-loop", "1", "-t", str(dur + 0.1), "-i", item["local_path"]]
+    next_idx = n_images
 
-    inputs += ["-i", audio_path]
-    inputs += ["-i", music_path]
+    # Audio
+    inputs   += ["-i", audio_path]
+    audio_idx = next_idx; next_idx += 1
 
-    audio_idx = n_images
-    music_idx = n_images + 1
+    # Music
+    inputs   += ["-i", music_path]
+    music_idx = next_idx; next_idx += 1
 
-    # ── Scale + set duration + concat images ────────────────
+    # Text overlay video
+    inputs    += ["-i", text_video_path]
+    text_idx   = next_idx; next_idx += 1
+
+    # Narrator photo (optional)
+    photo_idx = None
+    if photo_path and os.path.exists(photo_path):
+        inputs   += ["-i", photo_path]
+        photo_idx = next_idx; next_idx += 1
+
+    # Logo (optional)
+    logo_idx = None
+    if logo_path and os.path.exists(logo_path):
+        inputs  += ["-i", logo_path]
+        logo_idx = next_idx; next_idx += 1
+
+    # Intro
+    inputs    += ["-loop", "1", "-t", str(INTRO_DUR + FADE_DUR), "-i", intro_path]
+    intro_idx  = next_idx; next_idx += 1
+
+    # Outro
+    inputs    += ["-loop", "1", "-t", str(OUTRO_DUR + FADE_DUR), "-i", outro_path]
+    outro_idx  = next_idx
+
+    # ── Filtergraph ───────────────────────────────────────────
+
+    # 1. Scale + trim each episode image
     scale_filters = ""
     for i in range(n_images):
         dur = image_timeline[i]["end"] - image_timeline[i]["start"]
@@ -396,147 +538,81 @@ def render_video(
             f"trim=duration={dur},setpts=PTS-STARTPTS[sv{i}];"
         )
 
+    # 2. Concat episode images → main background
     concat_in     = "".join(f"[sv{i}]" for i in range(n_images))
     concat_filter = f"{concat_in}concat=n={n_images}:v=1:a=0[bg_raw];"
 
-    # ── Dark lower third bar ──────────────────────────────────
-    lower_top = HEIGHT - int(HEIGHT * LOWER_THIRD)
-    bar_filter = (
-        f"[bg_raw]drawbox="
-        f"x=0:y={lower_top}:w={WIDTH}:h={int(HEIGHT * LOWER_THIRD)}:"
-        f"color=black@0.72:t=fill[bg_bar];"
+    # 3. Overlay text bar video at lower third position
+    #    (replaces old drawbox + 381-filter drawtext chain)
+    text_filter = (
+        f"[{text_idx}:v]scale={WIDTH}:{BAR_HEIGHT},setsar=1,fps={FPS}[text_scaled];"
+        f"[bg_raw][text_scaled]overlay=0:{LOWER_TOP}[bg_text];"
     )
 
-    # ── Karaoke drawtext filters ─────────────────────────────
-    font_path = "/usr/share/fonts/opentype/noto/NotoSansTamil-Regular.ttf"
-    if LANGUAGE == "en":
-        font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
-        if not os.path.exists(font_path):
-            font_path = "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"
-
-    def esc(s):
-        """
-        Escape text safely for FFmpeg drawtext filter.
-        Order matters:
-          1. Backslash first (avoid double-escaping)
-          2. Single quotes → Unicode curly apostrophe (FFmpeg-safe, visually identical)
-          3. Double quotes → removed entirely (unicode replacements unreliable in FFmpeg)
-          4. Colon → escaped colon
-        """
-        return (
-            s.replace("\\", "\\\\")  # 1. backslash — must be first
-             .replace("'", "\u2019") # 2. apostrophe → ' (curly, FFmpeg-safe)
-             .replace('"', "")       # 3. double quote → removed (FFmpeg-safe)
-             .replace(":", "\\:")    # 4. colon
-        )
-
-    drawtext_chain = "[bg_bar]"
-    for idx, screen in enumerate(screens):
-        out_label = f"[kt{idx+1}]" if idx < len(screens) - 1 else "[bg_text]"
-        in_label  = drawtext_chain
-        filter_parts = []
-        for li, line_text in enumerate(screen["lines"]):
-            if not line_text.strip():
-                continue
-            y = lower_top + 30 + (li * LINE_HEIGHT)
-            t_start = screen["start"]
-            t_end   = screen["end"]
-            filter_parts.append(
-                f"drawtext=text='{esc(line_text)}':"
-                f"fontsize={FONT_SIZE}:fontcolor=white:"
-                f"x=(w-text_w)/2:y={y}:"
-                f"font='{font_path}':"
-                f"enable='between(t,{t_start:.3f},{t_end:.3f})'"
-            )
-        if filter_parts:
-            combined = ",".join(filter_parts)
-            drawtext_chain = f"{in_label}{combined}{out_label};"
-        else:
-            drawtext_chain = f"{in_label}null{out_label};"
-
-    if "[bg_text]" not in drawtext_chain:
-        drawtext_chain = "[bg_bar]null[bg_text];"
-
-    # ── Narrator photo circle overlay ─────────────────────────
+    # 4. Narrator photo overlay
+    video_out    = "[bg_text]"
     photo_filter = ""
-    photo_input_idx = None
-    if photo_path and os.path.exists(photo_path):
-        photo_input_idx = n_images + 2
-        inputs += ["-i", photo_path]
+    if photo_idx is not None:
         px = PHOTO_MARGIN
         py = HEIGHT - PHOTO_SIZE - PHOTO_MARGIN
         photo_filter = (
-            f"[{photo_input_idx}:v]scale={PHOTO_SIZE}:{PHOTO_SIZE},"
+            f"[{photo_idx}:v]scale={PHOTO_SIZE}:{PHOTO_SIZE},"
             f"format=yuva420p[photo_scaled];"
             f"[bg_text][photo_scaled]overlay={px}:{py}:format=auto[bg_photo];"
         )
         video_out = "[bg_photo]"
-    else:
-        video_out = "[bg_text]"
 
-    # ── Logo overlay ──────────────────────────────────────────
+    # 5. Logo overlay
     logo_filter = ""
-    if logo_path and os.path.exists(logo_path):
-        logo_input_idx = n_images + 2 + (1 if photo_input_idx else 0)
-        inputs += ["-i", logo_path]
+    if logo_idx is not None:
         logo_w = int(LOGO_HEIGHT * 2.0)
         lx     = WIDTH - logo_w - LOGO_MARGIN
         ly     = HEIGHT - LOGO_HEIGHT - LOGO_MARGIN
+        prev   = video_out[1:-1]
         logo_filter = (
-            f"[{logo_input_idx}:v]scale={logo_w}:{LOGO_HEIGHT},"
+            f"[{logo_idx}:v]scale={logo_w}:{LOGO_HEIGHT},"
             f"format=yuva420p[logo_scaled];"
-            f"[{video_out[1:-1]}][logo_scaled]overlay={lx}:{ly}:format=auto[bg_logo];"
+            f"[{prev}][logo_scaled]overlay={lx}:{ly}:format=auto[bg_logo];"
         )
         video_out = "[bg_logo]"
 
-    # ── Intro / Outro ─────────────────────────────────────────
-    intro_input_idx = n_images + 2 + (1 if photo_input_idx else 0) + (1 if logo_filter else 0)
-    outro_input_idx = intro_input_idx + 1
-    inputs += [
-        "-loop", "1", "-t", str(INTRO_DUR + FADE_DUR), "-i", intro_path,
-        "-loop", "1", "-t", str(OUTRO_DUR + FADE_DUR), "-i", outro_path,
-    ]
-
+    # 6. Intro / Outro
     intro_filter = (
-        f"[{intro_input_idx}:v]scale={WIDTH}:{HEIGHT}:"
+        f"[{intro_idx}:v]scale={WIDTH}:{HEIGHT}:"
         f"force_original_aspect_ratio=increase,crop={WIDTH}:{HEIGHT},"
         f"fade=t=out:st={INTRO_DUR - FADE_DUR}:d={FADE_DUR},setsar=1[intro_v];"
     )
     outro_filter = (
-        f"[{outro_input_idx}:v]scale={WIDTH}:{HEIGHT}:"
+        f"[{outro_idx}:v]scale={WIDTH}:{HEIGHT}:"
         f"force_original_aspect_ratio=increase,crop={WIDTH}:{HEIGHT},"
         f"fade=t=in:st=0:d={FADE_DUR},setsar=1[outro_v];"
     )
-
     final_concat = (
         f"[intro_v]{video_out[1:-1]}[outro_v]"
         f"concat=n=3:v=1:a=0[video_out];"
     )
 
-    # ── Audio: voice + music mix ──────────────────────────────
-    total_dur = INTRO_DUR + audio_duration + OUTRO_DUR
+    # 7. Audio: voice delayed by intro + music loop
+    total_dur    = INTRO_DUR + audio_duration + OUTRO_DUR
     audio_filter = (
-        f"[{audio_idx}:a]adelay={int(INTRO_DUR * 1000)}|{int(INTRO_DUR * 1000)}[voice_delayed];"
+        f"[{audio_idx}:a]adelay={int(INTRO_DUR*1000)}|{int(INTRO_DUR*1000)}[voice_delayed];"
         f"[{music_idx}:a]aloop=loop=-1:size=2e+09,volume={MUSIC_VOL},"
         f"atrim=duration={total_dur}[music_loop];"
         f"[voice_delayed][music_loop]amix=inputs=2:duration=first[audio_out];"
     )
 
-    # ── Build complete filtergraph ────────────────────────────
     filtergraph = (
         scale_filters +
         concat_filter +
-        bar_filter +
-        drawtext_chain +
-        photo_filter +
-        logo_filter +
-        intro_filter +
-        outro_filter +
-        final_concat +
+        text_filter   +
+        photo_filter  +
+        logo_filter   +
+        intro_filter  +
+        outro_filter  +
+        final_concat  +
         audio_filter
     )
 
-    # ── Final FFmpeg command ──────────────────────────────────
     cmd = (
         ["ffmpeg", "-y"]
         + inputs
@@ -573,8 +649,7 @@ def main():
     print(f"   {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("=" * 60)
 
-    # 1. Fetch episode
-    table = "tamil_episodes" if LANGUAGE == "ta" else "english_episodes"
+    table   = "tamil_episodes" if LANGUAGE == "ta" else "english_episodes"
     ep_rows = db_get(table, {"episode_number": f"eq.{EPISODE_NUMBER}", "select": "*"})
     episode = ep_rows[0] if ep_rows else None
     if not episode:
@@ -582,11 +657,22 @@ def main():
         return
 
     print(f"\n📖 {episode.get('title_english') or episode.get('title_tamil')}")
-
     db_patch(table, EPISODE_NUMBER, {"status": "generating_video"})
 
     with tempfile.TemporaryDirectory() as tmpdir:
         lang_code = "ta" if LANGUAGE == "ta" else "en"
+
+        # 1. Font path (used by Pillow)
+        if LANGUAGE == "ta":
+            font_path = "/usr/share/fonts/opentype/noto/NotoSansTamil-Regular.ttf"
+            if not os.path.exists(font_path):
+                font_path = "/usr/share/fonts/truetype/noto/NotoSansTamil-Regular.ttf"
+        else:
+            font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+            if not os.path.exists(font_path):
+                font_path = "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"
+
+        print(f"\n🔤 Font: {font_path} ({'found' if os.path.exists(font_path) else '⚠️  NOT FOUND — will use default'})")
 
         # 2. Download voice recording
         voice_url = episode.get("voice_url")
@@ -595,7 +681,7 @@ def main():
             db_patch(table, EPISODE_NUMBER, {"status": "voice_approved"})
             return
 
-        voice_raw = os.path.join(tmpdir, f"voice_raw.mp3")
+        voice_raw = os.path.join(tmpdir, "voice_raw.mp3")
         if not download_file(voice_url, voice_raw, "Voice recording"):
             db_patch(table, EPISODE_NUMBER, {"status": "voice_approved"})
             return
@@ -611,16 +697,25 @@ def main():
         audio_duration = get_audio_duration(voice_path)
         print(f"\n   Audio duration: {audio_duration:.1f}s")
 
-        # 4. Get script for WhisperX
+        # 4. Get script text for fallback sync
         script_col  = "script_tamil" if LANGUAGE == "ta" else "script_english"
         script_text = episode.get(script_col, "") or ""
 
-        # 5. WhisperX alignment
+        # 5. WhisperX alignment (fixed — no --align_model)
         whisper_lang = "ta" if LANGUAGE == "ta" else "en"
-        words   = run_whisperx(voice_path, whisper_lang, tmpdir)
-        screens = build_karaoke_screens(words, script_text, audio_duration)
+        words        = run_whisperx(voice_path, whisper_lang, tmpdir)
+        screens      = build_karaoke_screens(words, script_text, audio_duration)
 
-        # 6. Load episode images
+        # 6. Build Pillow text overlay video
+        text_video_path = build_text_overlay_video(
+            screens, audio_duration, font_path, tmpdir
+        )
+        if not text_video_path:
+            print("❌ Text overlay video failed — aborting")
+            db_patch(table, EPISODE_NUMBER, {"status": "voice_approved"})
+            return
+
+        # 7. Load episode images
         raw_ep_images = episode.get("episode_images") or []
         if isinstance(raw_ep_images, str):
             try:
@@ -645,31 +740,28 @@ def main():
             db_patch(table, EPISODE_NUMBER, {"status": "voice_approved"})
             return
 
-        # 7. Download intro/outro images
+        # 8. Intro / Outro images
         print(f"\n🖼️  Downloading intro/outro images...")
         intro_path = os.path.join(tmpdir, "intro.png")
         outro_path = os.path.join(tmpdir, "outro.png")
-
-        intro_url = episode.get("intro_image_url") or storage_url("channel-assets", "default_intro.png")
-        outro_url = episode.get("outro_image_url") or storage_url("channel-assets", "default_outro.png")
-
+        intro_url  = episode.get("intro_image_url") or storage_url("channel-assets", "default_intro.png")
+        outro_url  = episode.get("outro_image_url") or storage_url("channel-assets", "default_outro.png")
         download_file(intro_url, intro_path, "Intro image")
         download_file(outro_url, outro_path, "Outro image")
 
-        # 8. Download narrator photo
+        # 9. Narrator photo
         print(f"\n👤 Downloading narrator photo...")
         photo_file   = "photo_tamil.jpg" if LANGUAGE == "ta" else "photo_english.jpg"
-        photo_path   = os.path.join(tmpdir, "narrator.jpg")
+        photo_raw    = os.path.join(tmpdir, "narrator.jpg")
         photo_circle = os.path.join(tmpdir, "narrator_circle.png")
         photo_url    = storage_url("channel-assets", photo_file)
-
-        if download_file(photo_url, photo_path, f"Narrator photo ({photo_file})"):
-            make_circle_photo(photo_path, photo_circle, PHOTO_SIZE)
-            photo_final = photo_circle if os.path.exists(photo_circle) else photo_path
+        if download_file(photo_url, photo_raw, f"Narrator photo ({photo_file})"):
+            make_circle_photo(photo_raw, photo_circle, PHOTO_SIZE)
+            photo_final = photo_circle if os.path.exists(photo_circle) else photo_raw
         else:
             photo_final = None
 
-        # 9. Download channel logo
+        # 10. Channel logo
         print(f"\n🔱 Downloading channel logo...")
         logo_path  = os.path.join(tmpdir, "logo.png")
         logo_url   = "https://storage.googleapis.com/ihaveacause-media/assets/ihaveacause_logo.png"
@@ -684,32 +776,33 @@ def main():
         except Exception as e:
             print(f"   ⚠️  Logo download failed: {e} — continuing without logo")
 
-        # 10. Download background music
+        # 11. Background music
         print(f"\n🎵 Downloading background music...")
         music_path = os.path.join(tmpdir, "music.mp3")
         music_url  = storage_url("episode-music", "background.mp3")
         if not download_file(music_url, music_path, "Background music"):
-            print("   ⚠️  Music not found — rendering without music")
+            print("   ⚠️  Music not found — using silence")
             subprocess.run([
                 "ffmpeg", "-y", "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo",
                 "-t", "1", music_path
             ], capture_output=True)
 
-        # 11. Render video
-        output_path    = os.path.join(tmpdir, f"ep{EPISODE_NUMBER:03d}_{lang_code}.mp4")
+        # 12. Build image timeline
         image_timeline = build_image_timeline(image_paths, words or [], audio_duration)
 
+        # 13. Render final video
+        output_path = os.path.join(tmpdir, f"ep{EPISODE_NUMBER:03d}_{lang_code}.mp4")
         success = render_video(
-            image_timeline = image_timeline,
-            audio_path     = voice_path,
-            music_path     = music_path,
-            intro_path     = intro_path,
-            outro_path     = outro_path,
-            photo_path     = photo_final,
-            logo_path      = logo_final,
-            screens        = screens,
-            audio_duration = audio_duration,
-            output_path    = output_path,
+            image_timeline  = image_timeline,
+            audio_path      = voice_path,
+            music_path      = music_path,
+            intro_path      = intro_path,
+            outro_path      = outro_path,
+            photo_path      = photo_final,
+            logo_path       = logo_final,
+            text_video_path = text_video_path,
+            audio_duration  = audio_duration,
+            output_path     = output_path,
         )
 
         if not success:
@@ -717,20 +810,19 @@ def main():
             db_patch(table, EPISODE_NUMBER, {"status": "voice_approved"})
             return
 
-        # 12. Upload to Supabase
+        # 14. Upload to Supabase
         print(f"\n☁️  Uploading video to Supabase...")
         storage_path = f"ep{EPISODE_NUMBER:03d}/{lang_code}/final.mp4"
         with open(output_path, "rb") as f:
             video_data = f.read()
 
         video_url = upload_to_storage("episode-videos", storage_path, video_data, "video/mp4")
-
         if not video_url:
             print("❌ Video upload failed")
             db_patch(table, EPISODE_NUMBER, {"status": "voice_approved"})
             return
 
-        # 13. Save to database
+        # 15. Save to database
         db_patch(table, EPISODE_NUMBER, {
             "video_url": video_url,
             "status":    "video_ready",
