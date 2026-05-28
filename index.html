@@ -512,20 +512,41 @@ function buildActions(ep, s, n) {
     </div>`;
   }
 
-  // ── Video approved — generate thumbnail ─────────────────
+  // ── Video approved — upload thumbnail image + photo toggle ──
   if (s === 'video_approved')
-    return `<div class="ep-actions">
-      <button class="btn btn-gen" onclick="triggerThumbnail(${n})">🖼️ Generate Thumbnail</button>
-      ${ep.video_url?`<a href="${ep.video_url}" target="_blank" class="btn btn-preview">▶ Preview Video</a>`:''}
+    return `<div class="ep-actions" style="flex-direction:column;align-items:flex-start;gap:10px">
+      <div style="font-size:12px;color:var(--muted2)">Upload your thumbnail image (designed in Gemini):</div>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <label class="btn btn-upload" style="cursor:pointer;font-size:12px">
+          📸 ${ep.thumbnail_hook_image_url ? '↺ Replace Thumbnail Image' : 'Upload Thumbnail Image'}
+          <input type="file" accept="image/*" style="display:none" onchange="uploadHookImage(${n},this)">
+        </label>
+        ${ep.thumbnail_hook_image_url
+          ? '<span style="color:var(--green);font-size:11px">✅ Image ready</span>'
+          : '<span style="color:var(--muted);font-size:11px">No image yet</span>'}
+      </div>
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--text)">
+        <input type="checkbox" id="add-photo-${n}"
+               ${ep.thumbnail_add_photo !== false ? 'checked' : ''}
+               onchange="patch(${n},{thumbnail_add_photo:this.checked})"
+               style="width:16px;height:16px;cursor:pointer">
+        Add narrator photo to thumbnail
+      </label>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-gen" onclick="triggerThumbnail(${n})">🖼️ Generate Thumbnail</button>
+        ${ep.video_url?`<a href="${ep.video_url}" target="_blank" class="btn btn-preview">▶ Preview Video</a>`:''}
+      </div>
     </div>`;
 
-  // ── Thumbnail ready — preview and approve ─────────────────
+  // ── Thumbnail ready — preview + approve or regenerate ────────
   if (s === 'thumbnail_ready')
     return `<div class="ep-actions" style="flex-direction:column;align-items:flex-start;gap:10px">
-      ${ep.thumbnail_url?`<img src="${ep.thumbnail_url}" style="width:100%;max-width:400px;border-radius:6px;border:1px solid rgba(255,255,255,.1)" alt="Thumbnail preview">`:'<span style="color:var(--muted);font-size:12px">Thumbnail URL missing</span>'}
+      ${ep.thumbnail_url
+        ? `<img src="${ep.thumbnail_url}" style="width:100%;max-width:420px;border-radius:6px;border:1px solid rgba(255,255,255,.15)" alt="Thumbnail preview">`
+        : '<span style="color:var(--muted);font-size:12px">Thumbnail URL missing</span>'}
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button class="btn btn-approve" onclick="quickSet(${n},'thumbnail_approved')">✓ Approve Thumbnail</button>
-        <button class="btn btn-gen" onclick="triggerThumbnail(${n})">↺ Regenerate</button>
+        <button class="btn btn-gen" onclick="showHookUpload(${n})">↺ Regenerate</button>
         ${ep.video_url?`<a href="${ep.video_url}" target="_blank" class="btn btn-preview">▶ Preview Video</a>`:''}
       </div>
     </div>`;
@@ -918,6 +939,36 @@ async function triggerVideo(n, language=lang) {
       setTimeout(loadEpisodes, 1500);
     } else throw new Error(d.error||'Edge function error');
   } catch(e) { showToast(`Error: ${e.message}`,'error'); }
+}
+
+async function uploadHookImage(n, input) {
+  const file = input.files[0];
+  if (!file) return;
+  const btn = input.closest('label');
+  const origText = btn ? btn.querySelector('input') ? btn.textContent.trim() : '' : '';
+  if (btn) btn.style.opacity = '0.6';
+  try {
+    const ext  = file.name.split('.').pop();
+    const lang = document.querySelector(`#card-${n}`)?.classList.contains('lang-en') ? 'en' : 'ta';
+    const path = `ep${String(n).padStart(3,'0')}/${lang}/hook_image.${ext}`;
+    const r = await fetch(`${SB_URL}/storage/v1/object/episode-images/${path}`, {
+      method:'POST',
+      headers:{'apikey':SB_KEY,'Authorization':`Bearer ${SB_KEY}`,'Content-Type':file.type||'image/jpeg','x-upsert':'true'},
+      body:file
+    });
+    if (!r.ok) throw new Error(`Upload failed ${r.status}`);
+    const publicUrl = `${SB_URL}/storage/v1/object/public/episode-images/${path}`;
+    await patch(n, {thumbnail_hook_image_url: publicUrl});
+    showToast('Thumbnail image uploaded','success');
+    loadEpisodes();
+  } catch(e) {
+    showToast(`Upload failed: ${e.message}`,'error');
+    if (btn) btn.style.opacity = '1';
+  }
+}
+
+function showHookUpload(n) {
+  patch(n, {status:'video_approved'}).then(() => loadEpisodes());
 }
 
 async function triggerThumbnail(n) {
