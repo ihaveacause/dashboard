@@ -83,6 +83,9 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 .sb-voice_approved{background:var(--green-dim);color:var(--green)}
 .sb-video_ready{background:var(--teal-dim);color:var(--teal)}
 .sb-video_approved{background:var(--green-dim);color:var(--green)}
+.sb-generating_thumbnail{background:var(--orange-dim);color:var(--orange)}
+.sb-thumbnail_ready{background:var(--teal-dim);color:var(--teal)}
+.sb-thumbnail_approved{background:var(--purple-dim);color:var(--purple)}
 .sb-published{background:rgba(232,65,42,.12);color:var(--accent2)}
 .ep-title{font-family:'Syne',sans-serif;font-size:14px;font-weight:700;line-height:1.5;color:var(--text);margin-bottom:2px}
 .ep-sub{font-size:12px;color:var(--muted2);line-height:1.4;margin-bottom:4px}
@@ -235,6 +238,8 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
     <button class="fpill" onclick="setFilter('voice_approved',this)">Voice Approved</button>
     <button class="fpill" onclick="setFilter('video_ready',this)">Video Ready</button>
     <button class="fpill" onclick="setFilter('video_approved',this)">Video Approved</button>
+    <button class="fpill" onclick="setFilter('thumbnail_ready',this)">Thumbnail Ready</button>
+    <button class="fpill" onclick="setFilter('thumbnail_approved',this)">Thumbnail Approved</button>
     <button class="fpill" onclick="setFilter('published',this)">Published</button>
   </div>
 </div>
@@ -314,7 +319,8 @@ const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJ
 const EDGE = {
   script: `${SB_URL}/functions/v1/trigger-script-gen`,
   images: `${SB_URL}/functions/v1/trigger-image-gen`,
-  video:  `${SB_URL}/functions/v1/trigger-video-gen`,
+  video:     `${SB_URL}/functions/v1/trigger-video-gen`,
+  thumbnail: `${SB_URL}/functions/v1/trigger-thumbnail-gen`,
   yt:     `${SB_URL}/functions/v1/trigger-youtube-upload`,
 };
 
@@ -336,6 +342,8 @@ const STATUS_LABELS = {
   images_ready:'Images Ready', images_approved:'Images Approved',
   voice_uploaded:'Voice Uploaded', voice_approved:'Voice Approved',
   video_ready:'Video Ready', video_approved:'Video Approved',
+  generating_thumbnail:'Generating Thumbnail',
+  thumbnail_ready:'Thumbnail Ready', thumbnail_approved:'Thumbnail Approved',
   published:'Published'
 };
 
@@ -409,7 +417,7 @@ function render() {
 
   let html = '';
   if (filter === 'all') {
-    const ORDER = ['generating','generating_images','generating_video','script_ready','script_approved','images_ready','images_approved','voice_uploaded','voice_approved','video_ready','video_approved','published','pending'];
+    const ORDER = ['generating','generating_images','generating_video','script_ready','script_approved','images_ready','images_approved','voice_uploaded','voice_approved','video_ready','video_approved','generating_thumbnail','thumbnail_ready','thumbnail_approved','published','pending'];
     const groups = {};
     items.forEach(ep => { const s = ep.status||'pending'; if(!groups[s]) groups[s]=[]; groups[s].push(ep); });
     ORDER.forEach(s => {
@@ -457,7 +465,7 @@ function buildActions(ep, s, n) {
     </div>`;
 
   // ── Generating ────────────────────────────────────────────
-  if (['generating','generating_images','generating_video'].includes(s))
+  if (['generating','generating_images','generating_video','generating_thumbnail'].includes(s))
     return `<div class="ep-actions"><div class="wait-msg"><span class="spin">⚙️</span> ${STATUS_LABELS[s]} — check GitHub Actions</div></div>`;
 
   // ── Script ready ──────────────────────────────────────────
@@ -504,11 +512,30 @@ function buildActions(ep, s, n) {
     </div>`;
   }
 
-  // ── Video approved ────────────────────────────────────────
+  // ── Video approved — generate thumbnail ─────────────────
   if (s === 'video_approved')
     return `<div class="ep-actions">
-      <button class="btn btn-yt" onclick="triggerYouTube(${n})">▲ Upload to YouTube</button>
-      ${ep.video_url?`<a href="${ep.video_url}" target="_blank" class="btn btn-preview">▶ Preview</a>`:''}
+      <button class="btn btn-gen" onclick="triggerThumbnail(${n})">🖼️ Generate Thumbnail</button>
+      ${ep.video_url?`<a href="${ep.video_url}" target="_blank" class="btn btn-preview">▶ Preview Video</a>`:''}
+    </div>`;
+
+  // ── Thumbnail ready — preview and approve ─────────────────
+  if (s === 'thumbnail_ready')
+    return `<div class="ep-actions" style="flex-direction:column;align-items:flex-start;gap:10px">
+      ${ep.thumbnail_url?`<img src="${ep.thumbnail_url}" style="width:100%;max-width:400px;border-radius:6px;border:1px solid rgba(255,255,255,.1)" alt="Thumbnail preview">`:'<span style="color:var(--muted);font-size:12px">Thumbnail URL missing</span>'}
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-approve" onclick="quickSet(${n},'thumbnail_approved')">✓ Approve Thumbnail</button>
+        <button class="btn btn-gen" onclick="triggerThumbnail(${n})">↺ Regenerate</button>
+        ${ep.video_url?`<a href="${ep.video_url}" target="_blank" class="btn btn-preview">▶ Preview Video</a>`:''}
+      </div>
+    </div>`;
+
+  // ── Thumbnail approved — publish to YouTube ───────────────
+  if (s === 'thumbnail_approved')
+    return `<div class="ep-actions">
+      ${ep.thumbnail_url?`<img src="${ep.thumbnail_url}" style="width:160px;border-radius:4px;border:1px solid rgba(255,255,255,.1)" alt="Thumbnail">`:''}
+      <button class="btn btn-yt" onclick="triggerYouTube(${n})">🚀 Publish to YouTube</button>
+      ${ep.video_url?`<a href="${ep.video_url}" target="_blank" class="btn btn-preview">▶ Preview Video</a>`:''}
     </div>`;
 
   // ── Published ─────────────────────────────────────────────
@@ -888,6 +915,22 @@ async function triggerVideo(n, language=lang) {
     if (d.success) {
       await patch(n, {status:'generating_video'});
       showToast(`Video rendering started — ~30 min`,'success');
+      setTimeout(loadEpisodes, 1500);
+    } else throw new Error(d.error||'Edge function error');
+  } catch(e) { showToast(`Error: ${e.message}`,'error'); }
+}
+
+async function triggerThumbnail(n) {
+  try {
+    const epLang = document.querySelector(`#card-${n}`)?.classList.contains('lang-en') ? 'en' : 'ta';
+    const r = await fetch(EDGE.thumbnail, {
+      method:'POST', headers:H,
+      body: JSON.stringify({episode_number:n, language:epLang})
+    });
+    const d = await r.json();
+    if (d.success) {
+      await patch(n, {status:'generating_thumbnail'});
+      showToast(`Thumbnail generating — ~2 min`,'success');
       setTimeout(loadEpisodes, 1500);
     } else throw new Error(d.error||'Edge function error');
   } catch(e) { showToast(`Error: ${e.message}`,'error'); }
