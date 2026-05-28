@@ -593,10 +593,9 @@ def render_video(
     concat_in     = "".join(f"[sv{i}]" for i in range(n_images))
     concat_filter = f"{concat_in}concat=n={n_images}:v=1:a=0[bg_top];"
 
-    # Place image (756px) on black 1920x1080 canvas at top, text bar overlaid at y=756
+    # Pad image (756px) to full 1920x1080 with black at bottom, then overlay text bar
     text_filter = (
-        f"color=black:size={WIDTH}x{HEIGHT}:rate={FPS}[canvas];"
-        f"[canvas][bg_top]overlay=0:0[bg_placed];"
+        f"[bg_top]pad={WIDTH}:{HEIGHT}:0:0:black[bg_placed];"
         f"[{text_idx}:v]scale={WIDTH}:{BAR_HEIGHT},setsar=1,fps={FPS}[text_scaled];"
         f"[bg_placed][text_scaled]overlay=0:{LOWER_TOP}[bg_text];"
     )
@@ -693,20 +692,27 @@ def render_video(
 
 # ── Main ──────────────────────────────────────────────────────
 def main():
-    print("=" * 60)
-    print(f"🎬 Video Generator — Episode {EPISODE_NUMBER} | {LANGUAGE.upper()}")
-    print(f"   {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print("=" * 60)
+    import sys
+    def log(msg):
+        print(msg, flush=True)
+
+    log("=" * 60)
+    log(f"🎬 Video Generator — Episode {EPISODE_NUMBER} | {LANGUAGE.upper()}")
+    log(f"   {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    log("=" * 60)
+    log("✅ Script started — imports OK")
 
     table   = "tamil_episodes" if LANGUAGE == "ta" else "english_episodes"
+    log(f"\n📡 Fetching episode {EPISODE_NUMBER} from Supabase ({table})...")
     ep_rows = db_get(table, {"episode_number": f"eq.{EPISODE_NUMBER}", "select": "*"})
     episode = ep_rows[0] if ep_rows else None
     if not episode:
-        print(f"❌ Episode {EPISODE_NUMBER} not found in {table}")
+        log(f"❌ Episode {EPISODE_NUMBER} not found in {table}")
         return
 
-    print(f"\n📖 {episode.get('title_english') or episode.get('title_tamil')}")
+    log(f"   ✅ Episode found: {episode.get('title_english') or episode.get('title_tamil')}")
     db_patch(table, EPISODE_NUMBER, {"status": "generating_video"})
+    log(f"   ✅ Status → generating_video")
 
     with tempfile.TemporaryDirectory() as tmpdir:
         lang_code = "ta" if LANGUAGE == "ta" else "en"
@@ -721,15 +727,16 @@ def main():
             if not os.path.exists(font_path):
                 font_path = "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"
 
-        print(f"\n🔤 Font: {font_path} ({'found' if os.path.exists(font_path) else '⚠️  NOT FOUND — will use default'})")
+        log(f"\n🔤 Font: {font_path} ({'found' if os.path.exists(font_path) else '⚠️  NOT FOUND — will use default'})")
 
         # 2. Download voice recording
         voice_url = episode.get("voice_url")
         if not voice_url:
-            print("❌ No voice recording found — upload voice first")
+            log("❌ No voice recording found — upload voice first")
             db_patch(table, EPISODE_NUMBER, {"status": "voice_approved"})
             return
 
+        log(f"\n🎤 Step 1/9 — Downloading voice recording...")
         voice_raw = os.path.join(tmpdir, "voice_raw.mp3")
         if not download_file(voice_url, voice_raw, "Voice recording"):
             db_patch(table, EPISODE_NUMBER, {"status": "voice_approved"})
@@ -739,25 +746,32 @@ def main():
         voice_path = voice_raw
 
         audio_duration = get_audio_duration(voice_path)
-        print(f"\n   Audio duration: {audio_duration:.1f}s")
+        log(f"   ✅ Audio duration: {audio_duration:.1f}s ({audio_duration/60:.1f} mins)")
 
         # 4. Script text for fallback sync
         script_col  = "script_tamil" if LANGUAGE == "ta" else "script_english"
         script_text = episode.get(script_col, "") or ""
+        log(f"   ✅ Script loaded: {len(script_text.split())} words")
 
         # 5. WhisperX alignment
+        log(f"\n🎙️  Step 2/9 — WhisperX alignment (this takes 3-5 mins)...")
         whisper_lang    = "ta" if LANGUAGE == "ta" else "en"
         words           = run_whisperx(voice_path, whisper_lang, tmpdir)
-        screens         = build_karaoke_screens(words, script_text, audio_duration)
+        log(f"   ✅ WhisperX done — {datetime.now().strftime('%H:%M:%S')}")
+
+        log(f"\n📝 Step 3/9 — Building karaoke screens...")
+        screens = build_karaoke_screens(words, script_text, audio_duration)
 
         # 6. Build Pillow text overlay video
+        log(f"\n🖼️  Step 4/9 — Rendering text overlay PNGs + video...")
         text_video_path = build_text_overlay_video(
             screens, audio_duration, font_path, tmpdir
         )
         if not text_video_path:
-            print("❌ Text overlay video failed — aborting")
+            log("❌ Text overlay video failed — aborting")
             db_patch(table, EPISODE_NUMBER, {"status": "voice_approved"})
             return
+        log(f"   ✅ Text overlay done — {datetime.now().strftime('%H:%M:%S')}")
 
         # 7. Load episode images
         raw_ep_images = episode.get("episode_images") or []
@@ -768,11 +782,11 @@ def main():
                 raw_ep_images = []
 
         if not raw_ep_images:
-            print("❌ No episode images found — upload images first")
+            log("❌ No episode images found — upload images first")
             db_patch(table, EPISODE_NUMBER, {"status": "voice_approved"})
             return
 
-        print(f"\n📸 Downloading {len(raw_ep_images)} episode images...")
+        log(f"\n📸 Step 5/9 — Downloading {len(raw_ep_images)} episode images...")
         image_paths = []
         for img in sorted(raw_ep_images, key=lambda x: x.get("order", 0)):
             dest = os.path.join(tmpdir, f"ep_img_{img.get('order', len(image_paths)+1)}.jpg")
@@ -780,12 +794,12 @@ def main():
                 image_paths.append({**img, "local_path": dest})
 
         if not image_paths:
-            print("❌ Could not download any images")
+            log("❌ Could not download any images")
             db_patch(table, EPISODE_NUMBER, {"status": "voice_approved"})
             return
 
         # 8. Intro / Outro images
-        print(f"\n🖼️  Downloading intro/outro images...")
+        log(f"\n🖼️  Step 6/9 — Downloading intro/outro + narrator + logo...")
         intro_path = os.path.join(tmpdir, "intro.png")
         outro_path = os.path.join(tmpdir, "outro.png")
         intro_url  = episode.get("intro_image_url") or storage_url("channel-assets", "default_intro.png")
@@ -794,7 +808,6 @@ def main():
         download_file(outro_url, outro_path, "Outro image")
 
         # 9. Narrator photo
-        print(f"\n👤 Downloading narrator photo...")
         photo_file   = "photo_tamil.jpg" if LANGUAGE == "ta" else "photo_english.jpg"
         photo_raw    = os.path.join(tmpdir, "narrator.jpg")
         photo_circle = os.path.join(tmpdir, "narrator_circle.png")
@@ -806,7 +819,6 @@ def main():
             photo_final = None
 
         # 10. Channel logo
-        print(f"\n🔱 Downloading channel logo...")
         logo_path  = os.path.join(tmpdir, "logo.png")
         logo_url   = f"https://storage.googleapis.com/{GCS_BUCKET}/assets/ihaveacause_logo.png"
         logo_final = None
@@ -816,16 +828,16 @@ def main():
                 with open(logo_path, "wb") as f:
                     f.write(r.content)
                 logo_final = logo_path
-                print(f"   ✅ Logo downloaded")
+                log(f"   ✅ Logo downloaded")
         except Exception as e:
-            print(f"   ⚠️  Logo download failed: {e} — continuing without logo")
+            log(f"   ⚠️  Logo download failed: {e} — continuing without logo")
 
         # 11. Background music
-        print(f"\n🎵 Downloading background music...")
+        log(f"\n🎵 Step 7/9 — Downloading background music...")
         music_path = os.path.join(tmpdir, "music.mp3")
         music_url  = storage_url("episode-music", "background.mp3")
         if not download_file(music_url, music_path, "Background music"):
-            print("   ⚠️  Music not found — using silence")
+            log("   ⚠️  Music not found — using silence")
             subprocess.run([
                 "ffmpeg", "-y", "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo",
                 "-t", "1", music_path
@@ -835,6 +847,8 @@ def main():
         image_timeline = build_image_timeline(image_paths, words or [], audio_duration)
 
         # 13. Render final video
+        log(f"\n🎬 Step 8/9 — FFmpeg render (this takes 15-25 mins)...")
+        log(f"   Started at: {datetime.now().strftime('%H:%M:%S')}")
         output_path = os.path.join(tmpdir, f"ep{EPISODE_NUMBER:03d}_{lang_code}.mp4")
         success = render_video(
             image_timeline  = image_timeline,
@@ -850,17 +864,19 @@ def main():
         )
 
         if not success:
-            print("❌ Video rendering failed")
+            log("❌ Video rendering failed")
             db_patch(table, EPISODE_NUMBER, {"status": "voice_approved"})
             return
 
-        # 14. Upload to GCS via REST API (no extra packages needed)
-        print(f"\n☁️  Uploading video to GCS...")
+        log(f"   ✅ FFmpeg done — {datetime.now().strftime('%H:%M:%S')}")
+
+        # 14. Upload to GCS
+        log(f"\n☁️  Step 9/9 — Uploading to GCS...")
         gcs_video_path = f"episodes/ep{EPISODE_NUMBER:03d}/{lang_code}/final.mp4"
         video_url = upload_to_gcs(output_path, gcs_video_path)
 
         if not video_url:
-            print("❌ Video upload failed")
+            log("❌ Video upload failed")
             db_patch(table, EPISODE_NUMBER, {"status": "voice_approved"})
             return
 
@@ -870,10 +886,13 @@ def main():
             "status":    "video_ready",
         })
 
-        print(f"\n{'='*60}")
-        print(f"✅ Episode {EPISODE_NUMBER} {LANGUAGE.upper()} — video ready!")
-        print(f"   URL: {video_url}")
-        print(f"{'='*60}")
+        log(f"   ✅ Supabase updated — status → video_ready")
+
+        log(f"\n{'='*60}")
+        log(f"✅ Episode {EPISODE_NUMBER} {LANGUAGE.upper()} — video ready!")
+        log(f"   Finished at: {datetime.now().strftime('%H:%M:%S')}")
+        log(f"   URL: {video_url[:80]}...")
+        log(f"{'='*60}")
 
 if __name__ == "__main__":
     main()
