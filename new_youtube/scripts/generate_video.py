@@ -56,8 +56,8 @@ WIDTH          = 1920
 HEIGHT         = 1080
 FPS            = 24
 LOWER_THIRD    = 0.30
-BAR_HEIGHT     = int(HEIGHT * LOWER_THIRD)   # 324px
-LOWER_TOP      = HEIGHT - BAR_HEIGHT         # 756px
+BAR_HEIGHT     = 180                             # tight bar: just 3 lines of text
+LOWER_TOP      = HEIGHT - BAR_HEIGHT             # 900px — text bar starts here
 LINE_HEIGHT    = 65
 FONT_SIZE      = 42
 WORDS_PER_LINE = 11
@@ -425,11 +425,12 @@ def build_karaoke_screens(words, script_text, audio_duration):
     print(f"   ✅ {len(screens)} karaoke screens built from script")
     return screens
 
-# ── Pillow: render one karaoke screen → PNG ───────────────────
+# ── Pillow: render one karaoke screen → PNG (RGBA, semi-transparent) ─
 def render_screen_png(lines, font_path, output_path):
-    img  = Image.new("RGB", (WIDTH, BAR_HEIGHT), (0, 0, 0))
+    # RGBA — black bar at 75% opacity so image shows through
+    img  = Image.new("RGBA", (WIDTH, BAR_HEIGHT), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
-    draw.rectangle([(0, 0), (WIDTH, BAR_HEIGHT)], fill=(18, 18, 18))
+    draw.rectangle([(0, 0), (WIDTH, BAR_HEIGHT)], fill=(0, 0, 0, 190))
 
     try:
         font = ImageFont.truetype(font_path, FONT_SIZE)
@@ -440,14 +441,14 @@ def render_screen_png(lines, font_path, output_path):
     for li, line in enumerate(lines):
         if not line.strip():
             continue
-        y = 30 + li * LINE_HEIGHT
+        y = 20 + li * LINE_HEIGHT
         try:
             bbox   = draw.textbbox((0, 0), line, font=font)
             text_w = bbox[2] - bbox[0]
         except Exception:
             text_w = len(line) * (FONT_SIZE // 2)
         x = max(20, (WIDTH - text_w) // 2)
-        draw.text((x, y), line, font=font, fill=(255, 255, 255))
+        draw.text((x, y), line, font=font, fill=(255, 255, 255, 255))
 
     img.save(output_path, "PNG")
 
@@ -456,7 +457,7 @@ def build_text_overlay_video(screens, audio_duration, font_path, tmpdir):
     print(f"\n✏️  Rendering {len(screens)} karaoke screen PNGs (Pillow)...")
 
     blank_path = os.path.join(tmpdir, "text_blank.png")
-    Image.new("RGB", (WIDTH, BAR_HEIGHT), (0, 0, 0)).save(blank_path, "PNG")
+    Image.new("RGBA", (WIDTH, BAR_HEIGHT), (0, 0, 0, 0)).save(blank_path, "PNG")
 
     screen_paths = []
     for idx, screen in enumerate(screens):
@@ -584,20 +585,19 @@ def render_video(
     for i in range(n_images):
         dur = image_timeline[i]["end"] - image_timeline[i]["start"]
         scale_filters += (
-            f"[{i}:v]scale={WIDTH}:{LOWER_TOP}:"
+            f"[{i}:v]scale={WIDTH}:{HEIGHT}:"
             f"force_original_aspect_ratio=increase,"
-            f"crop={WIDTH}:{LOWER_TOP},setsar=1,fps={FPS},"
+            f"crop={WIDTH}:{HEIGHT},setsar=1,fps={FPS},"
             f"trim=duration={dur},setpts=PTS-STARTPTS[sv{i}];"
         )
 
     concat_in     = "".join(f"[sv{i}]" for i in range(n_images))
-    concat_filter = f"{concat_in}concat=n={n_images}:v=1:a=0[bg_top];"
+    concat_filter = f"{concat_in}concat=n={n_images}:v=1:a=0[bg_full];"
 
-    # Pad image (756px) to full 1920x1080 with black at bottom, then overlay text bar
+    # Overlay semi-transparent text bar (RGBA PNG) at bottom of full screen image
     text_filter = (
-        f"[bg_top]pad={WIDTH}:{HEIGHT}:0:0:black[bg_placed];"
         f"[{text_idx}:v]scale={WIDTH}:{BAR_HEIGHT},setsar=1,fps={FPS}[text_scaled];"
-        f"[bg_placed][text_scaled]overlay=0:{LOWER_TOP}[bg_text];"
+        f"[bg_full][text_scaled]overlay=0:{LOWER_TOP}:format=auto[bg_text];"
     )
 
     video_out    = "[bg_text]"
@@ -818,19 +818,35 @@ def main():
         else:
             photo_final = None
 
-        # 10. Channel logo
+        # 10. Channel logo — download via authenticated GCS request
         logo_path  = os.path.join(tmpdir, "logo.png")
-        logo_url   = f"https://storage.googleapis.com/{GCS_BUCKET}/assets/ihaveacause_logo.png"
         logo_final = None
         try:
-            r = requests.get(logo_url, timeout=15)
+            from google.oauth2 import service_account
+            import google.auth.transport.requests as google_requests
+            creds_info   = json.loads(GCP_CREDS_JSON)
+            logo_creds   = service_account.Credentials.from_service_account_info(
+                creds_info, scopes=["https://www.googleapis.com/auth/cloud-platform"]
+            )
+            logo_creds.refresh(google_requests.Request())
+            logo_gcs_url = (
+                f"https://storage.googleapis.com/storage/v1/b/{GCS_BUCKET}"
+                f"/o/assets%2Fihaveacause_logo.png?alt=media"
+            )
+            r = requests.get(
+                logo_gcs_url,
+                headers={"Authorization": f"Bearer {logo_creds.token}"},
+                timeout=15
+            )
             if r.status_code == 200:
                 with open(logo_path, "wb") as f:
                     f.write(r.content)
                 logo_final = logo_path
-                log(f"   ✅ Logo downloaded")
+                log(f"   ✅ Logo downloaded ({len(r.content)//1024}KB)")
+            else:
+                log(f"   ⚠️  Logo download failed {r.status_code} — continuing without logo")
         except Exception as e:
-            log(f"   ⚠️  Logo download failed: {e} — continuing without logo")
+            log(f"   ⚠️  Logo download error: {e} — continuing without logo")
 
         # 11. Background music
         log(f"\n🎵 Step 7/9 — Downloading background music...")
