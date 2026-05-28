@@ -23,6 +23,13 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-video-v1
+          restore-keys: |
+            ${{ runner.os }}-pip-video-
       - name: Install system dependencies
         run: |
           sudo apt-get update -qq
@@ -32,7 +39,7 @@ jobs:
         run: |
           pip install requests torch torchaudio --index-url https://download.pytorch.org/whl/cpu
           pip install whisperx
-          pip install google-auth
+          pip install google-auth cryptography Pillow
       - name: Generate video
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -40,4 +47,5 @@ jobs:
           GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
           EPISODE_NUMBER: ${{ inputs.episode_number }}
           LANGUAGE: ${{ inputs.language }}
+          PYTHONUNBUFFERED: "1"
         run: python new_youtube/scripts/generate_video.py
