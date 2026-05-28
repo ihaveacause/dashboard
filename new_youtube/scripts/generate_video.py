@@ -56,8 +56,8 @@ WIDTH          = 1920
 HEIGHT         = 1080
 FPS            = 24
 LOWER_THIRD    = 0.30
-BAR_HEIGHT     = 180                             # tight bar: just 3 lines of text
-LOWER_TOP      = HEIGHT - BAR_HEIGHT             # 900px — text bar starts here
+BAR_HEIGHT     = 230                             # 3 lines × 65px + 35px padding
+LOWER_TOP      = HEIGHT - BAR_HEIGHT             # 850px — text bar starts here
 LINE_HEIGHT    = 65
 FONT_SIZE      = 42
 WORDS_PER_LINE = 11
@@ -487,16 +487,17 @@ def build_text_overlay_video(screens, audio_duration, font_path, tmpdir):
 
         f.write(f"file '{blank_path}'\n")
 
-    text_video = os.path.join(tmpdir, "text_overlay.mp4")
-    print(f"   🎬 Encoding text overlay video ({WIDTH}×{BAR_HEIGHT})...")
+    text_video = os.path.join(tmpdir, "text_overlay.webm")
+    print(f"   🎬 Encoding text overlay video ({WIDTH}×{BAR_HEIGHT}) with alpha...")
     result = subprocess.run([
         "ffmpeg", "-y",
         "-f", "concat", "-safe", "0", "-i", concat_path,
         "-vf", f"scale={WIDTH}:{BAR_HEIGHT},setsar=1,fps={FPS}",
-        "-c:v", "libx264",
-        "-preset", "fast",
+        "-c:v", "libvpx-vp9",
+        "-pix_fmt", "yuva420p",
+        "-auto-alt-ref", "0",
+        "-b:v", "0",
         "-crf", "18",
-        "-pix_fmt", "yuv420p",
         text_video,
     ], capture_output=True, text=True)
 
@@ -585,9 +586,9 @@ def render_video(
     for i in range(n_images):
         dur = image_timeline[i]["end"] - image_timeline[i]["start"]
         scale_filters += (
-            f"[{i}:v]scale={WIDTH}:{HEIGHT}:"
-            f"force_original_aspect_ratio=increase,"
-            f"crop={WIDTH}:{HEIGHT},setsar=1,fps={FPS},"
+            f"[{i}:v]"
+            f"scale={WIDTH}:{HEIGHT},"
+            f"setsar=1,fps={FPS},"
             f"trim=duration={dur},setpts=PTS-STARTPTS[sv{i}];"
         )
 
@@ -831,7 +832,7 @@ def main():
             logo_creds.refresh(google_requests.Request())
             logo_gcs_url = (
                 f"https://storage.googleapis.com/storage/v1/b/{GCS_BUCKET}"
-                f"/o/assets%2Fihaveacause_logo.png?alt=media"
+                f"/o/ihaveacause_logo.png?alt=media"
             )
             r = requests.get(
                 logo_gcs_url,
