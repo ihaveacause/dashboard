@@ -1,0 +1,41 @@
+name: Generate Thumbnail (New YouTube)
+on:
+  workflow_dispatch:
+    inputs:
+      episode_number:
+        description: 'Episode number'
+        required: true
+        type: string
+      language:
+        description: 'Language'
+        required: true
+        default: 'ta'
+        type: choice
+        options:
+          - ta
+          - en
+jobs:
+  generate-thumbnail:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y fonts-noto fonts-noto-cjk libcairo2-dev pkg-config python3-dev || true
+      - name: Install Python dependencies
+        run: |
+          pip install requests Pillow cairosvg google-auth cryptography
+      - name: Generate thumbnail
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
+          EPISODE_NUMBER: ${{ inputs.episode_number }}
+          LANGUAGE: ${{ inputs.language }}
+          PYTHONUNBUFFERED: "1"
+        run: python new_youtube/scripts/generate_thumbnail.py
