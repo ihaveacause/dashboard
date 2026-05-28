@@ -298,42 +298,128 @@ def build_image_timeline(episode_images, words, audio_duration):
     return timeline
 
 def build_karaoke_screens(words, script_text, audio_duration):
+    """
+    Always show text from the actual script.
+    Timing: word-by-word matching — each script word is located in
+    WhisperX output to get its exact timestamp. Screen advances
+    when WhisperX speaks the first word of the next block.
+    Script text is NEVER replaced by WhisperX transcription.
+    Falls back to duration-based timing if WhisperX unavailable.
+    """
+    import re as _re
+
     script_words = script_text.split()
     if not script_words:
         print("   ⚠️  No script text — skipping karaoke", flush=True)
         return []
+
+    # Build script lines (WORDS_PER_LINE words each)
     script_lines = []
     for i in range(0, len(script_words), WORDS_PER_LINE):
         script_lines.append(" ".join(script_words[i:i + WORDS_PER_LINE]))
+
+    # Group into screens of MAX_LINES lines each
     script_screens = []
     for i in range(0, len(script_lines), MAX_LINES):
         block = script_lines[i:i + MAX_LINES]
         while len(block) < MAX_LINES:
             block.append("")
         script_screens.append(block)
+
     total_screens = len(script_screens)
 
-    use_whisperx = (
-        words and len(words) > 0 and
-        abs(len(words) - len(script_words)) / max(len(script_words), 1) <= 0.20
-    )
-    if use_whisperx:
-        print(f"   ℹ️  Script: {len(script_words)} words | WhisperX: {len(words)} words — using WhisperX timing", flush=True)
-        screens = []
+    # ── Word-by-word timestamp matching ──────────────────────
+    if words and len(words) > 0:
+        print(f"   ℹ️  Script: {len(script_words)} words | WhisperX: {len(words)} words — word matching", flush=True)
+
+        def norm(w):
+            """Normalise a word for matching — lowercase, strip punctuation."""
+            return _re.sub(r"[^\w]", "", w.lower())
+
+        # Build normalised WhisperX word list with positions
+        wx_norm = [norm(w["word"]) for w in words]
+
+        def find_word_timestamp(script_word, search_from=0):
+            """
+            Find the timestamp of script_word in WhisperX output.
+            Searches forward from search_from to avoid going backwards.
+            Returns (timestamp, wx_index) or None.
+            """
+            target = norm(script_word)
+            if not target:
+                return None
+
+            # Exact match first
+            for i in range(search_from, len(wx_norm)):
+                if wx_norm[i] == target:
+                    return words[i]["start"], i
+
+            # Fuzzy: target starts with or ends with the wx word (handles
+            # common transcription truncations e.g. "consciousness" → "consciou")
+            for i in range(search_from, len(wx_norm)):
+                wx = wx_norm[i]
+                if len(wx) >= 4 and len(target) >= 4:
+                    if target.startswith(wx[:4]) or wx.startswith(target[:4]):
+                        return words[i]["start"], i
+
+            return None
+
+        # For each screen find the timestamp of its FIRST script word
+        screens   = []
+        wx_cursor = 0   # always search forward — never go backwards
+
         for idx, block in enumerate(script_screens):
-            wx_start_idx = min(int((idx / total_screens) * len(words)), len(words) - 1)
-            wx_end_idx   = min(int(((idx + 1) / total_screens) * len(words)) - 1, len(words) - 1)
-            screens.append({"start": words[wx_start_idx]["start"], "end": words[wx_end_idx]["end"], "lines": block})
+            # First non-empty word in this block
+            first_word = None
+            for line in block:
+                for w in line.split():
+                    if w.strip():
+                        first_word = w.strip()
+                        break
+                if first_word:
+                    break
+
+            start_ts = None
+            if first_word:
+                result = find_word_timestamp(first_word, wx_cursor)
+                if result:
+                    start_ts, wx_cursor = result
+                    # Don't advance cursor past here — next screen searches from here+1
+                    wx_cursor = max(wx_cursor, result[1])
+
+            if start_ts is None:
+                # Interpolate: use ratio as fallback for this screen only
+                usable = audio_duration - INTRO_DUR - OUTRO_DUR
+                start_ts = INTRO_DUR + (idx / total_screens) * usable
+                if idx > 0:
+                    print(f"   ⚠️  Screen {idx+1} word not found — interpolated at {start_ts:.1f}s", flush=True)
+
+            screens.append({"start": start_ts, "end": audio_duration, "lines": block})
+
+        # Set end time of each screen = start time of next screen
+        for i in range(len(screens) - 1):
+            screens[i]["end"] = screens[i + 1]["start"]
+
+        # Verify forward-only (fix any rare inversions from interpolation)
+        for i in range(1, len(screens)):
+            if screens[i]["start"] <= screens[i-1]["start"]:
+                screens[i]["start"] = screens[i-1]["start"] + (1.0 / FPS)
+                screens[i-1]["end"] = screens[i]["start"]
+
+        matched = sum(1 for s in screens if s["start"] > 0)
+        print(f"   ✅ {len(screens)} karaoke screens — word-matched timing", flush=True)
+
     else:
-        print(f"   ℹ️  Using duration-based sync", flush=True)
+        # ── Duration-based fallback ───────────────────────────
+        print(f"   ℹ️  No WhisperX timestamps — using duration-based sync", flush=True)
         usable_dur      = audio_duration - INTRO_DUR - OUTRO_DUR
         time_per_screen = usable_dur / max(total_screens, 1)
         screens = []
         for idx, block in enumerate(script_screens):
             start = INTRO_DUR + idx * time_per_screen
             screens.append({"start": start, "end": start + time_per_screen, "lines": block})
+        print(f"   ✅ {len(screens)} karaoke screens built from script (duration sync)", flush=True)
 
-    print(f"   ✅ {len(screens)} karaoke screens built from script", flush=True)
     return screens
 
 # ── Pillow: render karaoke screen → PNG (solid dark bar) ─────
