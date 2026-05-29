@@ -512,7 +512,7 @@ def render_video(
            f"crop={WIDTH}:{HEIGHT},fade=t=out:st={INTRO_DUR-FADE_DUR}:d={FADE_DUR},setsar=1[intro_v];"
            f"[{outro_idx}:v]scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=increase,"
            f"crop={WIDTH}:{HEIGHT},fade=t=in:st=0:d={FADE_DUR},setsar=1[outro_v];"
-           f"[intro_v]{video_out[1:-1]}[outro_v]concat=n=3:v=1:a=0[video_out];")
+           f"[intro_v]{video_out}[outro_v]concat=n=3:v=1:a=0[video_out];")
 
     total_dur = INTRO_DUR + audio_duration + OUTRO_DUR
     vf += (f"[{audio_idx}:a]adelay={int(INTRO_DUR*1000)}|{int(INTRO_DUR*1000)}[vd];"
