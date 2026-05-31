@@ -27,9 +27,14 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-video-v1
+          key: ${{ runner.os }}-pip-ctc-v1
           restore-keys: |
-            ${{ runner.os }}-pip-video-
+            ${{ runner.os }}-pip-ctc-
+      - name: Cache CTC model
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ctc_model
+          key: ctc-aligner-model-v1
       - name: Install system dependencies
         run: |
           sudo apt-get update -qq
@@ -37,9 +42,10 @@ jobs:
           ffmpeg -version | head -1
       - name: Install Python dependencies
         run: |
-          pip install requests torch torchaudio --index-url https://download.pytorch.org/whl/cpu
-          pip install whisperx
-          pip install google-auth cryptography Pillow
+          pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
+          pip install ctc-forced-aligner
+          pip install onnxruntime numpy librosa unidecode
+          pip install google-auth cryptography Pillow requests
       - name: Generate video
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
