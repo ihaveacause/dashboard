@@ -158,135 +158,69 @@ def run_ctc_alignment(audio_path, script_text, language, tmpdir):
     if not script_words:
         return None
 
-    # ── Route 1: ONNX multilingual model (HuggingFace) + uroman ──
-    # Handles Tamil and English. uroman romanizes any script for the
-    # multilingual MMS acoustic model.
+    # ── ONNX multilingual MMS aligner (HuggingFace) + uroman ─────
+    # uroman romanizes ANY script (Tamil + English) for the multilingual
+    # MMS acoustic model. This is true forced alignment of the exact script.
     try:
         import numpy as np
         import ctc_forced_aligner as cfa
-
-        # Download / cache the ONNX model
-        model_dir  = os.path.join(tmpdir, "ctc_model")
-        os.makedirs(model_dir, exist_ok=True)
-        model_path = os.path.join(model_dir, "ctc_aligner.onnx")
-        cfa.ensure_onnx_model(model_path, cfa.MODEL_URL)
-        print(f"   ✅ CTC ONNX model ready", flush=True)
-
         import onnxruntime as ort
+
+        # 1. Download / cache the ONNX model
+        cache_dir  = os.path.expanduser("~/.cache/ctc_model")
+        os.makedirs(cache_dir, exist_ok=True)
+        model_path = os.path.join(cache_dir, "ctc_aligner.onnx")
+        cfa.ensure_onnx_model(model_path, cfa.MODEL_URL)
         session = ort.InferenceSession(model_path, providers=["CPUExecutionProvider"])
+        print(f"   ✅ CTC model ready", flush=True)
 
-        # Load + resample audio to 16kHz mono
+        # 2. Load audio (librosa → 16kHz mono numpy; no torchcodec needed)
         audio = cfa.load_audio(audio_path, ret_type="np")
-        print(f"   ✅ Audio loaded for alignment", flush=True)
+        print(f"   ✅ Audio loaded ({len(audio)/cfa.SAMPLING_FREQ:.0f}s)", flush=True)
 
-        # Emissions from the acoustic model
-        emissions = cfa.generate_emissions(session, audio, batch_size=4)
-        if isinstance(emissions, tuple):
-            emissions = emissions[0]
-        print(f"   ✅ Emissions generated, shape {getattr(emissions,'shape','?')}", flush=True)
+        # 3. Emissions — returns (emissions[frames,vocab], stride_ms)
+        emissions, stride = cfa.generate_emissions(session, audio, batch_size=4)
+        print(f"   ✅ Emissions {emissions.shape}, stride {stride}ms", flush=True)
 
-        # Normalise + romanise the script (uroman handles Tamil)
+        # 4. Romanise each script word (one uroman token per word, count preserved)
         iso = "tam" if language == "ta" else "eng"
-        norm_lines  = [" ".join(script_words)]
-        uroman_toks = cfa.get_uroman_tokens(norm_lines, iso=iso)
+        uroman_toks = cfa.get_uroman_tokens(script_words, iso=iso)
 
+        # 5. Forced align
         tokenizer = cfa.Tokenizer()
         segments, scores, blank = cfa.get_alignments(emissions, uroman_toks, tokenizer)
         spans = cfa.get_spans(uroman_toks, segments, blank)
+        print(f"   ✅ Aligned {len(spans)} word spans", flush=True)
 
-        # Map spans → per-word timestamps. Frame stride from audio/emission ratio.
-        n_frames = emissions.shape[1] if hasattr(emissions, "shape") else len(segments)
-        audio_dur = len(audio) / cfa.SAMPLING_FREQ
-        sec_per_frame = audio_dur / max(n_frames, 1)
-
+        # 6. Convert frame spans → seconds using stride (ms per frame)
+        sec_per_frame = stride / 1000.0
         words = []
         for i, span in enumerate(spans):
-            if not span:
+            if not span or i >= len(script_words):
+                prev = words[-1]["end"] if words else 0.0
+                words.append({"word": script_words[i] if i < len(script_words) else "",
+                              "start": prev, "end": prev})
                 continue
             start = span[0].start * sec_per_frame
-            end   = span[-1].end * sec_per_frame
-            word  = script_words[i] if i < len(script_words) else ""
-            words.append({"word": word, "start": float(start), "end": float(end)})
+            end   = span[-1].end   * sec_per_frame
+            words.append({"word": script_words[i], "start": float(start), "end": float(end)})
 
-        if words and len(words) >= len(script_words) * 0.5:
-            print(f"   ✅ CTC aligned {len(words)} / {len(script_words)} words (ONNX route)", flush=True)
+        # Ensure monotonic non-decreasing starts
+        for i in range(1, len(words)):
+            if words[i]["start"] < words[i-1]["start"]:
+                words[i]["start"] = words[i-1]["start"]
+
+        if words and len(words) >= len(script_words) * 0.8:
+            print(f"   ✅ CTC aligned {len(words)} / {len(script_words)} words", flush=True)
             return words
-        print(f"   ⚠️  ONNX alignment thin ({len(words)} words) — trying MMS_FA route", flush=True)
+        print(f"   ⚠️  Alignment thin ({len(words)}/{len(script_words)}) — duration sync", flush=True)
+        return None
 
     except Exception as e:
-        print(f"   ⚠️  ONNX route failed: {e}", flush=True)
+        print(f"   ⚠️  CTC alignment failed: {e}", flush=True)
         import traceback; traceback.print_exc()
-
-    # ── Route 2: torchaudio MMS_FA bundle ────────────────────────
-    try:
-        import torch
-        import torchaudio
-        import torchaudio.functional as F
-
-        bundle     = torchaudio.pipelines.MMS_FA
-        dictionary = bundle.get_dict(star=None)
-        model      = bundle.get_model(with_star=False)
-
-        waveform, sr = torchaudio.load(audio_path)
-        if waveform.shape[0] > 1:
-            waveform = waveform.mean(dim=0, keepdim=True)
-        if sr != bundle.sample_rate:
-            waveform = F.resample(waveform, sr, bundle.sample_rate)
-
-        # Build transcript: lowercase words, keep only dict chars
-        transcript = []
-        kept_index = []   # map kept-word position → original script index
-        for idx, w in enumerate(script_words):
-            cleaned = "".join(ch for ch in w.lower() if ch in dictionary and dictionary[ch] != 0)
-            if cleaned:
-                transcript.append(cleaned)
-                kept_index.append(idx)
-
-        with torch.inference_mode():
-            emission, _ = model(waveform)
-
-        tokens = [dictionary[ch] for word in transcript for ch in word]
-        targets = torch.tensor([tokens], dtype=torch.int32)
-        aligned, scores = F.forced_align(emission, targets, blank=0)
-        token_spans = F.merge_tokens(aligned[0], scores[0])
-
-        # unflatten token spans back to words
-        def unflatten(list_, lengths):
-            out, i = [], 0
-            for L in lengths:
-                out.append(list_[i:i+L]); i += L
-            return out
-        word_spans = unflatten(token_spans, [len(w) for w in transcript])
-
-        n_frames = emission.size(1)
-        ratio = waveform.size(1) / n_frames / bundle.sample_rate
-
-        words = [None] * len(script_words)
-        for k, spans in enumerate(word_spans):
-            if not spans:
-                continue
-            orig_idx = kept_index[k]
-            start = spans[0].start * ratio
-            end   = spans[-1].end * ratio
-            words[orig_idx] = {"word": script_words[orig_idx], "start": float(start), "end": float(end)}
-
-        # Fill gaps (cleaned-out words) by interpolation between neighbours
-        last = 0.0
-        for i in range(len(words)):
-            if words[i] is None:
-                words[i] = {"word": script_words[i], "start": last, "end": last}
-            else:
-                last = words[i]["start"]
-
-        print(f"   ✅ CTC aligned {len(transcript)} words (MMS_FA route)", flush=True)
-        return words
-
-    except Exception as e:
-        print(f"   ⚠️  MMS_FA route failed: {e}", flush=True)
-        import traceback; traceback.print_exc()
-
-    print(f"   ⚠️  All CTC routes failed — caller will use duration sync", flush=True)
-    return None
+        print(f"   ⚠️  Falling back to duration sync", flush=True)
+        return None
 
 # ── Karaoke screens — exact word-timestamp lookup ────────────
 def build_karaoke_screens(words, script_text, audio_duration):
