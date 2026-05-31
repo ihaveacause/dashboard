@@ -42,9 +42,8 @@ jobs:
           ffmpeg -version | head -1
       - name: Install Python dependencies
         run: |
-          pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
           pip install ctc-forced-aligner
-          pip install onnxruntime numpy librosa unidecode
+          pip install onnxruntime numpy librosa soundfile unidecode
           pip install google-auth cryptography Pillow requests
       - name: Generate video
         env:
