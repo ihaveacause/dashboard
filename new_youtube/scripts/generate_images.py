@@ -67,7 +67,7 @@ GCS_BUCKET = "ihaveacause-media"
 IMAGE_MODEL  = "gemini-3.1-flash-image"
 # Claude reads the script and plans the beats. Adjust to whatever model string
 # your Anthropic account serves if this one isn't available.
-CLAUDE_MODEL = "claude-sonnet-4-20250514"
+CLAUDE_MODEL = "claude-sonnet-4-6"
 
 MIN_BEATS, MAX_BEATS = 8, 12
 TARGET_W, TARGET_H   = 1920, 1080     # 16:9, enforced by normalize
