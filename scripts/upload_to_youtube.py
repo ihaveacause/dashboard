@@ -340,8 +340,9 @@ def main():
         publish_time    = publish_time,
     )
 
-    # Playlist
-    module_name = episode.get("module_name", "Series")
+    # Playlist — keyed on the episode's MODULE, so each module (Mandukya, etc.)
+    # gets its own playlist, per language. Auto-creates on first publish.
+    module_name = episode.get("module") or episode.get("module_name") or "Series"
     playlist_id = get_or_create_playlist(youtube, module_name, args.language)
     add_to_playlist(youtube, video_id, playlist_id)
 
