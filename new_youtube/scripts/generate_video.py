@@ -223,43 +223,68 @@ def run_ctc_alignment(audio_path, script_text, language, tmpdir):
         return None
 
 # ── Karaoke screens — exact word-timestamp lookup ────────────
-def build_karaoke_screens(words, script_text, audio_duration):
+def build_karaoke_screens(words, script_text, audio_duration, font_path=None):
     """
-    Text always from the script. With CTC, words[i] is the exact spoken
-    time of script word i — so each screen's start time is a direct lookup.
-    Falls back to duration sync if CTC unavailable.
+    Text always from the script. Lines are wrapped to FIT THE FRAME WIDTH
+    (measured in pixels with the real caption font) so long Tamil words never
+    run off the right edge. With CTC, each screen starts at the exact spoken
+    time of its first word. Falls back to duration sync if CTC unavailable.
     """
     script_words = script_text.split()
     if not script_words:
         print("   ⚠️  No script text", flush=True)
         return []
 
-    # Build 3-line screens (WORDS_PER_LINE words per line)
-    script_lines = [" ".join(script_words[i:i+WORDS_PER_LINE])
-                    for i in range(0, len(script_words), WORDS_PER_LINE)]
+    # measure with the actual caption font
+    try:
+        mfont = ImageFont.truetype(font_path, FONT_SIZE) if font_path else ImageFont.load_default()
+    except Exception:
+        mfont = ImageFont.load_default()
+    measure = ImageDraw.Draw(Image.new("RGB", (10, 10)))
+    MAX_LINE_PX = WIDTH - 180        # ~90px margin each side
+
+    def line_width(s):
+        try:
+            return measure.textlength(s, font=mfont)
+        except Exception:
+            b = measure.textbbox((0, 0), s, font=mfont); return b[2] - b[0]
+
+    # wrap words into lines by pixel width; remember each line's first word index
+    lines, cur, cur_idx = [], [], 0
+    for i, w in enumerate(script_words):
+        if cur and line_width(" ".join(cur + [w])) > MAX_LINE_PX:
+            lines.append({"text": " ".join(cur), "idx": cur_idx})
+            cur, cur_idx = [w], i
+        else:
+            if not cur:
+                cur_idx = i
+            cur.append(w)
+    if cur:
+        lines.append({"text": " ".join(cur), "idx": cur_idx})
+
+    # group lines into MAX_LINES-line screens; screen starts at its first word
     script_screens = []
-    for i in range(0, len(script_lines), MAX_LINES):
-        block = script_lines[i:i+MAX_LINES]
-        while len(block) < MAX_LINES:
-            block.append("")
-        script_screens.append(block)
+    for i in range(0, len(lines), MAX_LINES):
+        block = lines[i:i+MAX_LINES]
+        texts = [b["text"] for b in block]
+        while len(texts) < MAX_LINES:
+            texts.append("")
+        script_screens.append({"texts": texts, "idx": block[0]["idx"]})
 
     if words and len(words) > 0:
-        # Direct lookup — words align 1:1 with script words
+        # CTC: each screen's start = spoken time of its first word
         n = len(words)
         screens = []
-        for idx, block in enumerate(script_screens):
-            wi = idx * WORDS_PER_LINE * MAX_LINES
-            wi = min(wi, n - 1)
-            screens.append({"start": words[wi]["start"], "end": audio_duration, "lines": block})
+        for sc in script_screens:
+            wi = min(sc["idx"], n - 1)
+            screens.append({"start": words[wi]["start"], "end": audio_duration, "lines": sc["texts"]})
         for i in range(len(screens)-1):
             screens[i]["end"] = screens[i+1]["start"]
-        # guard against inversions
         for i in range(1, len(screens)):
             if screens[i]["start"] <= screens[i-1]["start"]:
                 screens[i]["start"] = screens[i-1]["start"] + 1.0/FPS
             screens[i-1]["end"] = screens[i]["start"]
-        print(f"   ✅ {len(screens)} screens — CTC exact word timing", flush=True)
+        print(f"   ✅ {len(screens)} screens — CTC exact word timing (width-wrapped)", flush=True)
         return screens
 
     # Fallback: duration sync
@@ -267,9 +292,9 @@ def build_karaoke_screens(words, script_text, audio_duration):
     usable = audio_duration - INTRO_DUR - OUTRO_DUR
     tps    = usable / max(len(script_screens), 1)
     screens = []
-    for idx, block in enumerate(script_screens):
+    for idx, sc in enumerate(script_screens):
         start = INTRO_DUR + idx * tps
-        screens.append({"start": start, "end": start + tps, "lines": block})
+        screens.append({"start": start, "end": start + tps, "lines": sc["texts"]})
     print(f"   ✅ {len(screens)} screens — duration sync", flush=True)
     return screens
 
@@ -515,7 +540,7 @@ def main():
         log(f"   ✅ Alignment done — {datetime.now().strftime('%H:%M:%S')}")
 
         log(f"\n📝 Step 3/8 — Karaoke screens...")
-        screens = build_karaoke_screens(words, script_text, audio_duration)
+        screens = build_karaoke_screens(words, script_text, audio_duration, font_path)
 
         raw = episode.get("episode_images") or []
         if isinstance(raw, str):
