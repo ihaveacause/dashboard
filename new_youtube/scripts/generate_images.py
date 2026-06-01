@@ -348,27 +348,66 @@ def main():
     db_patch(table, EPISODE_NUMBER, {"status": "generating_images"})
 
     try:
-        # ── REGENERATE ONE IMAGE (keep rest, reuse the anchor) ──
+        # ── REGENERATE ──────────────────────────────────────────
+        # Regen image 1 (the anchor) => re-roll EVERY image in the new look.
+        # Regen any other image => just that one, matched to the current anchor.
         if regen_order and existing:
             existing = sorted(existing, key=lambda x: x.get("order", 0))
+
+            def augmented_scene(entry, direction):
+                base = entry.get("scene", "")
+                return (base + (". Additional art direction: " + direction if direction else "")).strip(". ")
+
+            # ── Anchor cascade: regen image 1 → restyle the whole episode ──
+            if regen_order == 1:
+                a = next((e for e in existing if e.get("order") == 1), existing[0])
+                anchor_beat = {"order": 1, "scene": augmented_scene(a, regen_dir),
+                               "display_text": a.get("display_text", ""), "trigger": ""}
+                print("\n🎨 Re-anchoring image 1 — the whole episode will be redone in this look")
+                raw = generate_one_image(build_image_prompt(anchor_beat, is_anchor=True), None)
+                img = normalize_16x9(raw)
+                new_anchor = Image.open(BytesIO(img)).convert("RGB")
+                path = gcs_path_for(1, a.get("trigger", ""))
+                url  = upload_bytes_to_gcs(img, path)
+                if url:
+                    a.update({"url": url, "filename": path.split("/")[-1]})
+                    print("   ✅ New anchor set")
+                # re-roll every other image on the new anchor (content unchanged)
+                for e in existing:
+                    if e.get("order") == 1:
+                        continue
+                    beat = {"order": e.get("order"), "scene": e.get("scene", ""),
+                            "display_text": e.get("display_text", ""), "trigger": e.get("trigger", "")}
+                    print(f"   ↻ Image {beat['order']} → matching new anchor")
+                    raw = generate_one_image(build_image_prompt(beat, is_anchor=False), new_anchor)
+                    p2  = gcs_path_for(beat["order"], beat["trigger"])
+                    u2  = upload_bytes_to_gcs(normalize_16x9(raw), p2)
+                    if u2:
+                        e.update({"url": u2, "filename": p2.split("/")[-1]})
+                    time.sleep(GEN_SLEEP)
+                db_patch(table, EPISODE_NUMBER, {"episode_images": existing, "status": "images_ready"})
+                print(f"\n✅ Whole episode re-styled from the new anchor")
+                return
+
+            # ── Single non-anchor image ──
             anchor_entry = next((e for e in existing if e.get("order") == 1), existing[0])
-            anchor_img = download_image(anchor_entry["url"]) if regen_order != 1 else None
+            anchor_img = download_image(anchor_entry["url"])
             target = next((e for e in existing if e.get("order") == regen_order), None)
             if not target:
                 print(f"❌ Image {regen_order} not in existing set")
                 db_patch(table, EPISODE_NUMBER, {"status": "images_ready"}); return
             beat = {
                 "order":        regen_order,
-                "scene":        regen_dir or target.get("scene", ""),
+                "scene":        augmented_scene(target, regen_dir),
                 "display_text": target.get("display_text", ""),
                 "trigger":      target.get("trigger", ""),
             }
-            prompt = build_image_prompt(beat, is_anchor=(regen_order == 1))
+            prompt = build_image_prompt(beat, is_anchor=False)
             raw = generate_one_image(prompt, anchor_img)
             path = gcs_path_for(regen_order, beat["trigger"])
             url = upload_bytes_to_gcs(normalize_16x9(raw), path)
             if url:
-                target.update({"url": url, "filename": path.split("/")[-1], "scene": beat["scene"][:200]})
+                target.update({"url": url, "filename": path.split("/")[-1]})
                 db_patch(table, EPISODE_NUMBER, {"episode_images": existing, "status": "images_ready"})
                 print(f"\n✅ Image {regen_order} regenerated")
             else:
