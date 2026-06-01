@@ -4,7 +4,7 @@ Uploads a video to YouTube with thumbnail, metadata, scheduling and playlist.
 
 Usage (called by GitHub Actions):
   python upload_to_youtube.py \
-    --episode_id   "uuid-from-supabase" \
+    --episode_number   "1" \
     --language     "tamil" \
     --token_json   "/tmp/yt_token.json" \
     --client_secret_json "/tmp/client_secret.json"
@@ -42,17 +42,17 @@ PUBLISH_MINUTE_UTC = 30
 
 # ── Supabase ──────────────────────────────────────────────────────────────────
 
-def get_episode(episode_id: str, language: str) -> dict:
+def get_episode(episode_number: int, language: str) -> dict:
     sb: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
     table = "tamil_episodes" if language == "tamil" else "english_episodes"
-    res = sb.table(table).select("*").eq("id", episode_id).single().execute()
+    res = sb.table(table).select("*").eq("episode_number", episode_number).single().execute()
     return res.data
 
 
-def update_episode(episode_id: str, language: str, updates: dict):
+def update_episode(episode_number: int, language: str, updates: dict):
     sb: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
     table = "tamil_episodes" if language == "tamil" else "english_episodes"
-    sb.table(table).update(updates).eq("id", episode_id).execute()
+    sb.table(table).update(updates).eq("episode_number", episode_number).execute()
     print(f"✅ Supabase updated: {updates}")
 
 
@@ -306,20 +306,23 @@ Exploring consciousness, Tamil philosophy, and the wisdom of the Mandukya Upanis
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--episode_id",          required=True)
-    parser.add_argument("--language",             required=True,
-                        choices=["tamil", "english"])
+    parser.add_argument("--episode_number",       required=True, type=int)
+    parser.add_argument("--language",             required=True)  # ta/en or tamil/english
     parser.add_argument("--video_path",           required=True)
     parser.add_argument("--thumbnail_path",       required=True)
     parser.add_argument("--token_json",           default="/tmp/yt_token.json")
     parser.add_argument("--client_secret_json",   default="/tmp/client_secret.json")
     args = parser.parse_args()
 
+    # Normalize language to the full form used throughout this script
+    language = "tamil" if args.language in ("ta", "tamil") else "english"
+    episode_number = args.episode_number
+
     # Load episode data
-    print(f"📖 Loading episode {args.episode_id}...")
-    episode = get_episode(args.episode_id, args.language)
+    print(f"📖 Loading episode {episode_number} ({language})...")
+    episode = get_episode(episode_number, language)
     if not episode:
-        print(f"❌ Episode not found: {args.episode_id}")
+        print(f"❌ Episode not found: {episode_number} ({language})")
         sys.exit(1)
 
     # Auth
@@ -327,7 +330,7 @@ def main():
     youtube = get_youtube_service(args.client_secret_json, args.token_json)
 
     # Calculate publish time
-    publish_time = calculate_publish_time(args.language)
+    publish_time = calculate_publish_time(language)
     print(f"📅 Scheduled publish time: {publish_time.isoformat()}")
 
     # Upload
@@ -336,19 +339,19 @@ def main():
         video_path      = args.video_path,
         thumbnail_path  = args.thumbnail_path,
         episode         = episode,
-        language        = args.language,
+        language        = language,
         publish_time    = publish_time,
     )
 
     # Playlist — keyed on the episode's MODULE, so each module (Mandukya, etc.)
     # gets its own playlist, per language. Auto-creates on first publish.
     module_name = episode.get("module") or episode.get("module_name") or "Series"
-    playlist_id = get_or_create_playlist(youtube, module_name, args.language)
+    playlist_id = get_or_create_playlist(youtube, module_name, language)
     add_to_playlist(youtube, video_id, playlist_id)
 
     # Update Supabase
     yt_url = f"https://www.youtube.com/watch?v={video_id}"
-    update_episode(args.episode_id, args.language, {
+    update_episode(episode_number, language, {
         "youtube_video_id":  video_id,
         "youtube_url":       yt_url,
         "playlist_id":       playlist_id,
