@@ -84,8 +84,6 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 .sb-video_ready{background:var(--teal-dim);color:var(--teal)}
 .sb-video_approved{background:var(--green-dim);color:var(--green)}
 .sb-generating_thumbnail{background:var(--orange-dim);color:var(--orange)}
-.sb-thumbnail_ready{background:var(--teal-dim);color:var(--teal)}
-.sb-thumbnail_approved{background:var(--purple-dim);color:var(--purple)}
 .sb-published{background:rgba(232,65,42,.12);color:var(--accent2)}
 .ep-title{font-family:'Syne',sans-serif;font-size:14px;font-weight:700;line-height:1.5;color:var(--text);margin-bottom:2px}
 .ep-sub{font-size:12px;color:var(--muted2);line-height:1.4;margin-bottom:4px}
@@ -234,12 +232,12 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
     <button class="fpill" onclick="setFilter('pending',this)">Pending</button>
     <button class="fpill" onclick="setFilter('script_ready',this)">Script Ready</button>
     <button class="fpill" onclick="setFilter('script_approved',this)">Script Approved</button>
+    <button class="fpill" onclick="setFilter('images_ready',this)">Images Ready</button>
+    <button class="fpill" onclick="setFilter('images_approved',this)">Images Approved</button>
     <button class="fpill" onclick="setFilter('voice_uploaded',this)">Voice Uploaded</button>
     <button class="fpill" onclick="setFilter('voice_approved',this)">Voice Approved</button>
     <button class="fpill" onclick="setFilter('video_ready',this)">Video Ready</button>
     <button class="fpill" onclick="setFilter('video_approved',this)">Video Approved</button>
-    <button class="fpill" onclick="setFilter('thumbnail_ready',this)">Thumbnail Ready</button>
-    <button class="fpill" onclick="setFilter('thumbnail_approved',this)">Thumbnail Approved</button>
     <button class="fpill" onclick="setFilter('published',this)">Published</button>
   </div>
 </div>
@@ -343,7 +341,6 @@ const STATUS_LABELS = {
   voice_uploaded:'Voice Uploaded', voice_approved:'Voice Approved',
   video_ready:'Video Ready', video_approved:'Video Approved',
   generating_thumbnail:'Generating Thumbnail',
-  thumbnail_ready:'Thumbnail Ready', thumbnail_approved:'Thumbnail Approved',
   published:'Published'
 };
 
@@ -417,7 +414,7 @@ function render() {
 
   let html = '';
   if (filter === 'all') {
-    const ORDER = ['generating','generating_images','generating_video','script_ready','script_approved','images_ready','images_approved','voice_uploaded','voice_approved','video_ready','video_approved','generating_thumbnail','thumbnail_ready','thumbnail_approved','published','pending'];
+    const ORDER = ['generating','generating_images','generating_video','script_ready','script_approved','images_ready','images_approved','voice_uploaded','voice_approved','video_ready','video_approved','published','pending'];
     const groups = {};
     items.forEach(ep => { const s = ep.status||'pending'; if(!groups[s]) groups[s]=[]; groups[s].push(ep); });
     ORDER.forEach(s => {
