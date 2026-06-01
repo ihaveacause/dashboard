@@ -81,8 +81,8 @@ jobs:
           print("✅ Video downloaded")
           EOF
 
-      # ── Generate thumbnail ─────────────────────────────────────────────────
-      - name: Generate thumbnail
+      # ── Download the APPROVED thumbnail (no regeneration) ─────────────────
+      - name: Download approved thumbnail
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
@@ -90,45 +90,17 @@ jobs:
           LANGUAGE: ${{ github.event.inputs.language }}
         run: |
           python - <<'EOF'
-          import os
+          import os, urllib.request
           from supabase import create_client
-
-          sb       = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_SERVICE_ROLE_KEY"])
-          language = os.environ["LANGUAGE"]
-          table    = "tamil_episodes" if language == "tamil" else "english_episodes"
-          ep       = sb.table(table).select("*").eq("id", os.environ["EPISODE_ID"]).single().execute().data
-
-          base_url = os.environ["SUPABASE_URL"] + "/storage/v1/object/public/channel-assets"
-
-          # Module background (use module-specific if exists, else default)
-          bg_url = f"{base_url}/module_default_bg.png"
-
-          # Person photo
-          photo_file = "photo_tamil.jpg" if language == "tamil" else "photo_english.jpg"
-          photo_url  = f"{base_url}/{photo_file}"
-
-          language_val = language
-          if language_val == "tamil":
-              title = ep.get("title_tamil") or ep.get("title") or ep.get("episode_title", "")
-          else:
-              title = ep.get("title_english") or ep.get("title") or ep.get("episode_title", "")
-          ep_num     = ep["episode_number"]
-
-          import subprocess
-          result = subprocess.run([
-            "python", "scripts/generate_thumbnail.py",
-            "--bg_url",      bg_url,
-            "--photo_url",   photo_url,
-            "--logo_svg",    "assets/ihaveacause_symbol.svg",
-            "--episode_num", str(ep_num),
-            "--title",       title,
-            "--language",    language,
-            "--output",      "/tmp/thumbnail.jpg",
-          ], capture_output=True, text=True)
-          print(result.stdout)
-          if result.returncode != 0:
-            print(result.stderr)
-            raise Exception("Thumbnail generation failed")
+          sb = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_SERVICE_ROLE_KEY"])
+          table = "tamil_episodes" if os.environ["LANGUAGE"] == "tamil" else "english_episodes"
+          ep = sb.table(table).select("thumbnail_url").eq("id", os.environ["EPISODE_ID"]).single().execute().data
+          url = ep.get("thumbnail_url")
+          if not url:
+              raise Exception("No approved thumbnail_url on this episode — generate/approve the thumbnail first")
+          print(f"Downloading approved thumbnail: {url[:90]}...")
+          urllib.request.urlretrieve(url, "/tmp/thumbnail.jpg")
+          print("✅ Approved thumbnail downloaded (no regeneration)")
           EOF
 
       # ── Upload to YouTube ──────────────────────────────────────────────────
