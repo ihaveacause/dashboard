@@ -295,7 +295,9 @@ def normalize_16x9(img_bytes):
     return out.getvalue()
 
 def slug(text, n=40):
-    s = re.sub(r"[^\w]+", "_", (text or "").strip())
+    # ASCII-only: non-Latin (e.g. Tamil) chars in a GCS object name break signed
+    # URLs (the browser percent-encodes the path, so the signature won't match).
+    s = re.sub(r"[^a-zA-Z0-9]+", "_", (text or "").strip())
     return s[:n].strip("_") or "scene"
 
 def gcs_path_for(order, trigger):
