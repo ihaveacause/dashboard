@@ -3,17 +3,17 @@ name: Upload to YouTube
 on:
   workflow_dispatch:
     inputs:
-      episode_id:
-        description: "Supabase episode UUID"
+      episode_number:
+        description: "Episode number"
         required: true
       language:
-        description: "tamil or english"
+        description: "ta or en"
         required: true
-        default: "tamil"
+        default: "ta"
         type: choice
         options:
-          - tamil
-          - english
+          - ta
+          - en
 
 jobs:
   upload:
@@ -66,15 +66,15 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          EPISODE_ID: ${{ github.event.inputs.episode_id }}
+          EPISODE_NUMBER: ${{ github.event.inputs.episode_number }}
           LANGUAGE: ${{ github.event.inputs.language }}
         run: |
           python - <<'EOF'
           import os, urllib.request
           from supabase import create_client
           sb = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_SERVICE_ROLE_KEY"])
-          table = "tamil_episodes" if os.environ["LANGUAGE"] == "tamil" else "english_episodes"
-          ep = sb.table(table).select("video_url").eq("id", os.environ["EPISODE_ID"]).single().execute().data
+          table = "tamil_episodes" if os.environ["LANGUAGE"] in ("ta","tamil") else "english_episodes"
+          ep = sb.table(table).select("video_url").eq("episode_number", int(os.environ["EPISODE_NUMBER"])).single().execute().data
           video_url = ep["video_url"]
           print(f"Downloading video: {video_url}")
           urllib.request.urlretrieve(video_url, "/tmp/episode.mp4")
@@ -86,15 +86,15 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          EPISODE_ID: ${{ github.event.inputs.episode_id }}
+          EPISODE_NUMBER: ${{ github.event.inputs.episode_number }}
           LANGUAGE: ${{ github.event.inputs.language }}
         run: |
           python - <<'EOF'
           import os, urllib.request
           from supabase import create_client
           sb = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_SERVICE_ROLE_KEY"])
-          table = "tamil_episodes" if os.environ["LANGUAGE"] == "tamil" else "english_episodes"
-          ep = sb.table(table).select("thumbnail_url").eq("id", os.environ["EPISODE_ID"]).single().execute().data
+          table = "tamil_episodes" if os.environ["LANGUAGE"] in ("ta","tamil") else "english_episodes"
+          ep = sb.table(table).select("thumbnail_url").eq("episode_number", int(os.environ["EPISODE_NUMBER"])).single().execute().data
           url = ep.get("thumbnail_url")
           if not url:
               raise Exception("No approved thumbnail_url on this episode — generate/approve the thumbnail first")
@@ -113,7 +113,7 @@ jobs:
           GH_YOUTUBE_TOKEN:         ${{ secrets.GH_YOUTUBE_TOKEN }}
         run: |
           python scripts/upload_to_youtube.py \
-            --episode_id        "${{ github.event.inputs.episode_id }}" \
+            --episode_number    "${{ github.event.inputs.episode_number }}" \
             --language          "${{ github.event.inputs.language }}" \
             --video_path        "/tmp/episode.mp4" \
             --thumbnail_path    "/tmp/thumbnail.jpg" \
@@ -123,5 +123,5 @@ jobs:
       # ── Done ──────────────────────────────────────────────────────────────
       - name: Summary
         run: |
-          echo "✅ Episode ${{ github.event.inputs.episode_id }} uploaded to YouTube"
+          echo "✅ Episode ${{ github.event.inputs.episode_number }} uploaded to YouTube"
           echo "Language: ${{ github.event.inputs.language }}"
