@@ -464,32 +464,42 @@ function buildActions(ep, s, n) {
       <button class="btn btn-gen" onclick="triggerScript(${n},'${lang}')">⚡ Generate Script</button>
     </div>`;
 
-  // ── Generating ────────────────────────────────────────────
+  // ── Generating (any) ─────────────────────────────────────
   if (['generating','generating_images','generating_video','generating_thumbnail'].includes(s))
     return `<div class="ep-actions"><div class="wait-msg"><span class="spin">⚙️</span> ${STATUS_LABELS[s]} — check GitHub Actions</div></div>`;
 
-  // ── Script ready ──────────────────────────────────────────
+  // ── Script ready ─────────────────────────────────────────
   if (s === 'script_ready')
     return `<div class="ep-actions">
       <button class="btn btn-review" onclick="openScriptMod(${n})">📄 Review Script</button>
       <button class="btn btn-approve" onclick="quickSet(${n},'script_approved')">✓ Approve</button>
     </div>`;
 
-  // ── Script approved → Upload voice next ──────────────────
+  // ── Script approved → Generate Images & Thumbnail ────────
   if (s === 'script_approved')
     return `<div class="ep-actions">
       <button class="btn btn-review" onclick="openScriptMod(${n})">📄 View Script</button>
+      <button class="btn btn-gen" onclick="generateImagesAndThumbnail(${n},'${lang}')">🎨 Generate Images &amp; Thumbnail</button>
+    </div>`;
+
+  // ── Images ready → review gallery + thumbnail + approve ──
+  if (s === 'images_ready')
+    return buildImagesReview(ep, n);
+
+  // ── Images approved → upload voice ───────────────────────
+  if (s === 'images_approved')
+    return `<div class="ep-actions">
+      <button class="btn btn-review" onclick="openImgMod(${n})">🖼 View Images</button>
       <label class="btn btn-upload" style="cursor:pointer">
         🎙 Upload Voice Recording
         <input type="file" accept="audio/*" style="display:none" onchange="uploadVoice(${n},this)">
       </label>
     </div>`;
 
-  // ── Voice uploaded ────────────────────────────────────────
+  // ── Voice uploaded ───────────────────────────────────────
   if (s === 'voice_uploaded') {
     const voiceUrl = ep.voice_url || '';
     return `<div class="ep-actions">
-      <button class="btn btn-review" onclick="openScriptMod(${n})">📄 View Script</button>
       ${voiceUrl?`<a href="${voiceUrl}" target="_blank" class="btn btn-listen">▶ Listen to Voice</a>`:''}
       <label class="btn btn-regen" style="cursor:pointer">
         ↺ Re-upload Voice
@@ -499,11 +509,11 @@ function buildActions(ep, s, n) {
     </div>`;
   }
 
-  // ── Voice approved — show YouTube images upload ───────────
+  // ── Voice approved → verify images, then Generate Video ──
   if (s === 'voice_approved')
-    return buildYtImagesSection(ep, n);
+    return buildImagesVerify(ep, n);
 
-  // ── Video ready ───────────────────────────────────────────
+  // ── Video ready ──────────────────────────────────────────
   if (s === 'video_ready') {
     const vUrl = ep.video_url || '';
     return `<div class="ep-actions">
@@ -512,54 +522,19 @@ function buildActions(ep, s, n) {
     </div>`;
   }
 
-  // ── Video approved — upload thumbnail image + photo toggle ──
+  // ── Video approved → final review (thumbnail already done) → publish ──
   if (s === 'video_approved')
     return `<div class="ep-actions" style="flex-direction:column;align-items:flex-start;gap:10px">
-      <div style="font-size:12px;color:var(--muted2)">Upload your thumbnail image (designed in Gemini):</div>
-      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-        <label class="btn btn-upload" style="cursor:pointer;font-size:12px">
-          📸 ${ep.thumbnail_hook_image_url ? '↺ Replace Thumbnail Image' : 'Upload Thumbnail Image'}
-          <input type="file" accept="image/*" style="display:none" onchange="uploadHookImage(${n},this)">
-        </label>
-        ${ep.thumbnail_hook_image_url
-          ? '<span style="color:var(--green);font-size:11px">✅ Image ready</span>'
-          : '<span style="color:var(--muted);font-size:11px">No image yet</span>'}
-      </div>
-      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--text)">
-        <input type="checkbox" id="add-photo-${n}"
-               ${ep.thumbnail_add_photo !== false ? 'checked' : ''}
-               onchange="patch(${n},{thumbnail_add_photo:this.checked})"
-               style="width:16px;height:16px;cursor:pointer">
-        Add narrator photo to thumbnail
-      </label>
-      <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <button class="btn btn-gen" onclick="triggerThumbnail(${n})">🖼️ Generate Thumbnail</button>
-        ${ep.video_url?`<a href="${ep.video_url}" target="_blank" class="btn btn-preview">▶ Preview Video</a>`:''}
-      </div>
-    </div>`;
-
-  // ── Thumbnail ready — preview + approve or regenerate ────────
-  if (s === 'thumbnail_ready')
-    return `<div class="ep-actions" style="flex-direction:column;align-items:flex-start;gap:10px">
       ${ep.thumbnail_url
-        ? `<img src="${ep.thumbnail_url}" style="width:100%;max-width:420px;border-radius:6px;border:1px solid rgba(255,255,255,.15)" alt="Thumbnail preview">`
-        : '<span style="color:var(--muted);font-size:12px">Thumbnail URL missing</span>'}
-      <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <button class="btn btn-approve" onclick="quickSet(${n},'thumbnail_approved')">✓ Approve Thumbnail</button>
-        <button class="btn btn-gen" onclick="showHookUpload(${n})">↺ Regenerate</button>
+        ? `<img src="${ep.thumbnail_url}" style="width:100%;max-width:360px;border-radius:6px;border:1px solid rgba(255,255,255,.15)" alt="Thumbnail">`
+        : '<span style="color:var(--muted);font-size:12px">⚠ No thumbnail — regenerate it from the image step before publishing</span>'}
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
         ${ep.video_url?`<a href="${ep.video_url}" target="_blank" class="btn btn-preview">▶ Preview Video</a>`:''}
+        <button class="btn btn-yt" onclick="triggerYouTube(${n})">🚀 Publish to YouTube</button>
       </div>
     </div>`;
 
-  // ── Thumbnail approved — publish to YouTube ───────────────
-  if (s === 'thumbnail_approved')
-    return `<div class="ep-actions">
-      ${ep.thumbnail_url?`<img src="${ep.thumbnail_url}" style="width:160px;border-radius:4px;border:1px solid rgba(255,255,255,.1)" alt="Thumbnail">`:''}
-      <button class="btn btn-yt" onclick="triggerYouTube(${n})">🚀 Publish to YouTube</button>
-      ${ep.video_url?`<a href="${ep.video_url}" target="_blank" class="btn btn-preview">▶ Preview Video</a>`:''}
-    </div>`;
-
-  // ── Published ─────────────────────────────────────────────
+  // ── Published ────────────────────────────────────────────
   if (s === 'published') {
     const url = ep.youtube_url;
     return `<div class="ep-actions">
@@ -571,323 +546,111 @@ function buildActions(ep, s, n) {
   return `<div class="ep-actions"><span class="wait-msg">${STATUS_LABELS[s]||s}</span></div>`;
 }
 
-// ── Episode Image Manager ─────────────────────────────────────
-// State: 'upload' | 'preview'
-// No auto-refresh. No auto-save. User controls everything.
-
-const epImgStore = {};  // {`${n}_${lang}`: [{order, file, url, trigger, filename}]}
-function epImgKey(n) { return `${n}_${lang}`; }
-function getStore(n) {
-  const key = epImgKey(n);
-  if (!epImgStore[key]) epImgStore[key] = [];
-  return epImgStore[key];
+// ── Episode image helpers ─────────────────────────────────────
+function escapeHtml(s){return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function epImages(ep) {
+  let imgs = ep.episode_images || [];
+  if (typeof imgs === 'string') { try { imgs = JSON.parse(imgs); } catch(e) { imgs = []; } }
+  return imgs.slice().sort((a,b)=>(a.order||0)-(b.order||0));
 }
 
-// ── Build the upload/preview section ─────────────────────────
-function buildYtImagesSection(ep, n) {
-  let saved = ep.episode_images || [];
-  if (typeof saved === 'string') { try { saved = JSON.parse(saved); } catch(e) { saved = []; } }
-
-  // Pre-populate store from DB on first render (if store is empty)
-  const key = epImgKey(n);
-  if (!epImgStore[key] && saved.length) {
-    epImgStore[key] = saved.map(img => ({...img, file: null}));
-  }
-
-  const hasImages = saved.length > 0;
-  const genDisabled = !hasImages;
-
-  return `<div class="ep-img-panel" id="img-panel-${n}">
-    <div id="img-view-${n}">
-      ${renderUploadView(n, saved)}
-    </div>
-    <div style="height:1px;background:var(--border);margin:14px 0"></div>
-    <div style="display:flex;gap:8px;align-items:center">
-      <button class="btn btn-gen" id="gen-btn-${n}"
-        onclick="triggerVideo(${n},'${lang}')"
-        ${genDisabled ? 'disabled' : ''}>🎬 Generate Video</button>
-      <span id="gen-status-${n}" style="font-size:11px;font-family:monospace;color:${hasImages?'var(--green)':'var(--red)'}">
-        ${hasImages ? saved.length+' images saved — ready' : 'Save images first'}
-      </span>
-    </div>
-  </div>`;
-}
-
-function renderUploadView(n, existing) {
-  const store = getStore(n);
-  // Merge existing saved with store
-  if (store.length === 0 && existing.length > 0) {
-    existing.forEach(img => store.push({...img, file: null}));
-  }
-
-  const slots = store.length > 0
-    ? store.map((item, i) => renderSlot(n, i+1, item)).join('')
-    : renderSlot(n, 1, null);
-
-  return `
-    <div class="ep-img-panel-title">
-      Episode images — upload in order, set trigger lines, then Save all
-    </div>
-    <div id="img-slots-${n}">${slots}</div>
-    <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;align-items:center">
-      <button class="btn btn-regen" onclick="addImgSlot(${n})">+ Add image</button>
-      <button class="btn btn-approve" id="save-btn-${n}"
-        onclick="saveAllImages(${n},'${lang}')">💾 Save all</button>
-      <span id="save-status-${n}" style="font-size:11px;font-family:monospace;color:var(--muted)"></span>
-    </div>`;
-}
-
-function renderSlot(n, order, item) {
-  const hasFile  = item?.file != null;
-  const hasUrl   = item?.url != null;
-  const trigger  = item?.trigger || '';
-  const filename = item?.filename || '';
-  const imgSrc   = item?._localSrc || item?.url || '';
-  const isFirst  = order === 1;
-
-  return `
-  <div class="img-upload-row ${hasUrl||hasFile?'saved':''}" id="img-slot-${n}-${order}" data-order="${order}">
-    <div>
-      <div class="img-order-badge" id="badge-${n}-${order}">
-        Image ${order}${hasUrl?' <span class="img-saved-badge">✓</span>':''}
+// ── Images Ready: gallery + per-image regenerate + thumbnail + approve ──
+function buildImagesReview(ep, n) {
+  const imgs  = epImages(ep);
+  const thumb = ep.thumbnail_url || '';
+  const cards = imgs.map(img => `
+    <div class="img-upload-row saved" style="grid-template-columns:160px 1fr;align-items:start">
+      <div>
+        <div class="img-order-badge">Image ${img.order}</div>
+        <img class="img-thumb" src="${img.url}" alt="Image ${img.order}" style="cursor:pointer" onclick="window.open('${img.url}','_blank')">
       </div>
-      <label style="cursor:pointer" title="Click to select or change image">
-        ${imgSrc
-          ? `<img class="img-thumb" src="${imgSrc}" id="img-preview-${n}-${order}"
-               style="cursor:pointer" onclick="this.nextElementSibling.click()"/>`
-          : `<div class="img-thumb-placeholder" id="img-preview-${n}-${order}">🖼<br>
-               <span style="font-size:10px;color:var(--muted)">click to select</span></div>`}
-        <input type="file" accept="image/*" style="display:none"
-          onchange="selectImg(${n},${order},this)">
-      </label>
-    </div>
-    <div class="img-row-right">
-      <div class="img-trigger-label">
-        ${isFirst ? 'Trigger line — leave blank, plays from the very start'
-                  : 'Trigger line — first words of the paragraph where this image should appear'}
-      </div>
-      <input class="img-trigger-input" id="trigger-${n}-${order}"
-        value="${trigger.replace(/"/g,'&quot;')}"
-        placeholder="${isFirst ? 'Leave blank — plays from start of video'
-                                : 'e.g. Many of us when we hear the word...'}">
-      <div class="img-trigger-hint">
-        ${isFirst ? '↳ this image plays from the very beginning'
-                  : '↳ WhisperX finds this line in voice recording and switches image exactly then'}
-      </div>
-    </div>
-    <button class="img-del-btn" onclick="removeSlot(${n},${order})" title="Remove">✕</button>
-  </div>`;
-}
-
-function renderPreviewView(n, results) {
-  const rows = results.map((img, i) => `
-    <div style="display:grid;grid-template-columns:180px 1fr;gap:12px;background:var(--surface2);
-         border:1px solid var(--border2);border-radius:10px;overflow:hidden;margin-bottom:10px">
-      <img src="${img.url}" style="width:180px;height:101px;object-fit:cover;display:block"/>
-      <div style="padding:12px 14px">
-        <div style="font-family:monospace;font-size:10px;color:var(--muted);margin-bottom:6px">
-          IMAGE ${img.order}
-        </div>
-        <div style="font-size:13px;color:var(--text);margin-bottom:4px">
-          ${img.trigger
-            ? `<span style="color:var(--green)">↳</span> When spoken: "<strong>${img.trigger}</strong>"`
-            : `<span style="color:var(--muted2)">Plays from the very start of the video</span>`}
-        </div>
-        <div style="font-size:11px;color:var(--muted);font-family:monospace">${img.filename||''}</div>
+      <div class="img-row-right">
+        <div class="img-trigger-label">Trigger ${img.order===1?'(plays from start)':''}</div>
+        <div style="font-size:12px;color:var(--text)">${img.trigger ? '“'+escapeHtml(img.trigger)+'”' : '<span style="color:var(--muted2)">— from the very start —</span>'}</div>
+        ${img.display_text?`<div style="font-size:11px;color:var(--muted);margin-top:3px">📝 ${escapeHtml(img.display_text).slice(0,120)}</div>`:''}
+        <input class="img-trigger-input" style="margin-top:7px" id="regen-img-${n}-${img.order}" placeholder="Regenerate this image: describe the change...">
+        <button class="btn btn-regen" style="margin-top:6px" onclick="regenImage(${n},${img.order})">↺ Regenerate image ${img.order}</button>
       </div>
     </div>`).join('');
 
-  return `
-    <div style="font-family:monospace;font-size:10px;color:var(--muted2);text-transform:uppercase;
-         letter-spacing:.5px;margin-bottom:12px">Preview — ${results.length} images</div>
-    ${rows}
-    <div style="display:flex;gap:10px;margin-top:14px">
-      <button class="btn btn-approve" onclick="confirmImages(${n},'${lang}')">
-        ✓ Looks good — proceed to Generate Video
-      </button>
-      <button class="btn btn-regen" onclick="backToEdit(${n})">
-        ← Edit images
-      </button>
-    </div>`;
+  return `<div class="ep-img-panel">
+    <div class="ep-img-panel-title">${imgs.length} images generated — review, regenerate any, then approve</div>
+    ${cards || '<div style="color:var(--muted);font-size:12px">No images found in episode_images.</div>'}
+    <div style="height:1px;background:var(--border);margin:14px 0"></div>
+    <div class="ep-img-panel-title">Thumbnail</div>
+    ${thumb
+      ? `<img src="${thumb}" style="width:100%;max-width:420px;border-radius:8px;border:1px solid var(--border2)" alt="Thumbnail">`
+      : '<div style="color:var(--muted);font-size:12px">Thumbnail still generating, or not ready yet — try regenerate.</div>'}
+    <input class="img-trigger-input" style="margin-top:8px" id="thumb-hook-${n}" placeholder="Optional: override the hook text, then regenerate">
+    <button class="btn btn-regen" style="margin-top:6px" onclick="regenThumbnail(${n})">↺ Regenerate thumbnail</button>
+    <div style="height:1px;background:var(--border);margin:14px 0"></div>
+    <button class="btn btn-approve" onclick="quickSet(${n},'images_approved')">✓ Approve Images &amp; Thumbnail</button>
+  </div>`;
 }
 
-// ── Slot management ───────────────────────────────────────────
-let slotCounters = {};
-
-// Sync all trigger inputs from DOM → store before any re-render
-function syncTriggers(n) {
-  const store = getStore(n);
-  store.forEach(item => {
-    const el = document.getElementById(`trigger-${n}-${item.order}`);
-    if (el) item.trigger = el.value.trim();
-  });
+// ── Voice Approved: read-only verification of images+triggers+order ──
+function buildImagesVerify(ep, n) {
+  const imgs = epImages(ep);
+  const rows = imgs.map(img => `
+    <div style="display:grid;grid-template-columns:140px 1fr;gap:10px;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:8px 10px;margin-bottom:8px">
+      <img src="${img.url}" style="width:140px;height:79px;object-fit:cover;border-radius:6px">
+      <div>
+        <div style="font-family:monospace;font-size:10px;color:var(--muted)">IMAGE ${img.order}</div>
+        <div style="font-size:12px;color:var(--text)">${img.trigger?'🎯 “'+escapeHtml(img.trigger)+'”':'<span style="color:var(--muted2)">plays from the very start</span>'}</div>
+      </div>
+    </div>`).join('');
+  return `<div class="ep-img-panel">
+    <div class="ep-img-panel-title">Verify image order &amp; triggers, then generate the video</div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:10px">Auto-filled from the image step. CTC finds each trigger line in your voice recording and switches the image exactly then.</div>
+    ${rows || '<div style="color:var(--muted);font-size:12px">No images on this episode.</div>'}
+    <div style="display:flex;gap:8px;align-items:center;margin-top:6px;flex-wrap:wrap">
+      <button class="btn btn-gen" onclick="triggerVideo(${n},'${lang}')">🎬 Generate Video</button>
+      <button class="btn btn-regen" onclick="quickSet(${n},'images_ready')">↺ Back to image review</button>
+      ${ep.voice_url?`<a href="${ep.voice_url}" target="_blank" class="btn btn-listen">▶ Voice</a>`:''}
+    </div>
+  </div>`;
 }
 
-function addImgSlot(n) {
-  syncTriggers(n);  // save current trigger values before DOM changes
-  const store = getStore(n);
-  const order = store.length + 1;
-  store.push({order, file: null, url: null, trigger: '', filename: ''});
-  const container = document.getElementById(`img-slots-${n}`);
-  if (container) container.insertAdjacentHTML('beforeend', renderSlot(n, order, store[order-1]));
-}
-
-function removeSlot(n, order) {
-  syncTriggers(n);  // save current trigger values before re-render
-  const store = getStore(n);
-  const idx = store.findIndex(i => i.order === order);
-  if (idx >= 0) store.splice(idx, 1);
-  // Re-number remaining
-  store.forEach((item, i) => { item.order = i + 1; });
-  // Re-render slots — trigger values are now in store so they will persist
-  const container = document.getElementById(`img-slots-${n}`);
-  if (container) container.innerHTML = store.map((item,i) => renderSlot(n, i+1, item)).join('');
-}
-
-function selectImg(n, order, input) {
-  const file = input.files[0];
-  if (!file) return;
-  const store = getStore(n);
-  let item = store.find(i => i.order === order);
-  if (!item) { item = {order, file:null, url:null, trigger:'', filename:''}; store.push(item); }
-
-  item.file     = file;
-  item.filename = file.name;
-
-  // Show preview locally
-  const reader = new FileReader();
-  reader.onload = e => {
-    item._localSrc = e.target.result;
-    const slot = document.getElementById(`img-slot-${n}-${order}`);
-    if (!slot) return;
-    const previewEl = document.getElementById(`img-preview-${n}-${order}`);
-    if (previewEl) {
-      if (previewEl.tagName === 'IMG') {
-        previewEl.src = e.target.result;
-      } else {
-        // Replace placeholder div with img
-        previewEl.outerHTML = `<img class="img-thumb" src="${e.target.result}"
-          id="img-preview-${n}-${order}" style="cursor:pointer"
-          onclick="this.nextElementSibling.click()"/>`;
-      }
-    }
-    const badge = document.getElementById(`badge-${n}-${order}`);
-    if (badge) badge.innerHTML = `Image ${order} <span style="color:var(--orange)">● ready</span>`;
-    slot.classList.add('saved');
-  };
-  reader.readAsDataURL(file);
-}
-
-// ── Save all ──────────────────────────────────────────────────
-async function saveAllImages(n, language) {
-  const saveBtn    = document.getElementById(`save-btn-${n}`);
-  const saveStatus = document.getElementById(`save-status-${n}`);
-
-  // Sync ALL trigger lines from DOM to store before saving
-  syncTriggers(n);
-  const store = getStore(n);
-
-  const toSave = store.filter(i => i.file || i.url);
-  if (!toSave.length) { showToast('Add at least one image first','error'); return; }
-
-  if (saveBtn) { saveBtn.disabled=true; saveBtn.textContent='⏳ Saving...'; }
-  if (saveStatus) { saveStatus.textContent='Uploading...'; saveStatus.style.color='var(--orange)'; }
-
+// ── Combined generate (images + thumbnail) at script_approved ──
+async function generateImagesAndThumbnail(n, language=lang) {
+  const card = document.getElementById(`card-${n}`);
+  const btn  = card?.querySelector('.btn-gen');
+  if (btn) { btn.disabled=true; btn.textContent='⚙️ Triggering...'; }
   try {
-    const results = [];
-    for (const item of toSave) {
-      // Upload new file if selected
-      if (item.file) {
-        const ext  = item.file.name.split('.').pop().toLowerCase();
-        const path = `ep${String(n).padStart(3,'0')}/${language}/ep_img_${item.order}.${ext}`;
-        if (saveStatus) saveStatus.textContent = `Uploading image ${item.order}...`;
-        const resp = await fetch(`${SB_URL}/storage/v1/object/episode-images/${path}`, {
-          method:'POST',
-          headers:{'apikey':SB_KEY,'Authorization':`Bearer ${SB_KEY}`,
-                   'Content-Type':item.file.type||'image/jpeg','x-upsert':'true'},
-          body: item.file
-        });
-        if (!resp.ok) {
-          const err = await resp.text();
-          throw new Error(`Image ${item.order} upload failed (${resp.status}): ${err.slice(0,100)}`);
-        }
-        item.url      = `${SB_URL}/storage/v1/object/public/episode-images/${path}`;
-        item.file     = null;
-        item.filename = item.filename || path.split('/').pop();
-      }
-      if (item.url) {
-        results.push({order:item.order, url:item.url, trigger:item.trigger||'', filename:item.filename||''});
-      }
-    }
-
-    if (!results.length) throw new Error('No images uploaded successfully');
-
-    // Save to DB
-    const table = language === 'en' ? 'english_episodes' : 'tamil_episodes';
-    const dbResp = await fetch(`${SB_URL}/rest/v1/${table}?episode_number=eq.${n}`, {
-      method:'PATCH',
-      headers:{...H,'Prefer':'return=minimal'},
-      body: JSON.stringify({episode_images: results})
-    });
-    if (!dbResp.ok) {
-      const err = await dbResp.text();
-      throw new Error(`DB save failed (${dbResp.status}): ${err.slice(0,150)}`);
-    }
-
-    // Update local episodes array (no re-render)
-    const epIdx = episodes.findIndex(e => e.episode_number === n);
-    if (epIdx >= 0) episodes[epIdx].episode_images = results;
-
-    // Show preview — no page reload
-    showPreview(n, results);
-    showToast(`✅ ${results.length} images saved`, 'success');
-
+    const ri = await fetch(EDGE.images, {method:'POST', headers:H, body: JSON.stringify({episode_number:n, language})});
+    const di = await ri.json();
+    if (!di.success) throw new Error(di.error||'Image edge function error');
+    // thumbnail writes thumbnail_url only (no status) — fire and forget
+    try { await fetch(EDGE.thumbnail, {method:'POST', headers:H, body: JSON.stringify({episode_number:n, language})}); } catch(e){}
+    await patch(n, {status:'generating_images'});
+    showToast('Images + thumbnail generating — check Actions','success');
+    setTimeout(loadEpisodes, 1500);
   } catch(e) {
-    console.error('saveAllImages:', e);
-    showToast(`Save failed: ${e.message}`, 'error');
-    if (saveStatus) { saveStatus.textContent=`Error: ${e.message.slice(0,60)}`; saveStatus.style.color='var(--red)'; }
-    if (saveBtn) { saveBtn.disabled=false; saveBtn.textContent='💾 Save all'; }
+    showToast(`Error: ${e.message}`,'error');
+    if (btn) { btn.disabled=false; btn.textContent='🎨 Generate Images & Thumbnail'; }
   }
 }
 
-function showPreview(n, results) {
-  const view = document.getElementById(`img-view-${n}`);
-  if (!view) return;
-  view.innerHTML = renderPreviewView(n, results);
-  // Enable generate video button
-  const genBtn    = document.getElementById(`gen-btn-${n}`);
-  const genStatus = document.getElementById(`gen-status-${n}`);
-  if (genBtn)    genBtn.disabled = false;
-  if (genStatus) { genStatus.textContent=`${results.length} images saved — ready`; genStatus.style.color='var(--green)'; }
+async function regenImage(n, order) {
+  const note = (document.getElementById(`regen-img-${n}-${order}`)?.value || '').trim();
+  if (!note) { showToast('Describe what to change for this image','error'); return; }
+  try {
+    await patch(n, {regenerate_note:`image ${order}: ${note}`});
+    await fetch(EDGE.images, {method:'POST', headers:H, body: JSON.stringify({episode_number:n, language:lang})});
+    await patch(n, {status:'generating_images'});
+    showToast(`Regenerating image ${order}...`,'success');
+    setTimeout(loadEpisodes, 1500);
+  } catch(e){ showToast(`Error: ${e.message}`,'error'); }
 }
 
-function confirmImages(n, language) {
-  // User confirmed preview — just close preview, generate video button is already enabled
-  const view = document.getElementById(`img-view-${n}`);
-  const ep   = episodes.find(e => e.episode_number === n);
-  let saved  = ep?.episode_images || [];
-  if (typeof saved === 'string') { try { saved = JSON.parse(saved); } catch(e) { saved=[]; } }
-  if (view) view.innerHTML = `
-    <div style="font-family:monospace;font-size:11px;color:var(--green);padding:10px 0">
-      ✓ ${saved.length} images confirmed — click Generate Video below
-    </div>`;
+async function regenThumbnail(n) {
+  const hook = (document.getElementById(`thumb-hook-${n}`)?.value || '').trim();
+  try {
+    if (hook) await patch(n, {thumbnail_hook_text:hook});
+    await fetch(EDGE.thumbnail, {method:'POST', headers:H, body: JSON.stringify({episode_number:n, language:lang})});
+    showToast('Regenerating thumbnail — give it a minute, then refresh','success');
+  } catch(e){ showToast(`Error: ${e.message}`,'error'); }
 }
-
-function backToEdit(n) {
-  const view = document.getElementById(`img-view-${n}`);
-  const ep   = episodes.find(e => e.episode_number === n);
-  let saved  = ep?.episode_images || [];
-  if (typeof saved === 'string') { try { saved = JSON.parse(saved); } catch(e) { saved=[]; } }
-  // Reset store to saved state — trigger lines come from DB saved data
-  epImgStore[epImgKey(n)] = saved.map(img => ({...img, file:null}));
-  if (view) view.innerHTML = renderUploadView(n, saved);
-}
-
-function saveTriggerLine() {} // compatibility stub
-function autoSaveAllImages() {} // compatibility stub
-function replaceImg() {} // compatibility stub
-
-
 
 // ── Actions ────────────────────────────────────────────────
 async function triggerScript(n, language=lang) {
@@ -1121,17 +884,18 @@ function openImgMod(n) {
   if (!ep) return;
   imgModalEp = ep;
 
-  let images = ep.image_urls || [];
+  let images = ep.episode_images || [];
   if (typeof images === 'string') { try { images = JSON.parse(images); } catch(e) { images = []; } }
+  images = images.slice().sort((a,b)=>(a.order||0)-(b.order||0));
 
   const html = images.map(img => `
     <div class="img-item">
-      <img src="${img.url}" loading="lazy" alt="Scene ${img.id}"/>
-      <div class="img-label">Scene ${img.id} — ${img.label||''}</div>
-    </div>`).join('') || '<div style="color:var(--muted);text-align:center;padding:30px;font-family:var(--font-mono);font-size:13px">No images yet</div>';
+      <img src="${img.url}" loading="lazy" alt="Image ${img.order}"/>
+      <div class="img-label">Image ${img.order}${img.trigger?' — 🎯 '+escapeHtml(img.trigger).slice(0,40):' — from start'}</div>
+    </div>`).join('') || '<div style="color:var(--muted);text-align:center;padding:30px;font-family:monospace;font-size:13px">No images yet</div>';
 
   document.getElementById('img-mod-ep').textContent  = `Episode ${n} · ${lang.toUpperCase()}`;
-  document.getElementById('img-mod-sub').textContent = `${images.length} scenes generated`;
+  document.getElementById('img-mod-sub').textContent = `${images.length} images`;
   document.getElementById('img-grid').innerHTML      = html;
   document.getElementById('img-regen-box').classList.remove('open');
   document.getElementById('img-modal-overlay').classList.add('open');
