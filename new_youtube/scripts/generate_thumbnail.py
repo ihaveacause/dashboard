@@ -133,8 +133,10 @@ def make_hook_and_concept(script, title):
 
 Return ONLY JSON: {{"hook": "...", "visual": "..."}}
 
-"hook"   : a SHORT, curiosity-driving line in {LANG_NAME} (max ~8 words) that makes
-           someone want to click. Distinct from the title. Derived only from the script.
+"hook"   : a PUNCHY, scroll-stopping line in {LANG_NAME} (max ~7 words) that opens a
+           curiosity gap — a bold claim, a provocative question, or a "you won't believe"
+           twist that makes someone NEED to click. Avoid flat descriptions. Distinct from
+           the title. Derived only from the script's actual payoff.
 "visual" : one sentence (English) describing a single catchy image that sums up THIS
            episode — concrete subject and setting, drawn only from the script. No style.
 
@@ -172,7 +174,7 @@ def generate_thumbnail_illustration(title, hook, visual, anchor_img=None):
         f"Prominently render the title text «{title}» as the main headline, and below it "
         f"the smaller hook line «{hook}» as a subtitle — both in {LANG_NAME}, spelled "
         f"exactly as written, large, bold and clearly legible even at small sizes. "
-        f"Leave the TOP-LEFT and BOTTOM-RIGHT corners relatively uncluttered. "
+        f"Leave the BOTTOM-LEFT and BOTTOM-RIGHT corners relatively uncluttered. "
         f"Wide 16:9 composition, full-bleed, vibrant and attention-grabbing."
     )
     contents = [prompt] if (anchor_img is None) else [prompt, anchor_img]
@@ -216,7 +218,7 @@ def draw_ep_badge(canvas, episode_number):
     bbox = draw.textbbox((0, 0), label, font=font)
     tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
     bw, bh = tw + pad_x * 2, th + pad_y * 2
-    x, y = 28, 28
+    x, y = 28, H - bh - 28        # bottom-left: clear of the title (top) and logo (bottom-right)
     # drop shadow + dark rounded plate + gold text
     draw.rounded_rectangle([x+3, y+3, x+bw+3, y+bh+3], radius=14, fill=(0, 0, 0, 110))
     draw.rounded_rectangle([x, y, x+bw, y+bh], radius=14,
