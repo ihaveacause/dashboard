@@ -37,13 +37,15 @@ jobs:
           key: ${{ runner.os }}-pip-images-v2
 
       - name: Install dependencies
-        run: pip install requests google-genai google-auth
+        run: pip install requests google-genai google-auth Pillow anthropic cryptography
 
       - name: Generate images
         env:
           SUPABASE_URL:                        ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY:                        ${{ secrets.SUPABASE_KEY }}
           GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
+          ANTHROPIC_API_KEY:                   ${{ secrets.ANTHROPIC_API_KEY }}
+          GEMINI_API_KEY:                      ${{ secrets.GEMINI_API_KEY }}
           EPISODE_NUMBER:                      ${{ inputs.episode_number }}
           LANGUAGE:                            ${{ inputs.language }}
         run: python new_youtube/scripts/generate_images.py
