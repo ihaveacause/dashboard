@@ -55,7 +55,7 @@ LANGUAGE       = os.environ.get("LANGUAGE", "ta")
 
 GCS_BUCKET   = "ihaveacause-media"
 IMAGE_MODEL  = "gemini-3.1-flash-image"        # nano banana 2 (AI Studio)
-CLAUDE_MODEL = "claude-sonnet-4-20250514"
+CLAUDE_MODEL = "claude-sonnet-4-6"
 W, H         = 1280, 720                        # YouTube thumbnail (16:9)
 LOGO_SIZE    = 90
 SIGNED_URL_DAYS = 30
