@@ -33,7 +33,7 @@ Env vars:
   ANTHROPIC_API_KEY
   GEMINI_API_KEY
   GOOGLE_APPLICATION_CREDENTIALS_JSON
-  EPISODE_NUMBER, LANGUAGE   (ta | en)
+  IDEA_NUMBER, LANGUAGE   (ta | en)
 """
 
 import os
@@ -57,7 +57,7 @@ SUPABASE_KEY   = os.environ["SUPABASE_KEY"]
 GCP_CREDS_JSON = os.environ["GOOGLE_APPLICATION_CREDENTIALS_JSON"]
 GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
 ANTHROPIC_KEY  = os.environ["ANTHROPIC_API_KEY"]
-EPISODE_NUMBER = int(os.environ["EPISODE_NUMBER"])
+IDEA_NUMBER = int(os.environ["IDEA_NUMBER"])
 LANGUAGE       = os.environ.get("LANGUAGE", "ta")
 
 GCS_BUCKET = "ihaveacause-media"
@@ -78,10 +78,6 @@ LANG_NAME = {"ta": "Tamil", "en": "English"}.get(LANGUAGE, "Tamil")
 
 # ── Clients ───────────────────────────────────────────────────
 # ── Image model on Vertex AI (credit-covered) with AI Studio fallback ─────────
-# Nano Banana 2 (gemini-3.1-flash-image) runs on Vertex AI's GLOBAL endpoint
-# (us-central1 returns "model not found" for Gemini-3 image models). Routing here
-# instead of the AI Studio API key lets image spend draw on your Google Cloud
-# credits, exactly like your script generation already does.
 _img_creds_info = json.loads(GCP_CREDS_JSON)
 VERTEX_PROJECT  = _img_creds_info.get("project_id") or "gen-lang-client-0078128013"
 VERTEX_LOCATION = os.environ.get("VERTEX_LOCATION", "global")   # Gemini-3 image = global only
@@ -95,7 +91,6 @@ except Exception as _ve:
     image_client  = genai.Client(api_key=GEMINI_API_KEY)
     IMAGE_BACKEND = f"AI Studio (Vertex init failed: {_ve})"
 
-# Lazy AI Studio client, used only if a Vertex call fails mid-run (keeps images flowing)
 _ai_studio_client = None
 def _ai_studio_fallback():
     global _ai_studio_client
@@ -329,26 +324,26 @@ def slug(text, n=40):
     return s[:n].strip("_") or "scene"
 
 def gcs_path_for(order, trigger):
-    return f"episodes/{EPISODE_NUMBER:03d}/{LANGUAGE}/img_{order:02d}_{slug(trigger)}.jpg"
+    return f"ideas/{IDEA_NUMBER:03d}/{LANGUAGE}/img_{order:02d}_{slug(trigger)}.jpg"
 
 # ── Main ──────────────────────────────────────────────────────
 def main():
     print("=" * 60)
-    print(f"🎨 Image Studio — Episode {EPISODE_NUMBER} | {LANGUAGE.upper()}")
-    print(f"   Segment: Claude ({CLAUDE_MODEL})  |  Images: {IMAGE_MODEL} via {IMAGE_BACKEND}")
-    print(f"   Storage: gs://{GCS_BUCKET}/episodes/{EPISODE_NUMBER:03d}/{LANGUAGE}/")
+    print(f"🎨 Image Studio — Episode {IDEA_NUMBER} | {LANGUAGE.upper()}")
+    print(f"   Segment: Claude ({CLAUDE_MODEL})  |  Images: {IMAGE_MODEL} (AI Studio)")
+    print(f"   Storage: gs://{GCS_BUCKET}/episodes/{IDEA_NUMBER:03d}/{LANGUAGE}/")
     print(f"   {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("=" * 60)
 
-    table = "tamil_episodes" if LANGUAGE == "ta" else "english_episodes"
+    table = "tamil_ideas" if LANGUAGE == "ta" else "english_ideas"
 
-    meta = db_get("tamil_episodes", {"episode_number": f"eq.{EPISODE_NUMBER}", "select": "*"})
+    meta = db_get(table, {"episode_number": f"eq.{IDEA_NUMBER}", "select": "*"})
     meta = meta[0] if meta else {}
     if not meta:
-        print(f"❌ Episode {EPISODE_NUMBER} not found"); return
+        print(f"❌ Episode {IDEA_NUMBER} not found"); return
 
     if LANGUAGE == "en":
-        row = db_get("english_episodes", {"episode_number": f"eq.{EPISODE_NUMBER}", "select": "*"})
+        row = db_get("english_ideas", {"episode_number": f"eq.{IDEA_NUMBER}", "select": "*"})
         row = row[0] if row else {}
         script = row.get("script_english", "") or ""
     else:
@@ -373,9 +368,9 @@ def main():
         if m:
             regen_order = int(m.group(1)); regen_dir = m.group(2).strip()
             print(f"\n🔄 Regenerate image {regen_order}: {regen_dir}")
-        db_patch(table, EPISODE_NUMBER, {"regenerate_note": None})
+        db_patch(table, IDEA_NUMBER, {"regenerate_note": None})
 
-    db_patch(table, EPISODE_NUMBER, {"status": "generating_images"})
+    db_patch(table, IDEA_NUMBER, {"status": "generating_images"})
 
     try:
         # ── REGENERATE ──────────────────────────────────────────
@@ -415,7 +410,7 @@ def main():
                     if u2:
                         e.update({"url": u2, "filename": p2.split("/")[-1]})
                     time.sleep(GEN_SLEEP)
-                db_patch(table, EPISODE_NUMBER, {"episode_images": existing, "status": "images_ready"})
+                db_patch(table, IDEA_NUMBER, {"episode_images": existing, "status": "images_ready"})
                 print(f"\n✅ Whole episode re-styled from the new anchor")
                 return
 
@@ -425,7 +420,7 @@ def main():
             target = next((e for e in existing if e.get("order") == regen_order), None)
             if not target:
                 print(f"❌ Image {regen_order} not in existing set")
-                db_patch(table, EPISODE_NUMBER, {"status": "images_ready"}); return
+                db_patch(table, IDEA_NUMBER, {"status": "images_ready"}); return
             beat = {
                 "order":        regen_order,
                 "scene":        augmented_scene(target, regen_dir),
@@ -438,10 +433,10 @@ def main():
             url = upload_bytes_to_gcs(normalize_16x9(raw), path)
             if url:
                 target.update({"url": url, "filename": path.split("/")[-1]})
-                db_patch(table, EPISODE_NUMBER, {"episode_images": existing, "status": "images_ready"})
+                db_patch(table, IDEA_NUMBER, {"episode_images": existing, "status": "images_ready"})
                 print(f"\n✅ Image {regen_order} regenerated")
             else:
-                db_patch(table, EPISODE_NUMBER, {"status": "images_ready"})
+                db_patch(table, IDEA_NUMBER, {"status": "images_ready"})
             return
 
         # ── FULL GENERATION ────────────────────────────────────
@@ -479,21 +474,21 @@ def main():
 
         if not episode_images:
             print("❌ No images generated")
-            db_patch(table, EPISODE_NUMBER, {"status": "script_approved"}); return
+            db_patch(table, IDEA_NUMBER, {"status": "script_approved"}); return
 
         episode_images.sort(key=lambda x: x["order"])
-        db_patch(table, EPISODE_NUMBER, {
+        db_patch(table, IDEA_NUMBER, {
             "episode_images": episode_images,
             "status":         "images_ready",
         })
         print(f"\n{'='*60}")
-        print(f"✅ Episode {EPISODE_NUMBER} {LANGUAGE.upper()} — {len(episode_images)} images ready")
+        print(f"✅ Episode {IDEA_NUMBER} {LANGUAGE.upper()} — {len(episode_images)} images ready")
         print(f"{'='*60}")
 
     except Exception as e:
         import traceback
         print(f"\n❌ Error: {e}"); traceback.print_exc()
-        db_patch(table, EPISODE_NUMBER, {"status": "script_approved"})
+        db_patch(table, IDEA_NUMBER, {"status": "script_approved"})
 
 if __name__ == "__main__":
     main()

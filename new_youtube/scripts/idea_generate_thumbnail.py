@@ -27,7 +27,7 @@ Env vars:
   SUPABASE_URL, SUPABASE_KEY
   ANTHROPIC_API_KEY, GEMINI_API_KEY
   GOOGLE_APPLICATION_CREDENTIALS_JSON
-  EPISODE_NUMBER, LANGUAGE   (ta | en)
+  IDEA_NUMBER, LANGUAGE   (ta | en)
 """
 
 import os
@@ -50,7 +50,7 @@ SUPABASE_KEY   = os.environ["SUPABASE_KEY"]
 GCP_CREDS_JSON = os.environ["GOOGLE_APPLICATION_CREDENTIALS_JSON"]
 GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
 ANTHROPIC_KEY  = os.environ["ANTHROPIC_API_KEY"]
-EPISODE_NUMBER = int(os.environ["EPISODE_NUMBER"])
+IDEA_NUMBER = int(os.environ["IDEA_NUMBER"])
 LANGUAGE       = os.environ.get("LANGUAGE", "ta")
 
 GCS_BUCKET   = "ihaveacause-media"
@@ -64,7 +64,6 @@ THUMB_USE_ANCHOR = False   # keep thumbnails free/catchy; flip True to match vid
 LANG_NAME = {"ta": "Tamil", "en": "English"}.get(LANGUAGE, "Tamil")
 
 # ── Thumbnail illustration on Vertex AI (credit-covered) with AI Studio fallback ──
-# Same model as the image engine — Nano Banana 2 on Vertex's GLOBAL endpoint.
 _img_creds_info = json.loads(GCP_CREDS_JSON)
 VERTEX_PROJECT  = _img_creds_info.get("project_id") or "gen-lang-client-0078128013"
 VERTEX_LOCATION = os.environ.get("VERTEX_LOCATION", "global")
@@ -253,18 +252,18 @@ def draw_ep_badge(canvas, episode_number):
 # ── Main ──────────────────────────────────────────────────────
 def main():
     log("=" * 60)
-    log(f"🖼️  Studio Thumbnail — Episode {EPISODE_NUMBER} | {LANGUAGE.upper()}")
-    log(f"   Illustration: {IMAGE_MODEL} via {IMAGE_BACKEND} | Hook: Claude")
+    log(f"🖼️  Studio Thumbnail — Episode {IDEA_NUMBER} | {LANGUAGE.upper()}")
+    log(f"   Illustration: {IMAGE_MODEL} (AI Studio) | Hook: Claude")
     log("=" * 60)
 
-    table   = "tamil_episodes" if LANGUAGE == "ta" else "english_episodes"
-    meta    = db_get("tamil_episodes", {"episode_number": f"eq.{EPISODE_NUMBER}", "select": "*"})
+    table   = "tamil_ideas" if LANGUAGE == "ta" else "english_ideas"
+    meta    = db_get(table, {"episode_number": f"eq.{IDEA_NUMBER}", "select": "*"})
     meta    = meta[0] if meta else None
     if not meta:
-        log(f"❌ Episode {EPISODE_NUMBER} not found"); return
+        log(f"❌ Episode {IDEA_NUMBER} not found"); return
 
     if LANGUAGE == "en":
-        row = db_get("english_episodes", {"episode_number": f"eq.{EPISODE_NUMBER}", "select": "*"})
+        row = db_get("english_ideas", {"episode_number": f"eq.{IDEA_NUMBER}", "select": "*"})
         row = row[0] if row else {}
         script = row.get("script_english", "") or ""
         title  = row.get("title_english") or meta.get("title_english") or ""
@@ -308,8 +307,7 @@ def main():
         raw    = generate_thumbnail_illustration(title, hook, visual, anchor_img)
         canvas = normalize(raw)
 
-        # EP badge (consistent) + logo
-        canvas = draw_ep_badge(canvas, EPISODE_NUMBER)
+        # No EP badge for ideas — keep the thumbnail clean (title + hook + logo only)
         logo_data = gcs_download_path("ihaveacause_logo.png")
         if logo_data:
             logo = Image.open(io.BytesIO(logo_data)).convert("RGBA").resize((LOGO_SIZE, LOGO_SIZE), Image.LANCZOS)
@@ -322,15 +320,15 @@ def main():
         log(f"   ✅ Thumbnail composed ({len(out)//1024}KB)")
 
         lang_code = "ta" if LANGUAGE == "ta" else "en"
-        gcs_path  = f"episodes/{EPISODE_NUMBER:03d}/{lang_code}/thumbnail.jpg"
+        gcs_path  = f"ideas/{IDEA_NUMBER:03d}/{lang_code}/thumbnail.jpg"
         signed_url = gcs_upload_and_sign(out, gcs_path)
         if not signed_url:
             log("❌ Upload failed"); return
 
         # write thumbnail_url ONLY — do not touch the main status (image flow owns it)
-        db_patch(table, EPISODE_NUMBER, {"thumbnail_url": signed_url})
+        db_patch(table, IDEA_NUMBER, {"thumbnail_url": signed_url})
         log(f"\n{'='*60}")
-        log(f"✅ Episode {EPISODE_NUMBER} {LANGUAGE.upper()} — thumbnail ready")
+        log(f"✅ Episode {IDEA_NUMBER} {LANGUAGE.upper()} — thumbnail ready")
         log(f"{'='*60}")
 
     except Exception as e:

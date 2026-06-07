@@ -212,12 +212,14 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
   <nav class="l1-nav">
     <button class="l1-btn" id="l1-stats" onclick="setL1('stats')">Channel Stats</button>
     <button class="l1-btn active-series" id="l1-series" onclick="setL1('series')">Series</button>
+    <button class="l1-btn" id="l1-ideas" onclick="setL1('ideas')">💡 Ideas</button>
   </nav>
 </div>
 
 <!-- Platform bar -->
 <div class="platbar" id="platbar">
   <button class="ptab active" id="pt-yt">▶ YouTube Long</button>
+  <button class="ptab" id="add-idea-btn" style="display:none;margin-left:auto;color:var(--accent2)" onclick="openAddIdea()">➕ Add Idea</button>
 </div>
 
 <!-- Filter bar -->
@@ -307,6 +309,31 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
   </div>
 </div>
 
+<!-- Add Idea Modal -->
+<div class="modal-overlay" id="add-idea-overlay" onclick="closeAddIdea(event)">
+  <div class="modal" style="max-width:520px">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:18px 22px;border-bottom:1px solid var(--border)">
+      <div>
+        <div style="font-family:'Syne',sans-serif;font-size:16px;font-weight:700;color:var(--text)">💡 New Idea</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:2px">Created in Tamil and English. Gemini will craft the catchy title.</div>
+      </div>
+      <button class="modal-close" onclick="closeAddIdea()">✕</button>
+    </div>
+    <div style="padding:18px 22px">
+      <div class="img-trigger-label">Rough title (your working idea)</div>
+      <input class="img-trigger-input" id="ai-title" placeholder="e.g. Why silence matters">
+      <div class="img-trigger-label" style="margin-top:12px">Module / playlist — groups follow-up videos together</div>
+      <input class="img-trigger-input" id="ai-module" placeholder="e.g. Modern Life">
+      <div class="img-trigger-label" style="margin-top:12px">Description / context for Gemini (optional)</div>
+      <textarea class="regen-ta" id="ai-desc" placeholder="Any angle, sources, or direction you want Gemini to use..."></textarea>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-approve" onclick="addIdea()">✓ Create Idea</button>
+      <span class="modal-note" id="ai-note"></span>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -344,15 +371,37 @@ const STATUS_LABELS = {
   published:'Published'
 };
 
-const TABLE = () => lang === 'ta' ? 'tamil_episodes' : 'english_episodes';
+const TABLE = () => {
+  const base = lang === 'ta' ? 'tamil' : 'english';
+  return activeL1 === 'ideas' ? `${base}_ideas` : `${base}_episodes`;
+};
+
+// One router for triggering a pipeline step. Series → existing EDGE functions
+// (unchanged). Ideas → the single trigger-idea function with a step + idea_number.
+async function callEdge(step, n) {
+  if (activeL1 === 'ideas') {
+    return fetch(`${SB_URL}/functions/v1/trigger-idea`, {
+      method:'POST', headers:H,
+      body: JSON.stringify({ step, idea_number:n, language:lang })
+    });
+  }
+  const MAP = { script:EDGE.script, images:EDGE.images, video:EDGE.video, thumbnail:EDGE.thumbnail, upload:EDGE.yt };
+  return fetch(MAP[step], {
+    method:'POST', headers:H,
+    body: JSON.stringify({ episode_number:n, language:lang })
+  });
+}
 
 // ── Navigation ─────────────────────────────────────────────
 function setL1(tab) {
   activeL1 = tab;
   document.getElementById('l1-stats').className  = `l1-btn${tab==='stats'?' active-stats':''}`;
   document.getElementById('l1-series').className = `l1-btn${tab==='series'?' active-series':''}`;
+  document.getElementById('l1-ideas').className  = `l1-btn${tab==='ideas'?' active-series':''}`;
   document.getElementById('platbar').classList.toggle('hidden', tab==='stats');
   document.getElementById('filterbar').classList.toggle('hidden', tab==='stats');
+  const addBtn = document.getElementById('add-idea-btn');
+  if (addBtn) addBtn.style.display = (tab==='ideas') ? '' : 'none';
   load();
 }
 
@@ -433,21 +482,29 @@ function card(ep) {
   const n = ep.episode_number;
   const s = ep.status || 'pending';
   const isEn = lang === 'en';
-  const title = isEn ? (ep.title_english||ep.title_tamil) : (ep.title_tamil||ep.title_english);
-  const sub   = isEn ? '' : (ep.title_english||'');
+  const isIdea = activeL1 === 'ideas';
+  const catchy = isEn ? (ep.title_english||ep.title_tamil) : (ep.title_tamil||ep.title_english);
+  const title  = isIdea ? (catchy || ep.working_title || '(new idea)') : catchy;
+  let sub;
+  if (isIdea) {
+    sub = (ep.working_title && ep.working_title !== title) ? `rough: ${ep.working_title}` : '';
+  } else {
+    sub = isEn ? '' : (ep.title_english||'');
+  }
+  const badge = isIdea ? '💡' : `#${String(n).padStart(3,'0')}`;
   return `
   <div class="ep-card lang-${lang} ${s==='published'?'published':''}" id="card-${n}">
     <div class="ep-head">
-      <div class="ep-num">#${String(n).padStart(3,'0')}</div>
+      <div class="ep-num">${badge}</div>
       <div class="ep-body">
         <div class="ep-meta">
           <span class="ep-lang ${lang}">${lang==='ta'?'🇮🇳 Tamil':'🇬🇧 English'}</span>
-          ${ep.module?`<span class="mod-badge">${ep.module}</span>`:''}
+          ${ep.module?`<span class="mod-badge">${escapeHtml(ep.module)}</span>`:''}
           <span class="status-badge sb-${s}">${STATUS_LABELS[s]||s}</span>
         </div>
-        <div class="ep-title">${title||''}</div>
-        ${sub?`<div class="ep-sub">${sub}</div>`:''}
-        ${ep.bridge?`<div class="ep-bridge">↳ ${ep.bridge}</div>`:''}
+        <div class="ep-title">${escapeHtml(title||'')}</div>
+        ${sub?`<div class="ep-sub">${escapeHtml(sub)}</div>`:''}
+        ${(!isIdea && ep.bridge)?`<div class="ep-bridge">↳ ${ep.bridge}</div>`:''}
       </div>
     </div>
     ${buildActions(ep, s, n)}
@@ -466,11 +523,19 @@ function buildActions(ep, s, n) {
     return `<div class="ep-actions"><div class="wait-msg"><span class="spin">⚙️</span> ${STATUS_LABELS[s]} — check GitHub Actions</div></div>`;
 
   // ── Script ready ─────────────────────────────────────────
-  if (s === 'script_ready')
-    return `<div class="ep-actions">
+  if (s === 'script_ready') {
+    const titleEditor = (activeL1==='ideas') ? `
+      <div style="width:100%;margin-bottom:10px">
+        <div class="img-trigger-label" style="margin-bottom:4px">Catchy title from Gemini — edit if you like, then Save</div>
+        <input class="img-trigger-input" id="idea-title-${n}" value="${escapeHtml(lang==='ta'?(ep.title_tamil||''):(ep.title_english||''))}">
+        <button class="btn btn-regen" style="margin-top:6px" onclick="saveIdeaTitle(${n})">💾 Save title</button>
+      </div>` : '';
+    return `<div class="ep-actions" style="flex-wrap:wrap">
+      ${titleEditor}
       <button class="btn btn-review" onclick="openScriptMod(${n})">📄 Review Script</button>
       <button class="btn btn-approve" onclick="quickSet(${n},'script_approved')">✓ Approve</button>
     </div>`;
+  }
 
   // ── Script approved → Generate Images & Thumbnail ────────
   if (s === 'script_approved')
@@ -614,11 +679,11 @@ async function generateImagesAndThumbnail(n, language=lang) {
   const btn  = card?.querySelector('.btn-gen');
   if (btn) { btn.disabled=true; btn.textContent='⚙️ Triggering...'; }
   try {
-    const ri = await fetch(EDGE.images, {method:'POST', headers:H, body: JSON.stringify({episode_number:n, language})});
+    const ri = await callEdge('images', n);
     const di = await ri.json();
     if (!di.success) throw new Error(di.error||'Image edge function error');
     // thumbnail writes thumbnail_url only (no status) — fire and forget
-    try { await fetch(EDGE.thumbnail, {method:'POST', headers:H, body: JSON.stringify({episode_number:n, language})}); } catch(e){}
+    try { await callEdge('thumbnail', n); } catch(e){}
     await patch(n, {status:'generating_images'});
     showToast('Images + thumbnail generating — check Actions','success');
     setTimeout(loadEpisodes, 1500);
@@ -633,7 +698,7 @@ async function regenImage(n, order) {
   if (!note) { showToast('Describe what to change for this image','error'); return; }
   try {
     await patch(n, {regenerate_note:`image ${order}: ${note}`});
-    await fetch(EDGE.images, {method:'POST', headers:H, body: JSON.stringify({episode_number:n, language:lang})});
+    await callEdge('images', n);
     await patch(n, {status:'generating_images'});
     showToast(`Regenerating image ${order}...`,'success');
     setTimeout(loadEpisodes, 1500);
@@ -644,7 +709,7 @@ async function regenThumbnail(n) {
   const hook = (document.getElementById(`thumb-hook-${n}`)?.value || '').trim();
   try {
     if (hook) await patch(n, {thumbnail_hook_text:hook});
-    await fetch(EDGE.thumbnail, {method:'POST', headers:H, body: JSON.stringify({episode_number:n, language:lang})});
+    await callEdge('thumbnail', n);
     showToast('Regenerating thumbnail — give it a minute, then refresh','success');
   } catch(e){ showToast(`Error: ${e.message}`,'error'); }
 }
@@ -655,10 +720,7 @@ async function triggerScript(n, language=lang) {
   const btn  = card?.querySelector('.btn-gen');
   if (btn) { btn.disabled=true; btn.textContent='⚙️ Triggering...'; }
   try {
-    const r = await fetch(EDGE.script, {
-      method:'POST', headers:H,
-      body: JSON.stringify({episode_number:n, language})
-    });
+    const r = await callEdge('script', n);
     const d = await r.json();
     if (d.success) {
       await patch(n, {status:'generating'});
@@ -673,10 +735,7 @@ async function triggerScript(n, language=lang) {
 
 async function triggerImages(n, language=lang) {
   try {
-    const r = await fetch(EDGE.images, {
-      method:'POST', headers:H,
-      body: JSON.stringify({episode_number:n, language})
-    });
+    const r = await callEdge('images', n);
     const d = await r.json();
     if (d.success) {
       await patch(n, {status:'generating_images'});
@@ -688,10 +747,7 @@ async function triggerImages(n, language=lang) {
 
 async function triggerVideo(n, language=lang) {
   try {
-    const r = await fetch(EDGE.video, {
-      method:'POST', headers:H,
-      body: JSON.stringify({episode_number:n, language})
-    });
+    const r = await callEdge('video', n);
     const d = await r.json();
     if (d.success) {
       await patch(n, {status:'generating_video'});
@@ -733,11 +789,7 @@ function showHookUpload(n) {
 
 async function triggerThumbnail(n) {
   try {
-    const epLang = document.querySelector(`#card-${n}`)?.classList.contains('lang-en') ? 'en' : 'ta';
-    const r = await fetch(EDGE.thumbnail, {
-      method:'POST', headers:H,
-      body: JSON.stringify({episode_number:n, language:epLang})
-    });
+    const r = await callEdge('thumbnail', n);
     const d = await r.json();
     if (d.success) {
       await patch(n, {status:'generating_thumbnail'});
@@ -749,10 +801,7 @@ async function triggerThumbnail(n) {
 
 async function triggerYouTube(n) {
   try {
-    const r = await fetch(EDGE.yt, {
-      method:'POST', headers:H,
-      body: JSON.stringify({episode_number:n, language:lang})
-    });
+    const r = await callEdge('upload', n);
     const d = await r.json();
     if (d.success) {
       showToast(`YouTube upload triggered`,'success');
@@ -971,6 +1020,59 @@ function renderStats(ta, en) {
     <div class="pb-bar"><div class="pb-fill" style="width:${Math.round(pub_ta/total*100)}%"></div></div>
     <div class="pb-labels"><span>0</span><span>50</span><span>100</span><span>150</span><span>200</span></div>
   </div>`;
+}
+
+// ── Add Idea ───────────────────────────────────────────────
+function openAddIdea() {
+  ['ai-title','ai-module','ai-desc'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('ai-note').textContent = '';
+  document.getElementById('add-idea-overlay').classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+function closeAddIdea(event) {
+  if (event && event.target !== document.getElementById('add-idea-overlay')) return;
+  document.getElementById('add-idea-overlay').classList.remove('open');
+  document.body.style.overflow = '';
+}
+async function nextIdeaNumber() {
+  const q = async (t) => {
+    const r = await fetch(`${SB_URL}/rest/v1/${t}?select=episode_number&order=episode_number.desc&limit=1`, {headers:H});
+    const d = await r.json();
+    return (Array.isArray(d) && d[0] && d[0].episode_number) ? d[0].episode_number : 0;
+  };
+  const [a, b] = await Promise.all([q('tamil_ideas'), q('english_ideas')]);
+  return Math.max(a, b) + 1;
+}
+async function addIdea() {
+  const title  = document.getElementById('ai-title').value.trim();
+  const module = document.getElementById('ai-module').value.trim();
+  const desc   = document.getElementById('ai-desc').value.trim();
+  const note   = document.getElementById('ai-note');
+  if (!title)  { note.textContent = 'Please enter a rough title'; return; }
+  if (!module) { note.textContent = 'Please enter a module (it sets the playlist)'; return; }
+  note.textContent = 'Creating...';
+  try {
+    const n = await nextIdeaNumber();
+    const row = { episode_number:n, working_title:title, module:module, description:desc, status:'pending' };
+    for (const t of ['tamil_ideas','english_ideas']) {
+      const r = await fetch(`${SB_URL}/rest/v1/${t}`, {
+        method:'POST', headers:{...H,'Prefer':'return=minimal'}, body: JSON.stringify(row)
+      });
+      if (!r.ok) throw new Error(`${t} insert ${r.status}: ${await r.text()}`);
+    }
+    closeAddIdea();
+    showToast('Idea created in Tamil & English','success');
+    if (activeL1 !== 'ideas') setL1('ideas'); else loadEpisodes();
+  } catch(e) {
+    note.textContent = `Error: ${e.message}`;
+  }
+}
+async function saveIdeaTitle(n) {
+  const v = (document.getElementById(`idea-title-${n}`)?.value || '').trim();
+  if (!v) { showToast('Title cannot be empty','error'); return; }
+  const col = lang === 'ta' ? 'title_tamil' : 'title_english';
+  try { await patch(n, {[col]: v}); showToast('Title saved','success'); loadEpisodes(); }
+  catch(e){ showToast(`Error: ${e.message}`,'error'); }
 }
 
 // ── Supabase patch ─────────────────────────────────────────
