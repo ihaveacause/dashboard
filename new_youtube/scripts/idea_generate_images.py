@@ -168,13 +168,17 @@ def download_image(url):
 # ── Claude segmentation: script → 8-12 beats (content only from script) ──
 def parse_json(raw):
     raw = raw.strip().replace("```json", "").replace("```", "").strip()
-    try:
-        return json.loads(raw)
-    except json.JSONDecodeError:
-        m = re.search(r"\[[\s\S]*\]", raw)
-        if m:
-            return json.loads(m.group())
-        raise ValueError("No valid JSON array in Claude response")
+    m = re.search(r"\[[\s\S]*\]", raw)
+    candidate = m.group() if m else raw
+    for attempt in (candidate, raw):
+        try:
+            return json.loads(attempt)
+        except json.JSONDecodeError:
+            pass
+    # light repair: drop trailing commas, neutralize raw control chars (stray newlines/tabs)
+    repaired = re.sub(r",\s*([\]}])", r"\1", candidate)
+    repaired = re.sub(r"[\x00-\x1f]+", " ", repaired)
+    return json.loads(repaired)
 
 def segment_script(script, episode):
     print(f"\n📝 Claude segmenting script into {MIN_BEATS}-{MAX_BEATS} beats ({LANG_NAME})...")
@@ -210,13 +214,28 @@ SCRIPT:
 
 Return ONLY a JSON array of beat objects. No prose, no markdown."""
 
-    msg = claude_client.messages.create(
-        model=CLAUDE_MODEL, max_tokens=8000,
-        messages=[{"role": "user", "content": prompt}],
-    )
-    beats = parse_json(msg.content[0].text)
-    if not isinstance(beats, list) or not beats:
-        raise ValueError("Segmentation returned no beats")
+    beats = None
+    last_err = None
+    for _attempt in range(3):
+        _extra = "" if _attempt == 0 else (
+            "\n\nIMPORTANT: your previous reply was NOT valid JSON. Return ONLY a valid "
+            "JSON array. Escape every double-quote inside a string value as \\\", and put "
+            "no raw line breaks inside any string value.")
+        msg = claude_client.messages.create(
+            model=CLAUDE_MODEL, max_tokens=8000,
+            messages=[{"role": "user", "content": prompt + _extra}],
+        )
+        try:
+            beats = parse_json(msg.content[0].text)
+            if not isinstance(beats, list) or not beats:
+                raise ValueError("Segmentation returned no beats")
+            break
+        except Exception as _e:
+            last_err = _e
+            beats = None
+            print(f"   ⚠️  Segmentation JSON invalid (attempt {_attempt+1}/3): {_e} — retrying...")
+    if not beats:
+        raise ValueError(f"Segmentation failed after 3 attempts: {last_err}")
 
     beats = beats[:MAX_BEATS]
     cleaned = []
