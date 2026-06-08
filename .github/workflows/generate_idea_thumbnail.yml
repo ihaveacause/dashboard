@@ -1,4 +1,4 @@
-name: [IDEA] Generate Video (New YouTube)
+name: [IDEA] Generate Thumbnail (New YouTube)
 on:
   workflow_dispatch:
     inputs:
@@ -15,42 +15,29 @@ on:
           - ta
           - en
 jobs:
-  generate-video:
+  generate-thumbnail:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Cache pip packages
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-ctc-v1
-          restore-keys: |
-            ${{ runner.os }}-pip-ctc-
-      - name: Cache CTC model
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ctc_model
-          key: ctc-aligner-model-v1
       - name: Install system dependencies
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y ffmpeg fonts-noto fonts-noto-cjk || true
-          ffmpeg -version | head -1
+          sudo apt-get install -y fonts-noto fonts-noto-cjk libcairo2-dev pkg-config python3-dev || true
       - name: Install Python dependencies
         run: |
-          pip install ctc-forced-aligner
-          pip install onnxruntime numpy librosa soundfile unidecode
-          pip install google-auth cryptography Pillow requests
-      - name: Generate video
+          pip install requests Pillow google-auth cryptography google-genai anthropic
+      - name: Generate thumbnail
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           IDEA_NUMBER: ${{ inputs.idea_number }}
           LANGUAGE: ${{ inputs.language }}
           PYTHONUNBUFFERED: "1"
-        run: python new_youtube/scripts/idea_generate_video.py
+        run: python new_youtube/scripts/idea_generate_thumbnail.py

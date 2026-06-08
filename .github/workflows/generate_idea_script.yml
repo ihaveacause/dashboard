@@ -1,4 +1,4 @@
-name: [IDEA] Generate Images (New YouTube)
+name: [IDEA] Generate Script (New YouTube)
 
 on:
   workflow_dispatch:
@@ -17,9 +17,9 @@ on:
           - en
 
 jobs:
-  generate-images:
+  generate-script:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 30
 
     steps:
       - name: Checkout repo
@@ -34,21 +34,19 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-images-v2
+          key: ${{ runner.os }}-pip-script-v2
 
       - name: Install dependencies
-        run: pip install requests google-genai google-auth Pillow anthropic cryptography
+        run: pip install requests google-genai google-auth
 
-      - name: Generate images
+      - name: Generate script
         env:
           SUPABASE_URL:                        ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY:                        ${{ secrets.SUPABASE_KEY }}
           GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
-          ANTHROPIC_API_KEY:                   ${{ secrets.ANTHROPIC_API_KEY }}
-          GEMINI_API_KEY:                      ${{ secrets.GEMINI_API_KEY }}
           IDEA_NUMBER:                      ${{ inputs.idea_number }}
           LANGUAGE:                            ${{ inputs.language }}
-        run: python new_youtube/scripts/idea_generate_images.py
+        run: python new_youtube/scripts/idea_generate_script.py
 
       - name: Summary
-        run: echo "✅ Images done — Episode ${{ inputs.idea_number }} (${{ inputs.language }})"
+        run: echo "✅ Script done — Episode ${{ inputs.idea_number }} (${{ inputs.language }})"

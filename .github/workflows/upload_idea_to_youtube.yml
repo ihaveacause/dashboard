@@ -1,57 +1,127 @@
-name: Upload Idea to YouTube
+name: [IDEA] Upload to YouTube
 
 on:
   workflow_dispatch:
     inputs:
-      idea_id:
-        description: 'Supabase idea UUID'
+      idea_number:
+        description: "Episode number"
         required: true
-        type: string
       language:
-        description: 'Language: ta (Tamil) or en (English)'
+        description: "ta or en"
         required: true
-        default: 'ta'
+        default: "ta"
         type: choice
         options:
           - ta
           - en
 
 jobs:
-  upload-idea-youtube:
+  upload:
     runs-on: ubuntu-latest
     timeout-minutes: 60
 
     steps:
+      # ── Checkout ──────────────────────────────────────────────────────────
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Setup Python 3.11
+      # ── Python ────────────────────────────────────────────────────────────
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: "3.11"
 
-      - name: Install Tamil fonts
-        run: sudo apt-get install -y fonts-noto-tamil
+      # ── System deps (fonts + cairosvg) ────────────────────────────────────
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y \
+            libcairo2-dev \
+            fonts-noto \
+            fonts-noto-cjk \
+            fonts-noto-color-emoji \
+            pkg-config \
+            python3-dev
 
-      - name: Cache pip packages
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-idea-yt-${{ hashFiles('**/upload_idea_to_youtube.yml') }}
-          restore-keys: ${{ runner.os }}-pip-idea-yt-
-
+      # ── Python deps ───────────────────────────────────────────────────────
       - name: Install Python dependencies
         run: |
-          pip install requests google-auth google-api-python-client
+          pip install --upgrade pip
+          pip install \
+            pillow \
+            cairosvg \
+            google-api-python-client \
+            google-auth-httplib2 \
+            google-auth-oauthlib \
+            supabase
 
-      - name: Upload idea to YouTube
+      # ── Write credentials to temp files ───────────────────────────────────
+      - name: Write credential files
+        run: |
+          echo '${{ secrets.YOUTUBE_CLIENT_SECRET_JSON }}' > /tmp/client_secret.json
+          echo '${{ secrets.YOUTUBE_TOKEN_JSON }}'         > /tmp/yt_token.json
+
+      # ── Download video from Supabase Storage ──────────────────────────────
+      - name: Download video file
         env:
-          SUPABASE_URL:    ${{ secrets.SUPABASE_URL }}
-          SUPABASE_KEY:    ${{ secrets.SUPABASE_KEY }}
-          YOUTUBE_OAUTH_JSON: ${{ secrets.YOUTUBE_OAUTH_JSON }}
-          IDEA_ID:         ${{ inputs.idea_id }}
-          LANGUAGE:        ${{ inputs.language }}
-        run: python scripts/upload_idea_to_youtube.py
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          IDEA_NUMBER: ${{ github.event.inputs.idea_number }}
+          LANGUAGE: ${{ github.event.inputs.language }}
+        run: |
+          python - <<'EOF'
+          import os, urllib.request
+          from supabase import create_client
+          sb = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_SERVICE_ROLE_KEY"])
+          table = "tamil_ideas" if os.environ["LANGUAGE"] in ("ta","tamil") else "english_ideas"
+          ep = sb.table(table).select("video_url").eq("episode_number", int(os.environ["IDEA_NUMBER"])).single().execute().data
+          video_url = ep["video_url"]
+          print(f"Downloading video: {video_url}")
+          urllib.request.urlretrieve(video_url, "/tmp/episode.mp4")
+          print("✅ Video downloaded")
+          EOF
 
+      # ── Download the APPROVED thumbnail (no regeneration) ─────────────────
+      - name: Download approved thumbnail
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          IDEA_NUMBER: ${{ github.event.inputs.idea_number }}
+          LANGUAGE: ${{ github.event.inputs.language }}
+        run: |
+          python - <<'EOF'
+          import os, urllib.request
+          from supabase import create_client
+          sb = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_SERVICE_ROLE_KEY"])
+          table = "tamil_ideas" if os.environ["LANGUAGE"] in ("ta","tamil") else "english_ideas"
+          ep = sb.table(table).select("thumbnail_url").eq("episode_number", int(os.environ["IDEA_NUMBER"])).single().execute().data
+          url = ep.get("thumbnail_url")
+          if not url:
+              raise Exception("No approved thumbnail_url on this episode — generate/approve the thumbnail first")
+          print(f"Downloading approved thumbnail: {url[:90]}...")
+          urllib.request.urlretrieve(url, "/tmp/thumbnail.jpg")
+          print("✅ Approved thumbnail downloaded (no regeneration)")
+          EOF
+
+      # ── Upload to YouTube ──────────────────────────────────────────────────
+      - name: Upload to YouTube
+        env:
+          SUPABASE_URL:             ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          YOUTUBE_CHANNEL_ID:       ${{ secrets.YOUTUBE_CHANNEL_ID }}
+          YOUTUBE_TOKEN_JSON:       ${{ secrets.YOUTUBE_TOKEN_JSON }}
+          GH_YOUTUBE_TOKEN:         ${{ secrets.GH_YOUTUBE_TOKEN }}
+        run: |
+          python scripts/idea_upload_to_youtube.py \
+            --episode_number    "${{ github.event.inputs.idea_number }}" \
+            --language          "${{ github.event.inputs.language }}" \
+            --video_path        "/tmp/episode.mp4" \
+            --thumbnail_path    "/tmp/thumbnail.jpg" \
+            --client_secret_json "/tmp/client_secret.json" \
+            --token_json         "/tmp/yt_token.json"
+
+      # ── Done ──────────────────────────────────────────────────────────────
       - name: Summary
-        run: echo "✅ Idea ${{ inputs.idea_id }} — uploaded to YouTube (${{ inputs.language }})"
+        run: |
+          echo "✅ Episode ${{ github.event.inputs.idea_number }} uploaded to YouTube"
+          echo "Language: ${{ github.event.inputs.language }}"
