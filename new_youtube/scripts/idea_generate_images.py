@@ -330,8 +330,8 @@ def gcs_path_for(order, trigger):
 def main():
     print("=" * 60)
     print(f"🎨 Image Studio — Episode {IDEA_NUMBER} | {LANGUAGE.upper()}")
-    print(f"   Segment: Claude ({CLAUDE_MODEL})  |  Images: {IMAGE_MODEL} (AI Studio)")
-    print(f"   Storage: gs://{GCS_BUCKET}/episodes/{IDEA_NUMBER:03d}/{LANGUAGE}/")
+    print(f"   Segment: Claude ({CLAUDE_MODEL})  |  Images: {IMAGE_MODEL} via {IMAGE_BACKEND}")
+    print(f"   Storage: gs://{GCS_BUCKET}/ideas/{IDEA_NUMBER:03d}/{LANGUAGE}/")
     print(f"   {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("=" * 60)
 

@@ -253,7 +253,7 @@ def draw_ep_badge(canvas, episode_number):
 def main():
     log("=" * 60)
     log(f"🖼️  Studio Thumbnail — Episode {IDEA_NUMBER} | {LANGUAGE.upper()}")
-    log(f"   Illustration: {IMAGE_MODEL} (AI Studio) | Hook: Claude")
+    log(f"   Illustration: {IMAGE_MODEL} via {IMAGE_BACKEND} | Hook: Claude")
     log("=" * 60)
 
     table   = "tamil_ideas" if LANGUAGE == "ta" else "english_ideas"
