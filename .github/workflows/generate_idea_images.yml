@@ -1,4 +1,4 @@
-name: [IDEA] Generate Images (New YouTube)
+name: "[IDEA] Generate Images (New YouTube)"
 
 on:
   workflow_dispatch:

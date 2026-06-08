@@ -1,4 +1,4 @@
-name: [IDEA] Generate Thumbnail (New YouTube)
+name: "[IDEA] Generate Thumbnail (New YouTube)"
 on:
   workflow_dispatch:
     inputs:

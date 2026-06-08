@@ -1,4 +1,4 @@
-name: [IDEA] Upload to YouTube
+name: "[IDEA] Upload to YouTube"
 
 on:
   workflow_dispatch:
