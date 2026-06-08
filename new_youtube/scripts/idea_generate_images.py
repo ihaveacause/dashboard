@@ -289,11 +289,21 @@ def extract_image_bytes(response):
 
 def generate_one_image(prompt_text, ref_image=None):
     contents = [prompt_text] if ref_image is None else [prompt_text, ref_image]
-    try:
-        resp = image_client.models.generate_content(model=IMAGE_MODEL, contents=contents)
-    except Exception as _e:
-        print(f"   ⚠️  Vertex image call failed ({_e}); falling back to AI Studio for this image")
-        resp = _ai_studio_fallback().models.generate_content(model=IMAGE_MODEL, contents=contents)
+    resp = None
+    _delay = 12
+    for _attempt in range(5):
+        try:
+            resp = image_client.models.generate_content(model=IMAGE_MODEL, contents=contents)
+            break
+        except Exception as _e:
+            _m = str(_e)
+            if ("429" in _m or "RESOURCE_EXHAUSTED" in _m) and _attempt < 4:
+                print(f"   ⏳ Vertex busy (429) — waiting {_delay}s then retrying ({_attempt+1}/4)...")
+                time.sleep(_delay); _delay = min(_delay * 2, 90)
+                continue
+            print(f"   ⚠️  Vertex image failed ({_m[:120]}); trying AI Studio once...")
+            resp = _ai_studio_fallback().models.generate_content(model=IMAGE_MODEL, contents=contents)
+            break
     img = extract_image_bytes(resp)
     if not img:
         raise RuntimeError("Model returned no image data")
