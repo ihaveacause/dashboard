@@ -567,12 +567,19 @@ def main():
         intro_path = os.path.join(tmpdir, "intro.png"); outro_path = os.path.join(tmpdir, "outro.png")
         download_file(episode.get("intro_image_url") or storage_url("channel-assets","default_intro.png"), intro_path, "Intro")
         download_file(episode.get("outro_image_url") or storage_url("channel-assets","default_outro.png"), outro_path, "Outro")
-        photo_file = "photo_tamil.jpg" if LANGUAGE=="ta" else "photo_english.jpg"
-        photo_raw  = os.path.join(tmpdir, "narrator.jpg"); photo_circle = os.path.join(tmpdir, "narrator_circle.png")
+        # Idea pipeline: OPTIONAL per-idea narrator photo, chosen at voice-upload time.
+        # Each language has its own row (tamil_ideas / english_ideas), so the Tamil
+        # video can show your wife's photo, the English one yours, or neither — fully
+        # dynamic. If no photo was uploaded for this idea/language, none is composited.
+        # Episodes are unaffected (their narrator photo lives in generate_video.py).
         photo_final = None
-        if download_file(storage_url("channel-assets", photo_file), photo_raw, f"Narrator"):
-            make_circle_photo(photo_raw, photo_circle, PHOTO_SIZE)
-            photo_final = photo_circle if os.path.exists(photo_circle) else photo_raw
+        narrator_photo_url = episode.get("narrator_photo_url")
+        if narrator_photo_url:
+            photo_raw    = os.path.join(tmpdir, "narrator.jpg")
+            photo_circle = os.path.join(tmpdir, "narrator_circle.png")
+            if download_file(narrator_photo_url, photo_raw, "Narrator"):
+                make_circle_photo(photo_raw, photo_circle, PHOTO_SIZE)
+                photo_final = photo_circle if os.path.exists(photo_circle) else photo_raw
         logo_path = os.path.join(tmpdir, "logo.png"); logo_final = None
         try:
             from google.oauth2 import service_account
