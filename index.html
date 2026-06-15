@@ -642,7 +642,9 @@ function buildImagesReview(ep, n) {
         <div class="img-trigger-label">Trigger ${img.order===1?'(plays from start)':''}</div>
         <div style="font-size:12px;color:var(--text)">${img.trigger ? '“'+escapeHtml(img.trigger)+'”' : '<span style="color:var(--muted2)">— from the very start —</span>'}</div>
         ${img.display_text?`<div style="font-size:11px;color:var(--muted);margin-top:3px">📝 ${escapeHtml(img.display_text).slice(0,120)}</div>`:''}
-        <input class="img-trigger-input" style="margin-top:7px" id="regen-img-${n}-${img.order}" placeholder="Regenerate this image: describe the change...">
+        <input class="img-trigger-input" style="margin-top:7px" id="regen-img-${n}-${img.order}" placeholder="Regenerate this image: describe the change (optional if you upload a reference)...">
+        <input type="file" accept="image/*" id="regen-ref-${n}-${img.order}" style="margin-top:7px;display:block;font-size:11px;color:var(--muted)">
+        <div style="font-size:10px;color:var(--muted2);margin-top:3px">${img.order===1?'📌 Reference on Image 1 restyles the WHOLE episode to match it.':'Reference restyles just this image.'}</div>
         <button class="btn btn-regen" style="margin-top:6px" onclick="regenImage(${n},${img.order})">↺ Regenerate image ${img.order}</button>
       </div>
     </div>`).join('');
@@ -656,6 +658,8 @@ function buildImagesReview(ep, n) {
       ? `<img src="${thumb}" style="width:100%;max-width:420px;border-radius:8px;border:1px solid var(--border2)" alt="Thumbnail">`
       : '<div style="color:var(--muted);font-size:12px">Thumbnail still generating, or not ready yet — try regenerate.</div>'}
     <input class="img-trigger-input" style="margin-top:8px" id="thumb-hook-${n}" placeholder="Optional: override the hook text, then regenerate">
+    <input type="file" accept="image/*" id="thumb-ref-${n}" style="margin-top:7px;display:block;font-size:11px;color:var(--muted)">
+    <div style="font-size:10px;color:var(--muted2);margin-top:3px">Optional: upload a reference image to set the thumbnail's style.</div>
     <button class="btn btn-regen" style="margin-top:6px" onclick="regenThumbnail(${n})">↺ Regenerate thumbnail</button>
     <div style="height:1px;background:var(--border);margin:14px 0"></div>
     <button class="btn btn-approve" onclick="quickSet(${n},'images_approved')">✓ Approve Images &amp; Thumbnail</button>
@@ -707,22 +711,55 @@ async function generateImagesAndThumbnail(n, language=lang) {
 
 async function regenImage(n, order) {
   const note = (document.getElementById(`regen-img-${n}-${order}`)?.value || '').trim();
-  if (!note) { showToast('Describe what to change for this image','error'); return; }
+  const refFile = document.getElementById(`regen-ref-${n}-${order}`)?.files?.[0] || null;
+  if (!note && !refFile) { showToast('Describe a change or upload a reference image','error'); return; }
   try {
-    await patch(n, {regenerate_note:`image ${order}: ${note}`});
+    let refUrl = null;
+    if (refFile) {
+      showToast('Uploading reference image...','success');
+      const ext    = (refFile.name.split('.').pop() || 'jpg');
+      const epLang = document.querySelector(`#card-${n}`)?.classList.contains('lang-en') ? 'en' : 'ta';
+      const path   = `ep${String(n).padStart(3,'0')}/${epLang}/regen_ref_${order}_${Date.now()}.${ext}`;
+      const r = await fetch(`${SB_URL}/storage/v1/object/episode-images/${path}`, {
+        method:'POST',
+        headers:{'apikey':SB_KEY,'Authorization':`Bearer ${SB_KEY}`,'Content-Type':refFile.type||'image/jpeg','x-upsert':'true'},
+        body:refFile
+      });
+      if (!r.ok) throw new Error(`Reference upload failed ${r.status}`);
+      refUrl = `${SB_URL}/storage/v1/object/public/episode-images/${path}`;
+    }
+    await patch(n, {regenerate_note:`image ${order}: ${note}`, ...(refUrl ? {regenerate_ref_url: refUrl} : {})});
     await callEdge('images', n);
     await patch(n, {status:'generating_images'});
-    showToast(`Regenerating image ${order}...`,'success');
+    showToast(order===1 && refFile ? 'Restyling whole episode from your reference...' : `Regenerating image ${order}...`,'success');
     setTimeout(loadEpisodes, 1500);
   } catch(e){ showToast(`Error: ${e.message}`,'error'); }
 }
 
 async function regenThumbnail(n) {
   const hook = (document.getElementById(`thumb-hook-${n}`)?.value || '').trim();
+  const refFile = document.getElementById(`thumb-ref-${n}`)?.files?.[0] || null;
   try {
-    if (hook) await patch(n, {thumbnail_hook_text:hook});
+    let refUrl = null;
+    if (refFile) {
+      showToast('Uploading reference image...','success');
+      const ext    = (refFile.name.split('.').pop() || 'jpg');
+      const epLang = document.querySelector(`#card-${n}`)?.classList.contains('lang-en') ? 'en' : 'ta';
+      const path   = `ep${String(n).padStart(3,'0')}/${epLang}/thumb_ref_${Date.now()}.${ext}`;
+      const r = await fetch(`${SB_URL}/storage/v1/object/episode-images/${path}`, {
+        method:'POST',
+        headers:{'apikey':SB_KEY,'Authorization':`Bearer ${SB_KEY}`,'Content-Type':refFile.type||'image/jpeg','x-upsert':'true'},
+        body:refFile
+      });
+      if (!r.ok) throw new Error(`Reference upload failed ${r.status}`);
+      refUrl = `${SB_URL}/storage/v1/object/public/episode-images/${path}`;
+    }
+    const upd = {};
+    if (hook)   upd.thumbnail_hook_text = hook;
+    if (refUrl) upd.thumbnail_ref_url   = refUrl;
+    if (Object.keys(upd).length) await patch(n, upd);
     await callEdge('thumbnail', n);
-    showToast('Regenerating thumbnail — give it a minute, then refresh','success');
+    showToast(refFile ? 'Regenerating thumbnail from your reference — give it a minute, then refresh' : 'Regenerating thumbnail — give it a minute, then refresh','success');
   } catch(e){ showToast(`Error: ${e.message}`,'error'); }
 }
 
