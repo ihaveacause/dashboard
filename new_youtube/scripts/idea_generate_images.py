@@ -276,8 +276,15 @@ def verify_trigger_in_script(trigger, script_text):
 
 # ── Image prompt (only fixed rules: illustrative + 16:9 + text) ──
 def build_image_prompt(beat, is_anchor):
+    # No reference (the fresh anchor) → default to the channel's illustration look.
+    # Reference provided (every non-anchor image, and anything regenerated from an
+    # uploaded reference) → impose NO style of our own; the reference alone dictates
+    # the look, so a photographic reference yields a photographic image, etc.
+    lead = (f"An original ILLUSTRATION (not a photograph, no photographic realism) depicting: {beat['scene']}."
+            if is_anchor else
+            f"An original image depicting: {beat['scene']}.")
     parts = [
-        f"An original ILLUSTRATION (not a photograph, no photographic realism) depicting: {beat['scene']}.",
+        lead,
         "Composition: wide 16:9 horizontal, full-bleed, fills the entire frame edge to edge, no borders, no letterboxing.",
     ]
     if beat["display_text"]:
@@ -290,7 +297,9 @@ def build_image_prompt(beat, is_anchor):
     if not is_anchor:
         parts.append(
             "Match the exact art style, rendering technique, colour palette and overall "
-            "visual look of the provided reference image, but depict the new scene above."
+            "visual look of the provided reference image, but depict the new scene above. "
+            "Use the reference ONLY for visual style — ignore any text, words or specific "
+            "subject matter that appears inside the reference image."
         )
     return " ".join(parts)
 
@@ -389,15 +398,23 @@ def main():
         try: existing = json.loads(existing)
         except: existing = []
 
-    # optional single-image regenerate via regenerate_note
-    regen_note  = (row.get("regenerate_note") or "").strip()
+    # optional single-image regenerate via regenerate_note (+ optional reference image)
+    regen_note    = (row.get("regenerate_note") or "").strip()
+    regen_ref_url = (row.get("regenerate_ref_url") or "").strip()
     regen_order = regen_dir = None
+    user_ref = None                       # uploaded style reference (overrides the anchor)
     if regen_note:
         m = re.search(r"(?:scene|image)\s+(\d+)[:\-]?\s*(.*)", regen_note, re.IGNORECASE)
         if m:
             regen_order = int(m.group(1)); regen_dir = m.group(2).strip()
-            print(f"\n🔄 Regenerate image {regen_order}: {regen_dir}")
+            print(f"\n🔄 Regenerate image {regen_order}: {regen_dir or '(reference image only)'}")
         db_patch(table, IDEA_NUMBER, {"regenerate_note": None})
+    if regen_ref_url:
+        print("   🖼  Using your uploaded reference image as the style source")
+        user_ref = download_image(regen_ref_url)
+        if user_ref is None:
+            print("   ⚠️  Could not download the reference image — using text/anchor only")
+        db_patch(table, IDEA_NUMBER, {"regenerate_ref_url": None})
 
     db_patch(table, IDEA_NUMBER, {"status": "generating_images"})
 
@@ -417,8 +434,14 @@ def main():
                 a = next((e for e in existing if e.get("order") == 1), existing[0])
                 anchor_beat = {"order": 1, "scene": augmented_scene(a, regen_dir),
                                "display_text": a.get("display_text", ""), "trigger": ""}
-                print("\n🎨 Re-anchoring image 1 — the whole episode will be redone in this look")
-                raw = generate_one_image(build_image_prompt(anchor_beat, is_anchor=True), None)
+                if user_ref is not None:
+                    print("\n🎨 Re-anchoring image 1 from your uploaded reference — the whole idea will follow this look")
+                else:
+                    print("\n🎨 Re-anchoring image 1 — the whole episode will be redone in this look")
+                raw = generate_one_image(
+                    build_image_prompt(anchor_beat, is_anchor=(user_ref is None)),
+                    user_ref,
+                )
                 img = normalize_16x9(raw)
                 new_anchor = Image.open(BytesIO(img)).convert("RGB")
                 path = gcs_path_for(1, a.get("trigger", ""))
@@ -457,7 +480,8 @@ def main():
                 "trigger":      target.get("trigger", ""),
             }
             prompt = build_image_prompt(beat, is_anchor=False)
-            raw = generate_one_image(prompt, anchor_img)
+            cond_img = user_ref if user_ref is not None else anchor_img
+            raw = generate_one_image(prompt, cond_img)
             path = gcs_path_for(regen_order, beat["trigger"])
             url = upload_bytes_to_gcs(normalize_16x9(raw), path)
             if url:
