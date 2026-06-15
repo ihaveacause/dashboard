@@ -189,15 +189,30 @@ def extract_image_bytes(response):
     return None
 
 def generate_thumbnail_illustration(title, hook, visual, anchor_img=None):
+    has_ref = anchor_img is not None
+    # No reference → default to the channel's bold illustration look.
+    # Reference provided → impose NO medium/style bias of our own; the reference
+    # dictates the whole look (illustration, photographic, clean, moody — anything).
+    lead = ("A bold, eye-catching YouTube thumbnail that"
+            if has_ref else
+            "A bold, eye-catching YouTube thumbnail ILLUSTRATION (not a photograph) that")
+    tail = ("Wide 16:9 composition, full-bleed."
+            if has_ref else
+            "Wide 16:9 composition, full-bleed, vibrant and attention-grabbing.")
     prompt = (
-        f"A bold, eye-catching YouTube thumbnail ILLUSTRATION (not a photograph) that "
-        f"visually summarizes this episode: {visual}. "
+        f"{lead} visually summarizes this episode: {visual}. "
         f"Prominently render the title text «{title}» as the main headline, and below it "
         f"the smaller hook line «{hook}» as a subtitle — both in {LANG_NAME}, spelled "
         f"exactly as written, large, bold and clearly legible even at small sizes. "
         f"Leave the BOTTOM-LEFT and BOTTOM-RIGHT corners relatively uncluttered. "
-        f"Wide 16:9 composition, full-bleed, vibrant and attention-grabbing."
+        f"{tail}"
     )
+    if has_ref:
+        prompt += (
+            " Match the exact art style, rendering technique, colour palette and overall "
+            "visual look of the provided reference image. Use the reference ONLY for visual "
+            "style — ignore any text, words or specific subject matter inside it."
+        )
     contents = [prompt] if (anchor_img is None) else [prompt, anchor_img]
     resp = None
     _delay = 12
@@ -313,6 +328,17 @@ def main():
             data = download_url(first["url"])
             if data:
                 anchor_img = Image.open(io.BytesIO(data)).convert("RGB")
+
+    # your uploaded style reference (from the dashboard) takes priority
+    thumb_ref_url = (row.get("thumbnail_ref_url") or "").strip()
+    if thumb_ref_url:
+        log("   🖼  Using your uploaded reference image for the thumbnail style")
+        _ref = download_url(thumb_ref_url)
+        if _ref:
+            anchor_img = Image.open(io.BytesIO(_ref)).convert("RGB")
+        else:
+            log("   ⚠️  Could not download the thumbnail reference image")
+        db_patch(table, EPISODE_NUMBER, {"thumbnail_ref_url": None})
 
     try:
         log("\n🖼  Generating thumbnail illustration...")
