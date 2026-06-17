@@ -42,6 +42,10 @@ GCP_CREDS_JSON = os.environ["GOOGLE_APPLICATION_CREDENTIALS_JSON"]
 EPISODE_NUMBER = int(os.environ["EPISODE_NUMBER"])
 LANGUAGE       = os.environ.get("LANGUAGE", "ta")
 GCS_BUCKET     = "ihaveacause-media"
+# Burned-in karaoke captions are OFF by default now: the English master must stay
+# text-free so YouTube's per-language subtitles (from the uploaded caption file) carry
+# the words. Set BURN_CAPTIONS=1 to restore the old on-screen karaoke.
+BURN_CAPTIONS  = os.environ.get("BURN_CAPTIONS", "0") != "0"
 
 # ── Video settings ────────────────────────────────────────────
 WIDTH, HEIGHT  = 1920, 1080
@@ -137,6 +141,74 @@ def upload_to_gcs(local_path, gcs_path, content_type="video/mp4"):
     except Exception as e:
         print(f"   ❌ GCS error: {e}", flush=True)
         return None
+
+# ── Chirp 3: HD text-to-speech (AI master voice) ──────────────
+def _google_access_token():
+    from google.oauth2 import service_account
+    import google.auth.transport.requests as gr
+    creds = service_account.Credentials.from_service_account_info(
+        json.loads(GCP_CREDS_JSON), scopes=["https://www.googleapis.com/auth/cloud-platform"])
+    creds.refresh(gr.Request())
+    return creds.token
+
+def _clean_for_tts(text):
+    import re
+    t = re.sub(r"[*_#>`]", " ", text)        # strip markdown
+    t = re.sub(r"\[[^\]]*\]", " ", t)        # strip [stage directions]
+    t = re.sub(r"\s+", " ", t).strip()
+    return t
+
+def _chunk_text(text, limit=4000):
+    import re
+    sents = re.split(r"(?<=[.!?।])\s+", text)
+    chunks, cur = [], ""
+    for s in sents:
+        if len(cur) + len(s) + 1 > limit and cur:
+            chunks.append(cur.strip()); cur = s
+        else:
+            cur = f"{cur} {s}".strip()
+    if cur:
+        chunks.append(cur.strip())
+    return chunks or [text[:limit]]
+
+def synthesize_chirp3(script_text, voice_name, out_path, tmpdir):
+    """Synthesize the master voiceover with a Google Chirp 3: HD voice.
+    voice_name e.g. 'en-GB-Chirp3-HD-Charon'. Chirp 3 HD takes plain text only
+    (no SSML) and no pitch/rate params. Long scripts are chunked + concatenated."""
+    import base64
+    lang_code = "-".join(voice_name.split("-")[:2])   # 'en-GB'
+    token  = _google_access_token()
+    chunks = _chunk_text(_clean_for_tts(script_text))
+    print(f"   🎙  Chirp 3 HD voice: {voice_name} ({lang_code}) — {len(chunks)} chunk(s)", flush=True)
+    part_files = []
+    for i, chunk in enumerate(chunks):
+        r = requests.post(
+            "https://texttospeech.googleapis.com/v1/text:synthesize",
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            json={
+                "input": {"text": chunk},
+                "voice": {"languageCode": lang_code, "name": voice_name},
+                "audioConfig": {"audioEncoding": "MP3"},
+            }, timeout=120)
+        if r.status_code != 200:
+            print(f"   ❌ TTS chunk {i} failed {r.status_code}: {r.text[:200]}", flush=True)
+            return False
+        pf = os.path.join(tmpdir, f"tts_{i:03d}.mp3")
+        with open(pf, "wb") as f:
+            f.write(base64.b64decode(r.json()["audioContent"]))
+        part_files.append(pf)
+    if len(part_files) == 1:
+        os.replace(part_files[0], out_path)
+    else:
+        listf = os.path.join(tmpdir, "tts_list.txt")
+        with open(listf, "w") as f:
+            for pf in part_files:
+                f.write(f"file '{pf}'\n")
+        subprocess.run(["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", listf,
+                        "-c:a", "libmp3lame", "-q:a", "2", out_path],
+                       check=True, capture_output=True)
+    print(f"   ✅ Voice synthesized: {os.path.getsize(out_path)//1024}KB", flush=True)
+    return True
 
 def get_audio_duration(audio_path):
     r = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration",
@@ -366,6 +438,15 @@ def build_image_timeline(episode_images, words, audio_duration, script_text=""):
 def preprocess_base_image(src_path):
     img = Image.open(src_path).convert("RGB")
     iw, ih = img.size
+    if not BURN_CAPTIONS:
+        # Text-free master: image fills the whole frame, no caption bar.
+        canvas = Image.new("RGB", (WIDTH, HEIGHT), (0, 0, 0))
+        bg = img.copy().resize((WIDTH, HEIGHT), Image.LANCZOS).filter(ImageFilter.GaussianBlur(radius=25))
+        canvas.paste(bg, (0, 0))
+        scale = min(WIDTH / iw, HEIGHT / ih)
+        nw, nh = int(iw*scale), int(ih*scale)
+        canvas.paste(img.resize((nw, nh), Image.LANCZOS), ((WIDTH-nw)//2, (HEIGHT-nh)//2))
+        return canvas
     canvas = Image.new("RGB", (WIDTH, HEIGHT), (0, 0, 0))
     bg = img.copy().resize((WIDTH, LOWER_TOP), Image.LANCZOS).filter(ImageFilter.GaussianBlur(radius=25))
     canvas.paste(bg, (0, 0))
@@ -374,6 +455,53 @@ def preprocess_base_image(src_path):
     canvas.paste(img.resize((nw, nh), Image.LANCZOS), ((WIDTH-nw)//2, (LOWER_TOP-nh)//2))
     ImageDraw.Draw(canvas).rectangle([(0, LOWER_TOP), (WIDTH, HEIGHT)], fill=(15, 15, 15))
     return canvas
+
+def build_frames_no_caption(image_timeline, tmpdir):
+    """Text-free frames: one full-frame image per timeline segment, exact image
+    switches at the trigger timestamps, no on-screen words."""
+    print(f"\n🖼️  Building text-free frames ({len(image_timeline)} images)...", flush=True)
+    base_images = {}
+    for item in sorted(image_timeline, key=lambda x: x["order"]):
+        if item["local_path"] not in base_images:
+            base_images[item["local_path"]] = preprocess_base_image(item["local_path"])
+    frames = []
+    for i, item in enumerate(image_timeline):
+        dur = max(round(item["end"] - item["start"], 4), 1.0/FPS)
+        p = os.path.join(tmpdir, f"frame_{i:05d}.jpg")
+        base_images[item["local_path"]].save(p, "JPEG", quality=92)
+        frames.append((p, dur))
+    concat_path = os.path.join(tmpdir, "frames_concat.txt")
+    with open(concat_path, "w") as f:
+        for fp, dur in frames:
+            f.write(f"file '{fp}'\nduration {dur:.4f}\n")
+        if frames:
+            f.write(f"file '{frames[-1][0]}'\n")
+    print(f"   ✅ {len(frames)} frames built ({sum(d for _,d in frames):.1f}s)", flush=True)
+    return concat_path
+
+def _srt_ts(t):
+    h = int(t // 3600); m = int((t % 3600) // 60); s = int(t % 60); ms = int(round((t - int(t)) * 1000))
+    return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
+
+def build_srt(words, out_path, max_words=8, max_dur=5.0):
+    """Build an accurate .srt from the CTC word timestamps (the same data that
+    used to drive the karaoke). Grouped into short readable cues."""
+    if not words:
+        return False
+    cues, cur = [], []
+    for w in words:
+        cur.append(w)
+        span = cur[-1].get("end", cur[-1]["start"]) - cur[0]["start"]
+        if len(cur) >= max_words or span >= max_dur:
+            cues.append(cur); cur = []
+    if cur:
+        cues.append(cur)
+    with open(out_path, "w", encoding="utf-8") as f:
+        for i, c in enumerate(cues, 1):
+            start = c[0]["start"]; end = c[-1].get("end", c[-1]["start"] + 0.4)
+            text = " ".join(x.get("word", x.get("text", "")) for x in c).strip()
+            f.write(f"{i}\n{_srt_ts(start)} --> {_srt_ts(end)}\n{text}\n\n")
+    return True
 
 def save_frame(base_img, text_lines, font, output_path):
     frame = base_img.copy()
@@ -521,26 +649,47 @@ def main():
                 font_path = "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"
         log(f"\n🔤 Font: {font_path} ({'found' if os.path.exists(font_path) else 'NOT FOUND'})")
 
-        voice_url = episode.get("voice_url")
-        if not voice_url:
-            log("❌ No voice"); db_patch(table, EPISODE_NUMBER, {"status": "voice_approved"}); return
-        log(f"\n🎤 Step 1/8 — Voice...")
-        voice_path = os.path.join(tmpdir, "voice.mp3")
-        if not download_file(voice_url, voice_path, "Voice"):
-            db_patch(table, EPISODE_NUMBER, {"status": "voice_approved"}); return
-        audio_duration = get_audio_duration(voice_path)
-        log(f"   ✅ Duration: {audio_duration:.1f}s ({audio_duration/60:.1f} min)")
-
+        # Voice: AI master voice (Chirp 3 HD) if a voice is selected, else legacy upload
+        tts_voice   = (episode.get("tts_voice") or "").strip()
         script_col  = "script_tamil" if LANGUAGE == "ta" else "script_english"
         script_text = episode.get(script_col, "") or ""
+        voice_path  = os.path.join(tmpdir, "voice.mp3")
+        if tts_voice:
+            log(f"\n🎤 Step 1/8 — Synthesizing AI voice ({tts_voice})...")
+            if not script_text.strip():
+                log("❌ No script for TTS"); db_patch(table, EPISODE_NUMBER, {"status": "voice_approved"}); return
+            if not synthesize_chirp3(script_text, tts_voice, voice_path, tmpdir):
+                db_patch(table, EPISODE_NUMBER, {"status": "voice_approved"}); return
+        else:
+            voice_url = episode.get("voice_url")
+            if not voice_url:
+                log("❌ No voice (no tts_voice selected and no uploaded voice_url)")
+                db_patch(table, EPISODE_NUMBER, {"status": "voice_approved"}); return
+            log(f"\n🎤 Step 1/8 — Voice (uploaded)...")
+            if not download_file(voice_url, voice_path, "Voice"):
+                db_patch(table, EPISODE_NUMBER, {"status": "voice_approved"}); return
+        audio_duration = get_audio_duration(voice_path)
+        log(f"   ✅ Duration: {audio_duration:.1f}s ({audio_duration/60:.1f} min)")
         log(f"   ✅ Script: {len(script_text.split())} words")
 
         log(f"\n🎯 Step 2/8 — CTC forced alignment (downloads model first run)...")
         words = run_ctc_alignment(voice_path, script_text, LANGUAGE, tmpdir)
         log(f"   ✅ Alignment done — {datetime.now().strftime('%H:%M:%S')}")
 
-        log(f"\n📝 Step 3/8 — Karaoke screens...")
-        screens = build_karaoke_screens(words, script_text, audio_duration, font_path)
+        if BURN_CAPTIONS:
+            log(f"\n📝 Step 3/8 — Karaoke screens...")
+            screens = build_karaoke_screens(words, script_text, audio_duration, font_path)
+        else:
+            screens = None
+            log(f"\n📝 Step 3/8 — Caption (.srt) from alignment (no burned-in text)...")
+            srt_path = os.path.join(tmpdir, "captions.srt")
+            if build_srt(words, srt_path):
+                cap_lang = "ta" if LANGUAGE == "ta" else "en"
+                cap_url = upload_to_gcs(srt_path, f"episodes/ep{EPISODE_NUMBER:03d}/{cap_lang}/captions.srt",
+                                        content_type="application/x-subrip")
+                if cap_url:
+                    db_patch(table, EPISODE_NUMBER, {"captions_url": cap_url})
+                    log("   ✅ Caption file stored — uploaded later as the video's subtitle track")
 
         raw = episode.get("episode_images") or []
         if isinstance(raw, str):
@@ -560,7 +709,10 @@ def main():
         image_timeline = build_image_timeline(image_paths, words or [], audio_duration, script_text)
 
         log(f"\n🖼️  Step 5/8 — Composited frames...")
-        frames_concat = build_frame_sequence(image_timeline, screens, font_path, tmpdir)
+        if BURN_CAPTIONS:
+            frames_concat = build_frame_sequence(image_timeline, screens, font_path, tmpdir)
+        else:
+            frames_concat = build_frames_no_caption(image_timeline, tmpdir)
         log(f"   ✅ Frames ready — {datetime.now().strftime('%H:%M:%S')}")
 
         log(f"\n🖼️  Step 6/8 — Channel assets...")
