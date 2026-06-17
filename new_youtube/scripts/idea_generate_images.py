@@ -275,6 +275,11 @@ def verify_trigger_in_script(trigger, script_text):
     return ""
 
 # ── Image prompt (only fixed rules: illustrative + 16:9 + text) ──
+# Language-neutral master: keep the video frames free of burned-in text so one
+# English master video serves every dubbed/subtitled language. Set TEXT_FREE_FRAMES=0
+# to revert to the old behaviour of baking display_text into the frames.
+TEXT_FREE_FRAMES = os.environ.get("TEXT_FREE_FRAMES", "1") != "0"
+
 def build_image_prompt(beat, is_anchor):
     # No reference (the fresh anchor) → default to the channel's illustration look.
     # Reference provided (every non-anchor image, and anything regenerated from an
@@ -287,7 +292,14 @@ def build_image_prompt(beat, is_anchor):
         lead,
         "Composition: wide 16:9 horizontal, full-bleed, fills the entire frame edge to edge, no borders, no letterboxing.",
     ]
-    if beat["display_text"]:
+    if TEXT_FREE_FRAMES:
+        parts.append(
+            "Do NOT render any text, words, letters, numbers, captions or signs anywhere "
+            "in the image. Tell the story purely through expressive visuals — strong "
+            "composition, emotion, symbolism, gesture, light and atmosphere — so the "
+            "meaning is unmistakable without any words."
+        )
+    elif beat["display_text"]:
         parts.append(
             f"Render this {LANG_NAME} text clearly and legibly within the artwork, "
             f"spelled exactly as written, and no other text: «{beat['display_text']}»."
