@@ -17,7 +17,10 @@ Storage. Keep VOICE_CATALOG in sync with index.html.
 import os, json, base64, requests
 
 SUPABASE_URL   = os.environ["SUPABASE_URL"]
-SUPABASE_KEY   = os.environ["SUPABASE_KEY"]
+# Use the service-role key if provided (bypasses Storage row-level security);
+# fall back to SUPABASE_KEY. The anon key will 403 unless the bucket has an
+# INSERT policy, so the service-role key is the simplest path for this job.
+SUPABASE_KEY   = os.environ.get("SUPABASE_SERVICE_KEY") or os.environ["SUPABASE_KEY"]
 GCP_CREDS_JSON = os.environ["GOOGLE_APPLICATION_CREDENTIALS_JSON"]
 BUCKET         = "voice-samples"
 
