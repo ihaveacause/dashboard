@@ -27,7 +27,8 @@ jobs:
       - name: Generate voice samples
         env:
           SUPABASE_URL:                        ${{ secrets.SUPABASE_URL }}
-          SUPABASE_KEY:                        ${{ secrets.SUPABASE_KEY }}
+          SUPABASE_KEY:                         ${{ secrets.SUPABASE_KEY }}
+          SUPABASE_SERVICE_KEY:                 ${{ secrets.SUPABASE_SERVICE_KEY }}
           GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
         run: python new_youtube/scripts/generate_voice_samples.py
 
