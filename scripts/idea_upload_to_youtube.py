@@ -247,6 +247,7 @@ Exploring consciousness, Tamil philosophy, and the wisdom of the Mandukya Upanis
             "privacyStatus": "private",   # Always private on upload
             "publishAt": publish_at,
             "selfDeclaredMadeForKids": False,
+            "containsSyntheticMedia": True,   # AI voice + AI visuals — auto-disclosure
         },
     }
 
