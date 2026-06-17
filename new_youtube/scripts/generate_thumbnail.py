@@ -57,6 +57,14 @@ LANGUAGE       = os.environ.get("LANGUAGE", "ta")
 GCS_BUCKET   = "ihaveacause-media"
 IMAGE_MODEL  = "gemini-3.1-flash-image"        # nano banana 2 (AI Studio)
 CLAUDE_MODEL = "claude-sonnet-4-6"
+
+# Localized thumbnails: English master + these languages (each becomes a "door").
+# Set MULTI_LANG_THUMBS=0 to disable. LANG_FULL maps code → name for the renderer.
+MULTI_LANG_THUMBS = os.environ.get("MULTI_LANG_THUMBS", "1") != "0"
+TARGET_LANGS = {
+    "hi": "Hindi", "te": "Telugu", "ml": "Malayalam", "bn": "Bengali",
+    "es": "Spanish", "pt": "Portuguese", "id": "Indonesian", "pa": "Punjabi", "fr": "French",
+}
 W, H         = 1280, 720                        # YouTube thumbnail (16:9)
 LOGO_SIZE    = 90
 SIGNED_URL_DAYS = 30
@@ -175,6 +183,25 @@ SCRIPT:
         m = re.search(r"\{[\s\S]*\}", raw); data = json.loads(m.group()) if m else {}
     return data.get("hook", "").strip(), data.get("visual", "").strip()
 
+def translate_title_hook(title, hook):
+    """Translate the English title + hook into each TARGET_LANGS language (one call).
+    Returns {code: {"title": "...", "hook": "..."}}."""
+    langs = ", ".join(f"{c} ({n})" for c, n in TARGET_LANGS.items())
+    prompt = (
+        f"Translate this YouTube TITLE and HOOK into these languages: {langs}.\n"
+        f"Make each natural and punchy for a native speaker (not literal). "
+        f"Return ONLY JSON mapping each language code to "
+        f'{{"title":"...","hook":"..."}}.\n\nTITLE: {title}\nHOOK: {hook}'
+    )
+    msg = claude_client.messages.create(
+        model=CLAUDE_MODEL, max_tokens=2000,
+        messages=[{"role": "user", "content": prompt}])
+    raw = msg.content[0].text.strip().replace("```json", "").replace("```", "").strip()
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        m = re.search(r"\{[\s\S]*\}", raw); return json.loads(m.group()) if m else {}
+
 # ── Gemini: thumbnail illustration with title + hook baked in ─
 def extract_image_bytes(response):
     cand = getattr(response, "candidates", None)
@@ -188,8 +215,9 @@ def extract_image_bytes(response):
             return data
     return None
 
-def generate_thumbnail_illustration(title, hook, visual, anchor_img=None):
+def generate_thumbnail_illustration(title, hook, visual, anchor_img=None, lang_name=None):
     has_ref = anchor_img is not None
+    lname = lang_name or LANG_NAME
     # No reference → default to the channel's bold illustration look.
     # Reference provided → impose NO medium/style bias of our own; the reference
     # dictates the whole look (illustration, photographic, clean, moody — anything).
@@ -202,9 +230,9 @@ def generate_thumbnail_illustration(title, hook, visual, anchor_img=None):
     prompt = (
         f"{lead} visually summarizes this episode: {visual}. "
         f"Prominently render the title text «{title}» as the main headline, and below it "
-        f"the smaller hook line «{hook}» as a subtitle — both in {LANG_NAME}, spelled "
-        f"exactly as written, large, bold and clearly legible even at small sizes. "
-        f"Leave the BOTTOM-LEFT and BOTTOM-RIGHT corners relatively uncluttered. "
+        f"the smaller hook line «{hook}» as a subtitle — both in {lname}, spelled "
+        f"EXACTLY as written character-for-character, large, bold and clearly legible even "
+        f"at small sizes. Leave the BOTTOM-LEFT and BOTTOM-RIGHT corners relatively uncluttered. "
         f"{tail}"
     )
     if has_ref:
@@ -366,6 +394,36 @@ def main():
 
         # write thumbnail_url ONLY — do not touch the main status (image flow owns it)
         db_patch(table, EPISODE_NUMBER, {"thumbnail_url": signed_url})
+
+        # ── Localized thumbnails (English master only) ──────────────────
+        if MULTI_LANG_THUMBS and LANGUAGE == "en":
+            log("\n🌐 Generating localized thumbnails (one door per language)...")
+            try:
+                trans = translate_title_hook(title, hook)
+            except Exception as te:
+                log(f"   ⚠️  Translation failed: {te}"); trans = {}
+            loc_thumbs, loc_titles = {}, {"en": title}
+            for code, name in TARGET_LANGS.items():
+                t = trans.get(code) or {}
+                l_title = (t.get("title") or title).strip()
+                l_hook  = (t.get("hook")  or hook ).strip()
+                loc_titles[code] = l_title
+                try:
+                    lraw    = generate_thumbnail_illustration(l_title, l_hook, visual, anchor_img, lang_name=name)
+                    lcanvas = draw_ep_badge(normalize(lraw), EPISODE_NUMBER)
+                    if logo_data:
+                        llogo = Image.open(io.BytesIO(logo_data)).convert("RGBA").resize((LOGO_SIZE, LOGO_SIZE), Image.LANCZOS)
+                        lcanvas.paste(llogo, (W - LOGO_SIZE - 20, H - LOGO_SIZE - 20), llogo)
+                    lbuf = io.BytesIO(); lcanvas.convert("RGB").save(lbuf, "JPEG", quality=92)
+                    lurl = gcs_upload_and_sign(lbuf.getvalue(), f"episodes/{EPISODE_NUMBER:03d}/{code}/thumbnail.jpg")
+                    if lurl:
+                        loc_thumbs[code] = lurl
+                        log(f"   ✅ {name}")
+                except Exception as le:
+                    log(f"   ⚠️  {name} thumbnail failed: {le}")
+            db_patch(table, EPISODE_NUMBER, {"localized_thumbnails": loc_thumbs, "localized_titles": loc_titles})
+            log(f"   ✅ {len(loc_thumbs)} localized thumbnails stored (attach them in Studio)")
+
         log(f"\n{'='*60}")
         log(f"✅ Episode {EPISODE_NUMBER} {LANGUAGE.upper()} — thumbnail ready")
         log(f"{'='*60}")
