@@ -1,0 +1,35 @@
+name: Generate Voice Samples (one-time)
+
+# Run manually from the Actions tab. Creates a preview clip for each Chirp 3: HD
+# voice and uploads them to the public Supabase bucket `voice-samples`, so the
+# dashboard voice picker can play ▶ Preview. Re-run whenever you change the catalog.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  voice-samples:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install requests google-auth
+
+      - name: Generate voice samples
+        env:
+          SUPABASE_URL:                        ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY:                        ${{ secrets.SUPABASE_KEY }}
+          GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
+        run: python new_youtube/scripts/generate_voice_samples.py
+
+      - name: Summary
+        run: echo "✅ Voice samples generated and uploaded to the voice-samples bucket"
