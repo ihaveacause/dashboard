@@ -30,6 +30,7 @@ from supabase import create_client, Client
 SCOPES = [
     "https://www.googleapis.com/auth/youtube.upload",
     "https://www.googleapis.com/auth/youtube",
+    "https://www.googleapis.com/auth/youtube.force-ssl",  # needed for caption upload
 ]
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_KEY = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
@@ -262,6 +263,7 @@ Exploring consciousness, Tamil philosophy, and the wisdom of the Mandukya Upanis
             "privacyStatus": "private",   # Always private on upload
             "publishAt": publish_at,
             "selfDeclaredMadeForKids": False,
+            "containsSyntheticMedia": True,   # AI voice + AI visuals — auto-disclosure
         },
     }
 
@@ -298,6 +300,44 @@ Exploring consciousness, Tamil philosophy, and the wisdom of the Mandukya Upanis
         print(f"✅ Thumbnail set")
     except HttpError as e:
         print(f"⚠️  Thumbnail skipped — verify your YouTube channel to enable custom thumbnails: {e}")
+
+    # Localized titles/descriptions → cross-language search discovery.
+    # (Localized THUMBNAILS still attach manually in Studio; the API can't set those.)
+    try:
+        loc_titles = episode.get("localized_titles") or {}
+        loc_descs  = episode.get("localized_descriptions") or {}
+        if isinstance(loc_titles, str): loc_titles = json.loads(loc_titles)
+        if isinstance(loc_descs, str):  loc_descs  = json.loads(loc_descs)
+        localizations = {
+            code: {"title": lt, "description": (loc_descs.get(code) or description)}
+            for code, lt in loc_titles.items() if code != "en" and lt
+        }
+        if localizations:
+            youtube.videos().update(
+                part="localizations",
+                body={"id": video_id, "localizations": localizations},
+            ).execute()
+            print(f"✅ Localized metadata set for {len(localizations)} languages")
+    except (HttpError, ValueError) as e:
+        print(f"⚠️  Localized metadata skipped: {e}")
+
+    # Upload the accurate English caption track (powers clean per-language auto-translate).
+    # Needs the 'youtube.force-ssl' OAuth scope; fails gracefully if absent.
+    try:
+        cap_url = episode.get("captions_url")
+        if cap_url:
+            import urllib.request
+            cap_path = "/tmp/captions_upload.srt"
+            urllib.request.urlretrieve(cap_url, cap_path)
+            youtube.captions().insert(
+                part="snippet",
+                body={"snippet": {"videoId": video_id, "language": "en",
+                                  "name": "English", "isDraft": False}},
+                media_body=MediaFileUpload(cap_path, mimetype="application/octet-stream"),
+            ).execute()
+            print("✅ Caption track uploaded (English) — auto-translate will localize it")
+    except Exception as e:
+        print(f"⚠️  Caption upload skipped (check youtube.force-ssl scope): {e}")
 
     return video_id
 
