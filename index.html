@@ -208,7 +208,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 
 <!-- Topbar -->
 <div class="topbar">
-  <div class="logo">I Have A <em>Cause</em></div>
+  <div class="logo">I Have A <em>Cause</em> <span style="font-size:10px;color:var(--muted2);font-weight:400;letter-spacing:.5px">build 2026-06-17 · EN-only</span></div>
   <nav class="l1-nav">
     <button class="l1-btn" id="l1-stats" onclick="setL1('stats')">Channel Stats</button>
     <button class="l1-btn active-series" id="l1-series" onclick="setL1('series')">Series</button>
@@ -225,10 +225,6 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 <!-- Filter bar -->
 <div class="filterbar" id="filterbar">
   <div class="filter-row" id="filter-row">
-    <div class="lang-toggle">
-      <button class="lang-btn ta" id="btn-ta" onclick="setLang('ta')">🇮🇳 Tamil</button>
-      <button class="lang-btn" id="btn-en" onclick="setLang('en')">🇬🇧 English</button>
-    </div>
     <div class="fdiv"></div>
     <button class="fpill active" onclick="setFilter('all',this)">All</button>
     <button class="fpill" onclick="setFilter('pending',this)">Pending</button>
@@ -369,7 +365,7 @@ const SB   = window.supabase.createClient(SB_URL, SB_KEY);
 
 // ── State ──────────────────────────────────────────────────
 let activeL1 = 'series';
-let lang     = 'ta';
+let lang     = 'en';
 let filter   = 'all';
 let episodes = [];
 let modalEp  = null;
@@ -420,13 +416,6 @@ function setL1(tab) {
   load();
 }
 
-function setLang(l) {
-  lang = l;
-  document.getElementById('btn-ta').className = 'lang-btn'+(l==='ta'?' ta':'');
-  document.getElementById('btn-en').className = 'lang-btn'+(l==='en'?' en':'');
-  loadEpisodes();
-}
-
 function setFilter(f, btn) {
   filter = f;
   document.querySelectorAll('.fpill').forEach(b => b.classList.remove('active'));
@@ -455,13 +444,56 @@ async function loadEpisodes() {
 async function loadStats() {
   showLoad(true);
   try {
-    const [ta, en] = await Promise.all([
-      fetch(`${SB_URL}/rest/v1/tamil_episodes?select=status&limit=200`,{headers:H}).then(r=>r.json()),
-      fetch(`${SB_URL}/rest/v1/english_episodes?select=status&limit=200`,{headers:H}).then(r=>r.json()),
+    const q = t => fetch(`${SB_URL}/rest/v1/${t}?select=status&limit=500`,{headers:H}).then(r=>r.json());
+    const [epTa, epEn, idTa, idEn] = await Promise.all([
+      q('tamil_episodes'), q('english_episodes'), q('tamil_ideas'), q('english_ideas'),
     ]);
-    renderStats(ta, en);
+    renderStatsV2([...(epTa||[]), ...(epEn||[])], [...(idTa||[]), ...(idEn||[])]);
   } catch(e) {}
   showLoad(false);
+}
+
+function renderStatsV2(episodes, ideas) {
+  const cnt  = (arr, s) => arr.filter(e => (e.status||'pending') === s).length;
+  const pipe = arr => arr.filter(e => !['pending','published'].includes(e.status||'pending')).length;
+  const epPub = cnt(episodes,'published'), idPub = cnt(ideas,'published');
+  const totalPub = epPub + idPub, epPipe = pipe(episodes), idPipe = pipe(ideas), totalPipe = epPipe + idPipe;
+  const totalPend = cnt(episodes,'pending') + cnt(ideas,'pending');
+  const GOAL = 200, pct = v => Math.min(100, Math.round(v/GOAL*100));
+  const stageRows = ['script_ready','script_approved','images_ready','images_approved',
+    'voice_uploaded','voice_approved','video_ready','video_approved']
+    .map(s => `<div class="pp-row"><span style="color:var(--muted2)">${STATUS_LABELS[s]||s}</span>
+      <span class="pp-num" style="color:var(--blue)">${cnt(episodes,s)+cnt(ideas,s)}</span></div>`).join('');
+  document.getElementById('main').innerHTML = `
+  <div class="stats-grid">
+    <div class="stat"><div class="stat-lbl">Total Published</div><div class="stat-val" style="color:var(--yt)">${totalPub}</div><div class="stat-bar"><div class="stat-bar-fill" style="width:${pct(totalPub)}%;background:var(--yt)"></div></div></div>
+    <div class="stat"><div class="stat-lbl">Episodes Published</div><div class="stat-val" style="color:var(--en)">${epPub}</div><div class="stat-bar"><div class="stat-bar-fill" style="width:${pct(epPub)}%;background:var(--en)"></div></div></div>
+    <div class="stat"><div class="stat-lbl">Ideas Published</div><div class="stat-val" style="color:var(--stats)">${idPub}</div><div class="stat-bar"><div class="stat-bar-fill" style="width:${pct(idPub)}%;background:var(--stats)"></div></div></div>
+    <div class="stat"><div class="stat-lbl">In Pipeline</div><div class="stat-val" style="color:var(--orange)">${totalPipe}</div><div class="stat-bar"><div class="stat-bar-fill" style="width:${pct(totalPipe)}%;background:var(--orange)"></div></div></div>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+    <div class="pipeline-panel">
+      <div class="pp-title">Pipeline Breakdown (Episodes + Ideas)</div>
+      ${stageRows}
+      <div class="pp-row"><span style="color:var(--muted2)">Published</span><span class="pp-num" style="color:var(--green)">${totalPub}</span></div>
+    </div>
+    <div class="pipeline-panel">
+      <div class="pp-title">Channel Summary</div>
+      <div class="pp-row"><span style="color:var(--muted2)">Episodes published</span><span class="pp-num" style="color:var(--en)">${epPub}</span></div>
+      <div class="pp-row"><span style="color:var(--muted2)">Ideas published</span><span class="pp-num" style="color:var(--stats)">${idPub}</span></div>
+      <div class="pp-row"><span style="color:var(--muted2)">Episodes in pipeline</span><span class="pp-num" style="color:var(--orange)">${epPipe}</span></div>
+      <div class="pp-row"><span style="color:var(--muted2)">Ideas in pipeline</span><span class="pp-num" style="color:var(--orange)">${idPipe}</span></div>
+      <div class="pp-row"><span style="color:var(--muted2)">Total pending</span><span class="pp-num" style="color:var(--muted)">${totalPend}</span></div>
+    </div>
+  </div>
+  <div class="progress-big">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted);letter-spacing:.8px;text-transform:uppercase">Channel Progress — Total Published</span>
+      <span style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:500;color:var(--accent)">${totalPub} videos published</span>
+    </div>
+    <div class="pb-bar"><div class="pb-fill" style="width:${pct(totalPub)}%"></div></div>
+    <div class="pb-labels"><span>0</span><span>50</span><span>100</span><span>150</span><span>200</span></div>
+  </div>`;
 }
 
 // ── Render ─────────────────────────────────────────────────
@@ -513,7 +545,6 @@ function card(ep) {
       <div class="ep-num">${badge}</div>
       <div class="ep-body">
         <div class="ep-meta">
-          <span class="ep-lang ${lang}">${lang==='ta'?'🇮🇳 Tamil':'🇬🇧 English'}</span>
           ${ep.module?`<span class="mod-badge">${escapeHtml(ep.module)}</span>`:''}
           <span class="status-badge sb-${s}">${STATUS_LABELS[s]||s}</span>
         </div>
@@ -1107,50 +1138,6 @@ async function submitImgRegen() {
 }
 
 // ── Stats ──────────────────────────────────────────────────
-function renderStats(ta, en) {
-  const cnt = (arr, s) => arr.filter(e => (e.status||'pending') === s).length;
-  const pub_ta  = cnt(ta, 'published');
-  const pub_en  = cnt(en, 'published');
-  const pipe_ta = ta.filter(e => !['pending','published'].includes(e.status||'pending')).length;
-  const total   = 200;
-
-  const stageRows = ['script_ready','script_approved','images_ready','images_approved',
-    'voice_uploaded','voice_approved','video_ready','video_approved']
-    .map(s => `<div class="pp-row">
-      <span style="color:var(--muted2)">${STATUS_LABELS[s]}</span>
-      <span class="pp-num" style="color:var(--blue)">${cnt(ta,s)}</span>
-    </div>`).join('');
-
-  document.getElementById('main').innerHTML = `
-  <div class="stats-grid">
-    <div class="stat"><div class="stat-lbl">Tamil Published</div><div class="stat-val" style="color:var(--yt)">${pub_ta}</div><div class="stat-bar"><div class="stat-bar-fill" style="width:${Math.round(pub_ta/total*100)}%;background:var(--yt)"></div></div></div>
-    <div class="stat"><div class="stat-lbl">English Published</div><div class="stat-val" style="color:var(--en)">${pub_en}</div><div class="stat-bar"><div class="stat-bar-fill" style="width:${Math.round(pub_en/total*100)}%;background:var(--en)"></div></div></div>
-    <div class="stat"><div class="stat-lbl">In Pipeline</div><div class="stat-val" style="color:var(--orange)">${pipe_ta}</div><div class="stat-bar"><div class="stat-bar-fill" style="width:${Math.round(pipe_ta/total*100)}%;background:var(--orange)"></div></div></div>
-    <div class="stat"><div class="stat-lbl">Total Pending</div><div class="stat-val" style="color:var(--muted)">${cnt(ta,'pending')}</div><div class="stat-bar"><div class="stat-bar-fill" style="width:${Math.round(cnt(ta,'pending')/total*100)}%;background:var(--muted)"></div></div></div>
-  </div>
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-    <div class="pipeline-panel">
-      <div class="pp-title">Tamil Pipeline Breakdown</div>
-      ${stageRows}
-      <div class="pp-row"><span style="color:var(--muted2)">Published</span><span class="pp-num" style="color:var(--green)">${pub_ta}</span></div>
-    </div>
-    <div class="pipeline-panel">
-      <div class="pp-title">Channel Summary</div>
-      <div class="pp-row"><span style="color:var(--muted2)">Tamil published</span><span class="pp-num" style="color:var(--yt)">${pub_ta} / ${total}</span></div>
-      <div class="pp-row"><span style="color:var(--muted2)">English published</span><span class="pp-num" style="color:var(--en)">${pub_en} / ${total}</span></div>
-      <div class="pp-row"><span style="color:var(--muted2)">Tamil in pipeline</span><span class="pp-num" style="color:var(--orange)">${pipe_ta}</span></div>
-      <div class="pp-row"><span style="color:var(--muted2)">English in pipeline</span><span class="pp-num" style="color:var(--orange)">${en.filter(e=>!['pending','published'].includes(e.status||'pending')).length}</span></div>
-    </div>
-  </div>
-  <div class="progress-big">
-    <div style="display:flex;justify-content:space-between;align-items:center">
-      <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted);letter-spacing:.8px;text-transform:uppercase">Series Progress — Tamil</span>
-      <span style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:500;color:var(--accent)">${pub_ta} / ${total} episodes published</span>
-    </div>
-    <div class="pb-bar"><div class="pb-fill" style="width:${Math.round(pub_ta/total*100)}%"></div></div>
-    <div class="pb-labels"><span>0</span><span>50</span><span>100</span><span>150</span><span>200</span></div>
-  </div>`;
-}
 
 // ── Add Idea ───────────────────────────────────────────────
 function openAddIdea() {
