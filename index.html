@@ -341,6 +341,21 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 const SB_URL = 'https://alfuvzlmatfkgdrkeqgk.supabase.co';
 const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFsZnV2emxtYXRma2dkcmtlcWdrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc5OTkzOTQsImV4cCI6MjA5MzU3NTM5NH0.JtxVTVdjR3vPWooM41xM1MCvJNH7WDnFjzfowjuDiRg';
 
+// ── AI voice catalog (Google Chirp 3: HD) ────────────────────
+const VOICE_CATALOG = [
+  {id:'en-GB-Chirp3-HD-Charon',       label:'Charon — British male · calm, documentary gravitas (default)'},
+  {id:'en-GB-Chirp3-HD-Schedar',      label:'Schedar — British male · warm, measured'},
+  {id:'en-US-Chirp3-HD-Orus',         label:'Orus — American male · steady, resonant'},
+  {id:'en-US-Chirp3-HD-Iapetus',      label:'Iapetus — American male · clear, grounded'},
+  {id:'en-GB-Chirp3-HD-Kore',         label:'Kore — British female · warm, measured'},
+  {id:'en-GB-Chirp3-HD-Leda',         label:'Leda — British female · gentle, clear'},
+  {id:'en-GB-Chirp3-HD-Aoede',        label:'Aoede — British female · soft, reflective'},
+  {id:'en-US-Chirp3-HD-Vindemiatrix', label:'Vindemiatrix — American female · warm, even'},
+  {id:'en-US-Chirp3-HD-Autonoe',      label:'Autonoe — American female · bright, friendly'},
+];
+const DEFAULT_VOICE = 'en-GB-Chirp3-HD-Charon';
+const VOICE_SAMPLE_URL = id => `${SB_URL}/storage/v1/object/public/voice-samples/${id}.mp3`;
+
 const EDGE = {
   script: `${SB_URL}/functions/v1/trigger-script-gen`,
   images: `${SB_URL}/functions/v1/trigger-image-gen`,
@@ -548,14 +563,17 @@ function buildActions(ep, s, n) {
   if (s === 'images_ready')
     return buildImagesReview(ep, n);
 
-  // ── Images approved → upload voice ───────────────────────
+  // ── Images approved → pick AI voice (or upload a recording) ──
   if (s === 'images_approved')
-    return `<div class="ep-actions">
+    return `<div class="ep-actions" style="flex-wrap:wrap">
       <button class="btn btn-review" onclick="openImgMod(${n})">🖼 View Images</button>
-      <label class="btn btn-upload" style="cursor:pointer">
-        🎙 Upload Voice Recording
-        <input type="file" accept="audio/*" style="display:none" onchange="uploadVoice(${n},this)">
-      </label>
+      ${voicePickerHtml(ep, n)}
+      <details style="width:100%;margin-top:6px"><summary style="cursor:pointer;font-size:11px;color:var(--muted)">…or upload a human voice recording instead</summary>
+        <label class="btn btn-upload" style="cursor:pointer;margin-top:6px">
+          🎙 Upload Voice Recording
+          <input type="file" accept="audio/*" style="display:none" onchange="uploadVoice(${n},this)">
+        </label>
+      </details>
     </div>`;
 
   // ── Voice uploaded ───────────────────────────────────────
@@ -865,6 +883,35 @@ async function quickSet(n, status) {
     showToast(`Episode ${n} → ${STATUS_LABELS[status]}`,'success');
     loadEpisodes();
   } catch(e) { showToast(`Error: ${e.message}`,'error'); }
+}
+
+// ── AI voice picker (Chirp 3: HD) ────────────────────────────
+function voicePickerHtml(ep, n){
+  const cur  = ep.tts_voice || DEFAULT_VOICE;
+  const opts = VOICE_CATALOG.map(v=>`<option value="${v.id}" ${v.id===cur?'selected':''}>${v.label}</option>`).join('');
+  return `<div style="width:100%;margin-top:8px">
+    <div style="font-size:11px;color:var(--muted);margin-bottom:4px">🎙 AI master voice (English) — preview, then use it:</div>
+    <select id="voice-sel-${n}" class="img-trigger-input" style="width:100%">${opts}</select>
+    <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap">
+      <button class="btn btn-listen" onclick="previewVoice(${n})">▶ Preview</button>
+      <button class="btn btn-approve" onclick="useAiVoice(${n})">✓ Use this AI voice</button>
+    </div>
+    <audio id="voice-audio-${n}" preload="none"></audio>
+  </div>`;
+}
+function previewVoice(n){
+  const id = document.getElementById(`voice-sel-${n}`).value;
+  const a  = document.getElementById(`voice-audio-${n}`);
+  a.src = VOICE_SAMPLE_URL(id);
+  a.play().catch(()=>showToast('No sample yet — run generate_voice_samples.py once to create previews','error'));
+}
+async function useAiVoice(n){
+  const id = document.getElementById(`voice-sel-${n}`).value;
+  try {
+    await patch(n, {tts_voice:id, status:'voice_approved'});
+    showToast(`AI voice set: ${id} — ready to generate video`,'success');
+    setTimeout(loadEpisodes, 800);
+  } catch(e){ showToast(`Error: ${e.message}`,'error'); }
 }
 
 async function uploadVoice(n, input) {
