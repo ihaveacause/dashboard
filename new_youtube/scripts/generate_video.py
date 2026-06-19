@@ -46,6 +46,9 @@ GCS_BUCKET     = "ihaveacause-media"
 # text-free so YouTube's per-language subtitles (from the uploaded caption file) carry
 # the words. Set BURN_CAPTIONS=1 to restore the old on-screen karaoke.
 BURN_CAPTIONS  = os.environ.get("BURN_CAPTIONS", "0") != "0"
+# AI voice pace. 1.0 = normal; 0.8 = 20% slower. Chirp 3 HD has no speaking-rate
+# param, so we adjust with ffmpeg atempo, which changes speed but preserves pitch.
+VOICE_SPEED    = float(os.environ.get("VOICE_SPEED", "0.8"))
 
 # ── Video settings ────────────────────────────────────────────
 WIDTH, HEIGHT  = 1920, 1080
@@ -207,6 +210,12 @@ def synthesize_chirp3(script_text, voice_name, out_path, tmpdir):
         subprocess.run(["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", listf,
                         "-c:a", "libmp3lame", "-q:a", "2", out_path],
                        check=True, capture_output=True)
+    if abs(VOICE_SPEED - 1.0) > 0.001:
+        slowed = out_path + ".paced.mp3"
+        subprocess.run(["ffmpeg", "-y", "-i", out_path, "-filter:a", f"atempo={VOICE_SPEED}",
+                        "-c:a", "libmp3lame", "-q:a", "2", slowed], check=True, capture_output=True)
+        os.replace(slowed, out_path)
+        print(f"   🐢 Voice pace adjusted to {int(VOICE_SPEED*100)}% speed (pitch preserved)", flush=True)
     print(f"   ✅ Voice synthesized: {os.path.getsize(out_path)//1024}KB", flush=True)
     return True
 
