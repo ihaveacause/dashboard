@@ -30,6 +30,7 @@ from supabase import create_client, Client
 SCOPES = [
     "https://www.googleapis.com/auth/youtube.upload",
     "https://www.googleapis.com/auth/youtube",
+    "https://www.googleapis.com/auth/youtube.force-ssl",  # required for caption-track upload
 ]
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_KEY = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
@@ -284,6 +285,27 @@ Exploring consciousness, Tamil philosophy, and the wisdom of the Mandukya Upanis
         print(f"✅ Thumbnail set")
     except HttpError as e:
         print(f"⚠️  Thumbnail skipped — verify your YouTube channel to enable custom thumbnails: {e}")
+
+    # Upload the accurate caption track (.srt) so YouTube auto-translate localizes it.
+    # Needs the 'youtube.force-ssl' OAuth scope; fails gracefully if absent / no file.
+    try:
+        cap_url = episode.get("captions_url")
+        if cap_url:
+            import urllib.request
+            cap_lang = "ta" if language == "tamil" else "en"
+            cap_path = "/tmp/captions_upload.srt"
+            urllib.request.urlretrieve(cap_url, cap_path)
+            youtube.captions().insert(
+                part="snippet",
+                body={"snippet": {"videoId": video_id, "language": cap_lang,
+                                  "name": cap_lang.upper(), "isDraft": False}},
+                media_body=MediaFileUpload(cap_path, mimetype="application/octet-stream"),
+            ).execute()
+            print(f"✅ Caption track uploaded ({cap_lang}) — auto-translate will localize it")
+        else:
+            print("ℹ️  No captions_url on this row — caption track skipped")
+    except Exception as e:
+        print(f"⚠️  Caption upload skipped (check youtube.force-ssl scope): {e}")
 
     return video_id
 
