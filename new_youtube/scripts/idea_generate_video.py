@@ -46,7 +46,7 @@ GCS_BUCKET     = "ihaveacause-media"
 BURN_CAPTIONS  = os.environ.get("BURN_CAPTIONS", "0") != "0"
 # AI voice pace. 1.0 = normal; 0.8 = 20% slower. Chirp 3 HD has no speaking-rate
 # param, so we adjust with ffmpeg atempo, which changes speed but preserves pitch.
-VOICE_SPEED    = float(os.environ.get("VOICE_SPEED", "0.8"))
+VOICE_SPEED    = float(os.environ.get("VOICE_SPEED", "0.9"))
 
 # ── Video settings ────────────────────────────────────────────
 WIDTH, HEIGHT  = 1920, 1080
