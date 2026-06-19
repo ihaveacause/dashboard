@@ -62,6 +62,7 @@ CLAUDE_MODEL = "claude-sonnet-4-6"
 # Set MULTI_LANG_THUMBS=0 to disable. LANG_FULL maps code → name for the renderer.
 MULTI_LANG_THUMBS = os.environ.get("MULTI_LANG_THUMBS", "1") != "0"
 TARGET_LANGS = {
+    "ta": "Tamil",
     "hi": "Hindi", "te": "Telugu", "ml": "Malayalam", "bn": "Bengali",
     "es": "Spanish", "pt": "Portuguese", "id": "Indonesian", "pa": "Punjabi", "fr": "French",
 }
