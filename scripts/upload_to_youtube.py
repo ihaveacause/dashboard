@@ -327,15 +327,16 @@ Exploring consciousness, Tamil philosophy, and the wisdom of the Mandukya Upanis
         cap_url = episode.get("captions_url")
         if cap_url:
             import urllib.request
+            cap_lang = "ta" if language == "tamil" else "en"
             cap_path = "/tmp/captions_upload.srt"
             urllib.request.urlretrieve(cap_url, cap_path)
             youtube.captions().insert(
                 part="snippet",
-                body={"snippet": {"videoId": video_id, "language": "en",
-                                  "name": "English", "isDraft": False}},
+                body={"snippet": {"videoId": video_id, "language": cap_lang,
+                                  "name": cap_lang.upper(), "isDraft": False}},
                 media_body=MediaFileUpload(cap_path, mimetype="application/octet-stream"),
             ).execute()
-            print("✅ Caption track uploaded (English) — auto-translate will localize it")
+            print(f"✅ Caption track uploaded ({cap_lang}) — auto-translate will localize it")
     except Exception as e:
         print(f"⚠️  Caption upload skipped (check youtube.force-ssl scope): {e}")
 
