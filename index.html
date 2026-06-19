@@ -351,6 +351,7 @@ const VOICE_CATALOG = [
 ];
 const DEFAULT_VOICE = 'en-GB-Chirp3-HD-Charon';
 const VOICE_SAMPLE_URL = id => `${SB_URL}/storage/v1/object/public/voice-samples/${id}.mp3`;
+const LANG_NAMES = {en:'English',hi:'Hindi',te:'Telugu',ml:'Malayalam',bn:'Bengali',es:'Spanish',pt:'Portuguese',id:'Indonesian',pa:'Punjabi',fr:'French'};
 
 const EDGE = {
   script: `${SB_URL}/functions/v1/trigger-script-gen`,
@@ -651,6 +652,7 @@ function buildActions(ep, s, n) {
       ${ep.thumbnail_url
         ? `<img src="${ep.thumbnail_url}" style="width:100%;max-width:360px;border-radius:6px;border:1px solid rgba(255,255,255,.15)" alt="Thumbnail">`
         : '<span style="color:var(--muted);font-size:12px">⚠ No thumbnail — regenerate it from the image step before publishing</span>'}
+      ${localizedThumbsHtml(ep)}
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
         ${ep.video_url?`<a href="${ep.video_url}" target="_blank" class="btn btn-preview">▶ Preview Video</a>`:''}
         <button class="btn btn-yt" onclick="triggerYouTube(${n})">🚀 Publish to YouTube</button>
@@ -706,6 +708,7 @@ function buildImagesReview(ep, n) {
     ${thumb
       ? `<img src="${thumb}" style="width:100%;max-width:420px;border-radius:8px;border:1px solid var(--border2)" alt="Thumbnail">`
       : '<div style="color:var(--muted);font-size:12px">Thumbnail still generating, or not ready yet — try regenerate.</div>'}
+    ${localizedThumbsHtml(ep)}
     <input class="img-trigger-input" style="margin-top:8px" id="thumb-hook-${n}" placeholder="Optional: override the hook text, then regenerate">
     <input type="file" accept="image/*" id="thumb-ref-${n}" style="margin-top:7px;display:block;font-size:11px;color:var(--muted)">
     <div style="font-size:10px;color:var(--muted2);margin-top:3px">Optional: upload a reference image to set the thumbnail's style.</div>
@@ -914,6 +917,24 @@ async function quickSet(n, status) {
     showToast(`Episode ${n} → ${STATUS_LABELS[status]}`,'success');
     loadEpisodes();
   } catch(e) { showToast(`Error: ${e.message}`,'error'); }
+}
+
+// ── Localized thumbnails gallery ─────────────────────────────
+function localizedThumbsHtml(ep){
+  let lt = ep.localized_thumbnails;
+  if (!lt) return '';
+  if (typeof lt === 'string') { try { lt = JSON.parse(lt); } catch(e){ return ''; } }
+  const entries = Object.entries(lt || {});
+  if (!entries.length) return '';
+  const cells = entries.map(([code,url])=>`
+    <div style="text-align:center">
+      <img src="${url}" style="width:140px;height:79px;object-fit:cover;border-radius:6px;border:1px solid var(--border2);cursor:pointer" onclick="window.open('${url}','_blank')" alt="${code}">
+      <div style="font-size:10px;color:var(--muted2);margin-top:3px">${LANG_NAMES[code]||code}</div>
+    </div>`).join('');
+  return `<div style="margin-top:12px">
+    <div style="font-size:11px;color:var(--muted);margin-bottom:6px">🌐 Localized thumbnails (${entries.length}) — attach these per language in YouTube Studio after dubbing:</div>
+    <div style="display:flex;flex-wrap:wrap;gap:10px">${cells}</div>
+  </div>`;
 }
 
 // ── AI voice picker (Chirp 3: HD) ────────────────────────────
