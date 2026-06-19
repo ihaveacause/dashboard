@@ -67,6 +67,7 @@ THUMB_USE_ANCHOR = False   # keep thumbnails free/catchy; flip True to match vid
 # Set MULTI_LANG_THUMBS=0 to disable.
 MULTI_LANG_THUMBS = os.environ.get("MULTI_LANG_THUMBS", "1") != "0"
 TARGET_LANGS = {
+    "ta": "Tamil",
     "hi": "Hindi", "te": "Telugu", "ml": "Malayalam", "bn": "Bengali",
     "es": "Spanish", "pt": "Portuguese", "id": "Indonesian", "pa": "Punjabi", "fr": "French",
 }
