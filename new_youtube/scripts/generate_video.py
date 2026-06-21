@@ -728,12 +728,9 @@ def main():
         intro_path = os.path.join(tmpdir, "intro.png"); outro_path = os.path.join(tmpdir, "outro.png")
         download_file(episode.get("intro_image_url") or storage_url("channel-assets","default_intro.png"), intro_path, "Intro")
         download_file(episode.get("outro_image_url") or storage_url("channel-assets","default_outro.png"), outro_path, "Outro")
-        photo_file = "photo_tamil.jpg" if LANGUAGE=="ta" else "photo_english.jpg"
-        photo_raw  = os.path.join(tmpdir, "narrator.jpg"); photo_circle = os.path.join(tmpdir, "narrator_circle.png")
+        # Narrator photo disabled — content is AI-narrated, no human presenter shown.
+        # render_video skips the overlay when photo_final is None.
         photo_final = None
-        if download_file(storage_url("channel-assets", photo_file), photo_raw, f"Narrator"):
-            make_circle_photo(photo_raw, photo_circle, PHOTO_SIZE)
-            photo_final = photo_circle if os.path.exists(photo_circle) else photo_raw
         logo_path = os.path.join(tmpdir, "logo.png"); logo_final = None
         try:
             from google.oauth2 import service_account
