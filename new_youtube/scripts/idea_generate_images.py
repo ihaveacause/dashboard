@@ -24,7 +24,7 @@ The ONLY fixed constants are the format rules the channel chose:
 
 Engines:
   - Segmentation : Anthropic Claude             (ANTHROPIC_API_KEY)
-  - Images       : Gemini AI Studio nano banana (GEMINI_API_KEY) — NO Vertex
+  - Images       : Nano Banana 2 on Vertex AI (credit-covered) — Vertex-only, NO AI Studio
   - Storage      : Google Cloud Storage         (GOOGLE_APPLICATION_CREDENTIALS_JSON)
   - Metadata     : Supabase                     (SUPABASE_URL / SUPABASE_KEY)
 
@@ -55,7 +55,7 @@ import anthropic
 SUPABASE_URL   = os.environ["SUPABASE_URL"]
 SUPABASE_KEY   = os.environ["SUPABASE_KEY"]
 GCP_CREDS_JSON = os.environ["GOOGLE_APPLICATION_CREDENTIALS_JSON"]
-GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")   # optional — Vertex-only, AI Studio disabled
 ANTHROPIC_KEY  = os.environ["ANTHROPIC_API_KEY"]
 IDEA_NUMBER = int(os.environ["IDEA_NUMBER"])
 LANGUAGE       = os.environ.get("LANGUAGE", "ta")
@@ -88,15 +88,9 @@ try:
                                  location=VERTEX_LOCATION, credentials=_vertex_creds)
     IMAGE_BACKEND = f"Vertex AI · {VERTEX_PROJECT} · {VERTEX_LOCATION} (credit-covered)"
 except Exception as _ve:
-    image_client  = genai.Client(api_key=GEMINI_API_KEY)
-    IMAGE_BACKEND = f"AI Studio (Vertex init failed: {_ve})"
+    raise RuntimeError(f"Vertex AI init failed (Vertex-only mode, no AI Studio fallback): {_ve}")
 
-_ai_studio_client = None
-def _ai_studio_fallback():
-    global _ai_studio_client
-    if _ai_studio_client is None:
-        _ai_studio_client = genai.Client(api_key=GEMINI_API_KEY)
-    return _ai_studio_client
+# AI Studio fallback removed — Vertex-only, no google/AI-Studio image API anywhere.
 claude_client = anthropic.Anthropic(api_key=ANTHROPIC_KEY)
 
 # ── Supabase ──────────────────────────────────────────────────
@@ -331,19 +325,19 @@ def generate_one_image(prompt_text, ref_image=None):
     contents = [prompt_text] if ref_image is None else [prompt_text, ref_image]
     resp = None
     _delay = 12
-    for _attempt in range(5):
+    for _attempt in range(7):
         try:
             resp = image_client.models.generate_content(model=IMAGE_MODEL, contents=contents)
             break
         except Exception as _e:
             _m = str(_e)
-            if ("429" in _m or "RESOURCE_EXHAUSTED" in _m) and _attempt < 4:
-                print(f"   ⏳ Vertex busy (429) — waiting {_delay}s then retrying ({_attempt+1}/4)...")
+            if ("429" in _m or "RESOURCE_EXHAUSTED" in _m) and _attempt < 6:
+                print(f"   ⏳ Vertex busy (429) — waiting {_delay}s then retrying ({_attempt+1}/6)...")
                 time.sleep(_delay); _delay = min(_delay * 2, 90)
                 continue
-            print(f"   ⚠️  Vertex image failed ({_m[:120]}); trying AI Studio once...")
-            resp = _ai_studio_fallback().models.generate_content(model=IMAGE_MODEL, contents=contents)
-            break
+            # Vertex-only: do NOT fall back to AI Studio (avoids Gemini-API billing)
+            print(f"   ⚠️  Vertex image FAILED ({_m[:120]}) — Vertex busy/timed out, no fallback. Re-run.")
+            raise
     img = extract_image_bytes(resp)
     if not img:
         raise RuntimeError("Model returned no image data")
