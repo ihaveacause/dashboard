@@ -25,6 +25,7 @@ import google.oauth2.credentials
 SCOPES = [
     "https://www.googleapis.com/auth/youtube.upload",
     "https://www.googleapis.com/auth/youtube",
+    "https://www.googleapis.com/auth/youtube.force-ssl",  # required for caption-track upload
 ]
 
 
@@ -35,7 +36,11 @@ def main():
     args = parser.parse_args()
 
     flow = InstalledAppFlow.from_client_secrets_file(args.client_secret, SCOPES)
-    creds = flow.run_local_server(port=0)
+    # access_type=offline + prompt=consent guarantees Google returns a fresh
+    # refresh_token that includes the newly-added force-ssl scope. Without these,
+    # re-consenting an already-authorized account can come back with NO refresh
+    # token (and the old, caption-less one keeps being used).
+    creds = flow.run_local_server(port=0, access_type="offline", prompt="consent")
 
     token_data = {
         "token":         creds.token,
