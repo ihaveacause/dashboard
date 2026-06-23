@@ -1,0 +1,37 @@
+name: Generate Tamil Voice Samples (one-time)
+
+# Run manually from the Actions tab. Creates a preview clip for each Tamil
+# (ta-IN) Chirp 3: HD shortlist voice and uploads them to the public Supabase
+# bucket `voice-samples`, so the dashboard voice picker can play ▶ Preview on
+# Tamil cards. Re-run whenever you change the Tamil catalog.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  tamil-voice-samples:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install requests google-auth
+
+      - name: Generate Tamil voice samples
+        env:
+          SUPABASE_URL:                        ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY:                         ${{ secrets.SUPABASE_KEY }}
+          SUPABASE_SERVICE_KEY:                 ${{ secrets.SUPABASE_SERVICE_KEY }}
+          GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
+        run: python new_youtube/scripts/generate_tamil_voice_samples.py
+
+      - name: Summary
+        run: echo "✅ Tamil voice samples generated and uploaded to the voice-samples bucket"
