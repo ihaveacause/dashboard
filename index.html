@@ -208,12 +208,16 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 
 <!-- Topbar -->
 <div class="topbar">
-  <div class="logo">I Have A <em>Cause</em> <span style="font-size:10px;color:var(--muted2);font-weight:400;letter-spacing:.5px">build 2026-06-17 · EN-only</span></div>
+  <div class="logo">I Have A <em>Cause</em> <span style="font-size:10px;color:var(--muted2);font-weight:400;letter-spacing:.5px">build 2026-06-23 · EN+TA</span></div>
   <nav class="l1-nav">
     <button class="l1-btn" id="l1-stats" onclick="setL1('stats')">Channel Stats</button>
     <button class="l1-btn active-series" id="l1-series" onclick="setL1('series')">Series</button>
     <button class="l1-btn" id="l1-ideas" onclick="setL1('ideas')">💡 Ideas</button>
   </nav>
+  <div class="lang-toggle" id="lang-toggle" style="margin-left:auto">
+    <button class="lang-btn en" id="lang-en" onclick="setLang('en')">English</button>
+    <button class="lang-btn" id="lang-ta" onclick="setLang('ta')">தமிழ்</button>
+  </div>
 </div>
 
 <!-- Platform bar -->
@@ -350,6 +354,20 @@ const VOICE_CATALOG = [
   {id:'en-US-Chirp3-HD-Autonoe',      label:'Autonoe — American female · bright, friendly'},
 ];
 const DEFAULT_VOICE = 'en-GB-Chirp3-HD-Charon';
+// Tamil shortlist (Chirp 3: HD, ta-IN) — 4 female + 4 male. Keep in sync with
+// generate_tamil_voice_samples.py. Labels are name+gender only (timbre judged
+// by ▶ Preview). Callirrhoe/Charon are your proven channel voices.
+const VOICE_CATALOG_TA = [
+  {id:'ta-IN-Chirp3-HD-Callirrhoe', label:'Callirrhoe — female · proven channel voice (default)'},
+  {id:'ta-IN-Chirp3-HD-Leda',       label:'Leda — female'},
+  {id:'ta-IN-Chirp3-HD-Aoede',      label:'Aoede — female'},
+  {id:'ta-IN-Chirp3-HD-Kore',       label:'Kore — female'},
+  {id:'ta-IN-Chirp3-HD-Charon',     label:'Charon — male · your male voice'},
+  {id:'ta-IN-Chirp3-HD-Schedar',    label:'Schedar — male'},
+  {id:'ta-IN-Chirp3-HD-Orus',       label:'Orus — male'},
+  {id:'ta-IN-Chirp3-HD-Iapetus',    label:'Iapetus — male'},
+];
+const DEFAULT_VOICE_TA = 'ta-IN-Chirp3-HD-Callirrhoe';
 const VOICE_SAMPLE_URL = id => `${SB_URL}/storage/v1/object/public/voice-samples/${id}.mp3`;
 const LANG_NAMES = {en:'English',hi:'Hindi',te:'Telugu',ml:'Malayalam',bn:'Bengali',es:'Spanish',pt:'Portuguese',id:'Indonesian',pa:'Punjabi',fr:'French'};
 
@@ -414,6 +432,14 @@ function setL1(tab) {
   document.getElementById('filterbar').classList.toggle('hidden', tab==='stats');
   const addBtn = document.getElementById('add-idea-btn');
   if (addBtn) addBtn.style.display = (tab==='ideas') ? '' : 'none';
+  load();
+}
+
+// Global language — flips Series AND Ideas together (TABLE() routes by `lang`).
+function setLang(l) {
+  lang = l;
+  document.getElementById('lang-en').className = `lang-btn${l==='en'?' en':''}`;
+  document.getElementById('lang-ta').className = `lang-btn${l==='ta'?' ta':''}`;
   load();
 }
 
@@ -939,10 +965,13 @@ function localizedThumbsHtml(ep){
 
 // ── AI voice picker (Chirp 3: HD) ────────────────────────────
 function voicePickerHtml(ep, n){
-  const cur  = ep.tts_voice || DEFAULT_VOICE;
-  const opts = VOICE_CATALOG.map(v=>`<option value="${v.id}" ${v.id===cur?'selected':''}>${v.label}</option>`).join('');
+  const isTa    = lang === 'ta';
+  const catalog = isTa ? VOICE_CATALOG_TA : VOICE_CATALOG;
+  const def     = isTa ? DEFAULT_VOICE_TA : DEFAULT_VOICE;
+  const cur  = ep.tts_voice || def;
+  const opts = catalog.map(v=>`<option value="${v.id}" ${v.id===cur?'selected':''}>${v.label}</option>`).join('');
   return `<div style="width:100%;margin-top:8px">
-    <div style="font-size:11px;color:var(--muted);margin-bottom:4px">🎙 AI master voice (English) — preview, then use it:</div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:4px">🎙 AI master voice (${isTa?'Tamil':'English'}) — preview, then use it:</div>
     <select id="voice-sel-${n}" class="img-trigger-input" style="width:100%">${opts}</select>
     <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap">
       <button class="btn btn-listen" onclick="previewVoice(${n})">▶ Preview</button>
