@@ -161,18 +161,49 @@ def _clean_for_tts(text):
     t = re.sub(r"\s+", " ", t).strip()
     return t
 
-def _chunk_text(text, limit=4000):
+def _chunk_text(text, limit=4500):
+    """Split into chunks under `limit` UTF-8 BYTES (not characters).
+    Google TTS caps input at 5000 bytes. Tamil/Indic glyphs are ~3 bytes each,
+    so a character-based limit silently busts the cap. We split on sentence
+    boundaries, then on spaces, then hard-split at codepoint boundaries as a
+    last resort (never mid-glyph). 4500 leaves headroom under the 5000 cap."""
     import re
+    blen = lambda s: len(s.encode("utf-8"))
+
+    def hard_split(s):
+        out, cur = [], ""
+        for ch in s:                       # codepoint-by-codepoint, never mid-glyph
+            if blen(cur) + blen(ch) > limit and cur:
+                out.append(cur); cur = ch
+            else:
+                cur += ch
+        if cur:
+            out.append(cur)
+        return out
+
     sents = re.split(r"(?<=[.!?।])\s+", text)
     chunks, cur = [], ""
     for s in sents:
-        if len(cur) + len(s) + 1 > limit and cur:
+        if blen(s) > limit:                # a single sentence bigger than the cap
+            if cur:
+                chunks.append(cur.strip()); cur = ""
+            piece = ""
+            for w in s.split(" "):         # try splitting on spaces first
+                if blen(piece) + blen(w) + 1 > limit and piece:
+                    chunks.append(piece.strip()); piece = w
+                else:
+                    piece = f"{piece} {w}".strip()
+            if piece:
+                for hs in hard_split(piece):   # still too big → codepoint hard-split
+                    chunks.append(hs.strip())
+            continue
+        if blen(cur) + blen(s) + 1 > limit and cur:
             chunks.append(cur.strip()); cur = s
         else:
             cur = f"{cur} {s}".strip()
     if cur:
         chunks.append(cur.strip())
-    return chunks or [text[:limit]]
+    return chunks or hard_split(text)
 
 def synthesize_chirp3(script_text, voice_name, out_path, tmpdir):
     """Synthesize the master voiceover with a Google Chirp 3: HD voice.
