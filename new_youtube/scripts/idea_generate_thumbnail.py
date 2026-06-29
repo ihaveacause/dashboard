@@ -62,6 +62,13 @@ LOGO_SIZE    = 90
 SIGNED_URL_DAYS = 30
 THUMB_USE_ANCHOR = False   # keep thumbnails free/catchy; flip True to match video look
 
+# Multi-candidate thumbnails: Claude proposes N radically-different hook+picture PAIRS
+# from the script; all N are rendered (Vertex only — same Nano Banana path, no AI Studio),
+# stored in `thumbnail_candidates`, and you pick one in the dashboard. The live thumbnail_url
+# defaults to candidate #1 so publishing never stalls. Set THUMB_CANDIDATES=1 to go back to a
+# single render (no code change needed) once you've decided what works.
+THUMB_CANDIDATES = max(1, int(os.environ.get("THUMB_CANDIDATES", "10")))
+
 # Localized thumbnails for YouTube multi-language audio. Generated on the ENGLISH
 # master run only (that video is the one YouTube dubs into the other languages).
 # OFF by default until YouTube enables localized-thumbnail upload for this channel.
@@ -180,6 +187,72 @@ SCRIPT:
     return data.get("hook", "").strip(), data.get("visual", "").strip()
 
 # ── Claude: translate title + hook into each target language ──
+def make_itch_and_pairs(script, title, n, hook_override=""):
+    """Read the script, name the single sharpest 'itch', then invent N radically-different
+    matched pairs (hook phrase + picture idea + its own style). Returns (itch, [pairs])."""
+    log(f"\n🧠 Claude finding the 'itch' + {n} radically different thumbnail pairs...")
+    tamil_avoid = ('Specifically avoid the worn-out opener "தெரியுமா?" and other generic '
+                   '"do you know" openings.' if LANGUAGE == "ta" else "")
+    lock = (f'\nIMPORTANT: the viewer has locked the hook phrase. Use EXACTLY this hook, '
+            f'verbatim, for every pair, and vary only the picture: «{hook_override}».'
+            if hook_override else "")
+    prompt = f"""You are designing YouTube thumbnail OPTIONS for one {LANG_NAME} philosophy episode.
+
+STEP 1 — Read the whole script and name the single most arresting idea in it: the one
+counterintuitive, unsettling, or wonder-provoking point that would make a thoughtful person
+stop scrolling. Not a summary of the episode — the one sharp "itch". 
+
+STEP 2 — From that itch, invent {n} thumbnail options. Each option is a matched PAIR: a hook
+phrase and a picture idea that reinforce each other (the words say what the picture can't, the
+picture shows what the words can't). The {n} options MUST be RADICALLY DIFFERENT from one
+another — a different angle on the itch AND a different visual medium/style for each. Do NOT
+follow any fixed list of categories; invent the directions yourself from this script.{lock}
+
+Each pair has four fields:
+- "hook"  : a short, scroll-stopping line in {LANG_NAME}. It must name something the viewer
+            already lives through (sleep, forgetting, fear, a face in a mirror...), open a
+            curiosity gap, contain NO spiritual/Sanskrit jargon in the phrase itself (the big
+            term can live in the title, not the hook), and read naturally to a native
+            {LANG_NAME} speaker. {tamil_avoid}
+- "visual": one concrete English sentence describing the picture — a single clear subject/scene
+            drawn from the script, composed with room for text and clean bottom corners.
+- "style" : this picture's own medium and rendering, deliberately different from the others —
+            e.g. "stark photographic close-up, cool light", "surreal painted dreamscape",
+            "single luminous symbol on near-empty space", "bold flat graphic poster".
+- "note"  : 3-6 words on what makes THIS option different from the rest.
+
+Return ONLY JSON: {{"itch":"...","pairs":[{{"hook":"...","visual":"...","style":"...","note":"..."}}]}}
+with exactly {n} pairs.
+
+TITLE: {title}
+
+SCRIPT:
+{script[:6000]}"""
+    msg = claude_client.messages.create(
+        model=CLAUDE_MODEL, max_tokens=4000,
+        messages=[{"role": "user", "content": prompt}])
+    raw = msg.content[0].text.strip().replace("```json", "").replace("```", "").strip()
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        m = re.search(r"\{[\s\S]*\}", raw); data = json.loads(m.group()) if m else {}
+    itch  = (data.get("itch") or "").strip()
+    clean = []
+    for p in (data.get("pairs") or []):
+        if not isinstance(p, dict):
+            continue
+        hk = (hook_override or p.get("hook") or "").strip()
+        vis = (p.get("visual") or "").strip()
+        if not (hk and vis):
+            continue
+        clean.append({
+            "hook":   hk,
+            "visual": vis,
+            "style":  (p.get("style") or "").strip(),
+            "note":   (p.get("note")  or "").strip(),
+        })
+    return itch, clean[:n]
+
 def translate_title_hook(title, hook):
     """Translate the English title + hook into each TARGET_LANGS language (one call).
     Returns {code: {"title": "...", "hook": "..."}}."""
@@ -212,18 +285,22 @@ def extract_image_bytes(response):
             return data
     return None
 
-def generate_thumbnail_illustration(title, hook, visual, anchor_img=None, lang_name=None):
+def generate_thumbnail_illustration(title, hook, visual, anchor_img=None, lang_name=None, style=None):
     has_ref = anchor_img is not None
     lname = lang_name or LANG_NAME
-    # No reference → default to the channel's bold illustration look.
-    # Reference provided → impose NO medium/style bias of our own; the reference
-    # dictates the whole look (illustration, photographic, clean, moody — anything).
-    lead = ("A bold, eye-catching YouTube thumbnail that"
-            if has_ref else
-            "A bold, eye-catching YouTube thumbnail ILLUSTRATION (not a photograph) that")
-    tail = ("Wide 16:9 composition, full-bleed."
-            if has_ref else
-            "Wide 16:9 composition, full-bleed, vibrant and attention-grabbing.")
+    # No reference + a per-option STYLE → use that style, so the N candidates look radically
+    #   different from each other (photographic, painted, graphic, symbolic — whatever Claude chose).
+    # No reference + no style → fall back to the channel's bold illustration look.
+    # Reference provided → the reference dictates the whole look; ignore the per-option style.
+    if has_ref:
+        lead = "A bold, eye-catching YouTube thumbnail that"
+        tail = "Wide 16:9 composition, full-bleed."
+    elif style:
+        lead = "A bold, eye-catching YouTube thumbnail that"
+        tail = f"Rendering style: {style}. Wide 16:9 composition, full-bleed, vibrant and attention-grabbing."
+    else:
+        lead = "A bold, eye-catching YouTube thumbnail ILLUSTRATION (not a photograph) that"
+        tail = "Wide 16:9 composition, full-bleed, vibrant and attention-grabbing."
     prompt = (
         f"{lead} visually summarizes this episode: {visual}. "
         f"Prominently render the title text «{title}» as the main headline, and below it "
@@ -257,7 +334,7 @@ def generate_thumbnail_illustration(title, hook, visual, anchor_img=None, lang_n
     img = extract_image_bytes(resp)
     if not img:
         raise RuntimeError("Thumbnail model returned no image data")
-    return img
+    return img, prompt
 
 # ── Normalize to exactly 1280x720 (cover-crop) ────────────────
 def normalize(img_bytes):
@@ -329,17 +406,15 @@ def main():
 
     log(f"   ✅ {title}")
 
-    # hook: use override if provided, else derive from script
+    # Find the idea's sharpest point, then THUMB_CANDIDATES radically-different hook+picture pairs.
     override_hook = (row.get("thumbnail_hook_text") or "").strip()
-    _, visual = make_hook_and_concept(script, title)
+    itch, pairs = make_itch_and_pairs(script, title, THUMB_CANDIDATES, override_hook)
+    if not pairs:
+        log("❌ Claude returned no usable thumbnail pairs"); return
+    log(f"   💡 Itch: {itch[:90]}")
+    log(f"   🎴 {len(pairs)} candidate pairs ready")
     if override_hook:
-        hook = override_hook
-        log(f"   ℹ️  Using your hook override: {hook}")
-    else:
-        hook, visual2 = make_hook_and_concept(script, title)
-        visual = visual or visual2
-    log(f"   🎣 Hook: {hook}")
-    log(f"   🎨 Visual: {visual[:80]}")
+        log(f"   ℹ️  Hook locked to your override across all candidates: {override_hook}")
 
     # optional: condition on the episode's first image for stylistic match
     anchor_img = None
@@ -366,65 +441,48 @@ def main():
         db_patch(table, IDEA_NUMBER, {"thumbnail_ref_url": None})
 
     try:
-        log("\n🖼  Generating thumbnail illustration...")
-        raw    = generate_thumbnail_illustration(title, hook, visual, anchor_img)
-        canvas = normalize(raw)
-
-        # No EP badge for ideas — keep the thumbnail clean (title + hook + logo only)
         logo_data = gcs_download_path("ihaveacause_logo.png")
-        if logo_data:
-            logo = Image.open(io.BytesIO(logo_data)).convert("RGBA").resize((LOGO_SIZE, LOGO_SIZE), Image.LANCZOS)
-            canvas.paste(logo, (W - LOGO_SIZE - 20, H - LOGO_SIZE - 20), logo)
-            log("   ✅ Logo added")
-
-        out = io.BytesIO()
-        canvas.convert("RGB").save(out, "JPEG", quality=92)
-        out = out.getvalue()
-        log(f"   ✅ Thumbnail composed ({len(out)//1024}KB)")
-
         lang_code = "ta" if LANGUAGE == "ta" else "en"
-        gcs_path  = f"ideas/{IDEA_NUMBER:03d}/{lang_code}/thumbnail.jpg"
-        signed_url = gcs_upload_and_sign(out, gcs_path)
-        if not signed_url:
-            log("❌ Upload failed"); return
-
-        # write thumbnail_url ONLY — do not touch the main status (image flow owns it)
-        db_patch(table, IDEA_NUMBER, {"thumbnail_url": signed_url})
-
-        # ── Localized thumbnails (English master only) ──────────────────
-        # The English idea is the video YouTube dubs into the other languages,
-        # so we generate one localized thumbnail per target language here and
-        # store the set in `localized_thumbnails` for manual attach in Studio.
-        if MULTI_LANG_THUMBS and LANGUAGE == "en":
-            log("\n🌐 Generating localized thumbnails (one per language)...")
+        candidates = []
+        for i, pair in enumerate(pairs, start=1):
+            log(f"\n🖼  Candidate {i}/{len(pairs)} — {pair.get('note','')[:40]}")
             try:
-                trans = translate_title_hook(title, hook)
-            except Exception as te:
-                log(f"   ⚠️  Translation failed: {te}"); trans = {}
-            loc_thumbs, loc_titles = {}, {"en": title}
-            for code, name in TARGET_LANGS.items():
-                t = trans.get(code) or {}
-                l_title = (t.get("title") or title).strip()
-                l_hook  = (t.get("hook")  or hook ).strip()
-                loc_titles[code] = l_title
-                try:
-                    lraw    = generate_thumbnail_illustration(l_title, l_hook, visual, anchor_img, lang_name=name)
-                    lcanvas = normalize(lraw)   # no EP badge for ideas
-                    if logo_data:
-                        llogo = Image.open(io.BytesIO(logo_data)).convert("RGBA").resize((LOGO_SIZE, LOGO_SIZE), Image.LANCZOS)
-                        lcanvas.paste(llogo, (W - LOGO_SIZE - 20, H - LOGO_SIZE - 20), llogo)
-                    lbuf = io.BytesIO(); lcanvas.convert("RGB").save(lbuf, "JPEG", quality=92)
-                    lurl = gcs_upload_and_sign(lbuf.getvalue(), f"ideas/{IDEA_NUMBER:03d}/{code}/thumbnail.jpg")
-                    if lurl:
-                        loc_thumbs[code] = lurl
-                        log(f"   ✅ {name}")
-                except Exception as le:
-                    log(f"   ⚠️  {name} thumbnail failed: {le}")
-            db_patch(table, IDEA_NUMBER, {"localized_thumbnails": loc_thumbs, "localized_titles": loc_titles})
-            log(f"   ✅ {len(loc_thumbs)} localized thumbnails stored (attach them in Studio)")
+                raw, used_prompt = generate_thumbnail_illustration(
+                    title, pair["hook"], pair["visual"], anchor_img, style=pair.get("style"))
+                canvas = normalize(raw)   # no EP badge for ideas — clean title + hook + logo
+                if logo_data:
+                    logo = Image.open(io.BytesIO(logo_data)).convert("RGBA").resize((LOGO_SIZE, LOGO_SIZE), Image.LANCZOS)
+                    canvas.paste(logo, (W - LOGO_SIZE - 20, H - LOGO_SIZE - 20), logo)
+                buf = io.BytesIO(); canvas.convert("RGB").save(buf, "JPEG", quality=92)
+                gcs_path = f"ideas/{IDEA_NUMBER:03d}/{lang_code}/cand_{i:02d}.jpg"
+                curl = gcs_upload_and_sign(buf.getvalue(), gcs_path)
+                if not curl:
+                    log(f"   ⚠️  Candidate {i} upload failed — skipping"); continue
+                candidates.append({
+                    "idx": i, "hook": pair["hook"], "note": pair.get("note", ""),
+                    "style": pair.get("style", ""), "prompt": used_prompt, "url": curl,
+                })
+                log(f"   ✅ Candidate {i} ready ({len(buf.getvalue())//1024}KB)")
+            except Exception as ce:
+                log(f"   ⚠️  Candidate {i} failed: {ce}")
+
+        if not candidates:
+            log("❌ No candidates rendered"); return
+
+        # Store all candidates; default the live thumbnail to candidate #1 so publish never stalls.
+        # (You promote a different one from the dashboard, which just rewrites thumbnail_url.)
+        db_patch(table, IDEA_NUMBER, {
+            "thumbnail_candidates": candidates,
+            "thumbnail_url": candidates[0]["url"],
+        })
+
+        # NOTE: localized (per-language) thumbnails are intentionally NOT generated here.
+        # That belongs on the ONE candidate you pick — generating it for all N would be
+        # N × languages renders. The dormant `localized_thumbnails` column and
+        # MULTI_LANG_THUMBS stay as-is for that future single-pick step.
 
         log(f"\n{'='*60}")
-        log(f"✅ Episode {IDEA_NUMBER} {LANGUAGE.upper()} — thumbnail ready")
+        log(f"✅ Episode {IDEA_NUMBER} {LANGUAGE.upper()} — {len(candidates)} thumbnail candidates ready")
         log(f"{'='*60}")
 
     except Exception as e:
