@@ -1,0 +1,40 @@
+name: Anchor Beats (On Camera)
+on:
+  workflow_dispatch:
+    inputs:
+      record_id:
+        description: 'Anchor record id (uuid)'
+        required: true
+        type: string
+      language:
+        description: 'Lane: ta (Tamil) or en (English)'
+        required: true
+        default: 'en'
+        type: choice
+        options: [ta, en]
+jobs:
+  beats:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-anchor-beats-v1
+      - name: Install Python deps
+        run: pip install requests google-genai google-auth Pillow anthropic cryptography
+      - name: Plan beats + render image beats
+        env:
+          SUPABASE_URL:                        ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY:                        ${{ secrets.SUPABASE_KEY }}
+          GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
+          ANTHROPIC_API_KEY:                   ${{ secrets.ANTHROPIC_API_KEY }}
+          RECORD_ID:                           ${{ inputs.record_id }}
+          LANGUAGE:                            ${{ inputs.language }}
+          PYTHONUNBUFFERED:                    '1'
+        run: python new_youtube/scripts/anchor_beats.py
