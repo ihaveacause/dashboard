@@ -113,10 +113,27 @@ def db_get(table, params):
                      params=params, timeout=15)
     return r.json() if r.status_code == 200 else []
 
-def db_patch(table, val, data):
-    r = requests.patch(f"{REST}/{table}?episode_number=eq.{val}",
-                       headers=SB_HEADERS, json=data, timeout=30)
-    return r.status_code in (200, 204)
+def db_patch(table, val, data, _retries=3):
+    """Write to Supabase with VISIBLE failures + retries. Previously a non-2xx was
+    swallowed silently, leaving the row stuck at its old status."""
+    import time as _t
+    last = ""
+    for attempt in range(1, _retries + 1):
+        try:
+            r = requests.patch(f"{REST}/{table}?episode_number=eq.{val}",
+                               headers=SB_HEADERS, json=data, timeout=30)
+            if r.status_code in (200, 204):
+                if attempt > 1:
+                    print(f"   ✅ db_patch {table} #{val} succeeded on retry {attempt}", flush=True)
+                return True
+            last = f"HTTP {r.status_code}: {r.text[:300]}"
+        except Exception as e:
+            last = f"exception: {e}"
+        print(f"   ⚠️  db_patch {table} #{val} failed (attempt {attempt}/{_retries}) — {last}", flush=True)
+        if attempt < _retries:
+            _t.sleep(2 * attempt)
+    print(f"   ❌ db_patch GAVE UP on {table} #{val} after {_retries} attempts — {last} | columns: {list(data)}", flush=True)
+    return False
 
 # ── GCS ───────────────────────────────────────────────────────
 def gcs_token_and_info():

@@ -72,15 +72,30 @@ def db_get(table, params):
     )
     return r.json() if r.status_code == 200 else []
 
-def db_patch(table, col, val, data):
-    r = requests.patch(
-        f"{REST}/{table}?{col}=eq.{val}",
-        headers=SB_HEADERS,
-        json=data, timeout=30
-    )
-    if r.status_code not in (200, 204):
-        print(f"  ❌ Supabase patch error {r.status_code}: {r.text[:300]}")
-    return r.status_code in (200, 204)
+def db_patch(table, col, val, data, _retries=3):
+    """Write to Supabase with VISIBLE failures + retries. Previously a non-2xx was
+    logged once but never retried, so a transient/auth failure left the row stuck."""
+    import time as _t
+    last = ""
+    for attempt in range(1, _retries + 1):
+        try:
+            r = requests.patch(
+                f"{REST}/{table}?{col}=eq.{val}",
+                headers=SB_HEADERS,
+                json=data, timeout=30
+            )
+            if r.status_code in (200, 204):
+                if attempt > 1:
+                    print(f"  ✅ db_patch {table} {col}={val} succeeded on retry {attempt}", flush=True)
+                return True
+            last = f"HTTP {r.status_code}: {r.text[:300]}"
+        except Exception as e:
+            last = f"exception: {e}"
+        print(f"  ⚠️  db_patch {table} {col}={val} failed (attempt {attempt}/{_retries}) — {last}", flush=True)
+        if attempt < _retries:
+            _t.sleep(2 * attempt)
+    print(f"  ❌ db_patch GAVE UP on {table} {col}={val} after {_retries} attempts — {last} | columns: {list(data)}", flush=True)
+    return False
 
 # ── Gemini call ───────────────────────────────────────────────
 def generate(prompt, model="gemini-2.5-pro"):
