@@ -679,6 +679,7 @@ function buildActions(ep, s, n) {
       ${ep.thumbnail_url
         ? `<img src="${ep.thumbnail_url}" style="width:100%;max-width:360px;border-radius:6px;border:1px solid rgba(255,255,255,.15)" alt="Thumbnail">`
         : '<span style="color:var(--muted);font-size:12px">⚠ No thumbnail — regenerate it from the image step before publishing</span>'}
+      ${candidateThumbsHtml(ep, n)}
       ${localizedThumbsHtml(ep)}
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
         ${ep.video_url?`<a href="${ep.video_url}" target="_blank" class="btn btn-preview">▶ Preview Video</a>`:''}
@@ -735,6 +736,7 @@ function buildImagesReview(ep, n) {
     ${thumb
       ? `<img src="${thumb}" style="width:100%;max-width:420px;border-radius:8px;border:1px solid var(--border2)" alt="Thumbnail">`
       : '<div style="color:var(--muted);font-size:12px">Thumbnail still generating, or not ready yet — try regenerate.</div>'}
+    ${candidateThumbsHtml(ep, n)}
     ${localizedThumbsHtml(ep)}
     <input class="img-trigger-input" style="margin-top:8px" id="thumb-hook-${n}" placeholder="Optional: override the hook text, then regenerate">
     <input type="file" accept="image/*" id="thumb-ref-${n}" style="margin-top:7px;display:block;font-size:11px;color:var(--muted)">
@@ -944,6 +946,42 @@ async function quickSet(n, status) {
     showToast(`Episode ${n} → ${STATUS_LABELS[status]}`,'success');
     loadEpisodes();
   } catch(e) { showToast(`Error: ${e.message}`,'error'); }
+}
+
+// ── Thumbnail candidates gallery (pick one of the N options) ─
+function candidateThumbsHtml(ep, n){
+  let cands = ep.thumbnail_candidates;
+  if (!cands) return '';
+  if (typeof cands === 'string') { try { cands = JSON.parse(cands); } catch(e){ return ''; } }
+  if (!Array.isArray(cands) || !cands.length) return '';
+  const esc = s => (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const current = ep.thumbnail_url || '';
+  const cells = cands.map(c => {
+    const chosen = c.url === current;
+    return `
+    <div style="width:260px;border:2px solid ${chosen?'var(--green)':'var(--border2)'};border-radius:10px;padding:8px;background:rgba(255,255,255,.02)">
+      <img src="${c.url}" style="width:100%;border-radius:6px;cursor:pointer" onclick="window.open('${c.url}','_blank')" alt="Option ${c.idx}">
+      <div style="font-size:12px;font-weight:600;margin-top:6px;color:var(--text)">${c.idx}. ${esc(c.hook)}</div>
+      <div style="font-size:10px;color:var(--muted);margin-top:2px">${esc(c.note)}${c.style? ' · '+esc(c.style) : ''}</div>
+      <details style="margin-top:6px">
+        <summary style="font-size:10px;color:var(--muted2);cursor:pointer">show the prompt sent to Nano Banana</summary>
+        <div style="font-size:10px;color:var(--muted);white-space:pre-wrap;margin-top:4px;max-height:170px;overflow:auto;background:rgba(0,0,0,.25);padding:6px;border-radius:5px;line-height:1.4">${esc(c.prompt)}</div>
+      </details>
+      <button class="btn ${chosen?'btn-approve':'btn-regen'}" style="margin-top:7px;width:100%" onclick="useCandidate(${n},'${c.url}')">${chosen?'✓ In use':'Use this one'}</button>
+    </div>`;
+  }).join('');
+  return `<div style="margin-top:14px">
+    <div style="font-size:11px;color:var(--muted);margin-bottom:8px">🎴 ${cands.length} thumbnail options — pick one to make it this episode's thumbnail. Click an image to enlarge; expand "show the prompt" to see exactly what wording produced it.</div>
+    <div style="display:flex;flex-wrap:wrap;gap:12px">${cells}</div>
+  </div>`;
+}
+
+async function useCandidate(n, url){
+  try {
+    await patch(n, {thumbnail_url: url});
+    showToast(`Episode ${n} — thumbnail updated`,'success');
+    loadEpisodes();
+  } catch(e){ showToast(`Error: ${e.message}`,'error'); }
 }
 
 // ── Localized thumbnails gallery ─────────────────────────────
