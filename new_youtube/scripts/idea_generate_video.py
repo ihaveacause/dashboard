@@ -176,18 +176,46 @@ def _clean_for_tts(text):
     t = re.sub(r"\s+", " ", t).strip()
     return t
 
-def _chunk_text(text, limit=4000):
+def _chunk_text(text, limit=4500):
+    """Split into chunks under `limit` UTF-8 BYTES (not characters).
+    Google TTS caps input at 5000 bytes. Tamil/Indic glyphs are ~3 bytes each,
+    so a character-based limit silently busts the cap. Split on sentence
+    boundaries, then spaces, then hard codepoint boundaries (never mid-glyph)."""
     import re
+    blen = lambda s: len(s.encode("utf-8"))
+    def hard_split(s):
+        out, cur = [], ""
+        for ch in s:
+            if blen(cur) + blen(ch) > limit and cur:
+                out.append(cur); cur = ch
+            else:
+                cur += ch
+        if cur:
+            out.append(cur)
+        return out
     sents = re.split(r"(?<=[.!?।])\s+", text)
     chunks, cur = [], ""
     for s in sents:
-        if len(cur) + len(s) + 1 > limit and cur:
+        if blen(s) > limit:                # a single sentence bigger than the cap
+            if cur:
+                chunks.append(cur.strip()); cur = ""
+            piece = ""
+            for w in s.split(" "):         # try splitting on spaces first
+                if blen(piece) + blen(w) + 1 > limit and piece:
+                    chunks.append(piece.strip()); piece = w
+                else:
+                    piece = f"{piece} {w}".strip()
+            if piece:
+                for hs in hard_split(piece):   # still too big → codepoint hard-split
+                    chunks.append(hs.strip())
+            continue
+        if blen(cur) + blen(s) + 1 > limit and cur:
             chunks.append(cur.strip()); cur = s
         else:
             cur = f"{cur} {s}".strip()
     if cur:
         chunks.append(cur.strip())
-    return chunks or [text[:limit]]
+    return chunks or hard_split(text)
 
 def synthesize_chirp3(script_text, voice_name, out_path, tmpdir):
     """Synthesize the master voiceover with a Google Chirp 3: HD voice.
@@ -197,6 +225,24 @@ def synthesize_chirp3(script_text, voice_name, out_path, tmpdir):
     lang_code = "-".join(voice_name.split("-")[:2])
     token  = _google_access_token()
     chunks = _chunk_text(_clean_for_tts(script_text))
+    # Safety net: never send a request over the hard ~5000-byte TTS cap, regardless
+    # of what the splitter produced. Re-split any oversized chunk at codepoint bounds.
+    def _byte_safe(parts, cap=4800):
+        out = []
+        for p in parts:
+            if len(p.encode("utf-8")) <= cap:
+                out.append(p); continue
+            cur = ""
+            for ch in p:
+                if len((cur + ch).encode("utf-8")) > cap and cur:
+                    out.append(cur); cur = ch
+                else:
+                    cur += ch
+            if cur: out.append(cur)
+        return out
+    chunks = _byte_safe(chunks)
+    _mx = max((len(c.encode("utf-8")) for c in chunks), default=0)
+    print(f"   🔧 TTS chunker: byte-safe v2 — {len(chunks)} chunk(s), largest {_mx}B (must be <5000)", flush=True)
     print(f"   🎙  Chirp 3 HD voice: {voice_name} ({lang_code}) — {len(chunks)} chunk(s)", flush=True)
     part_files = []
     for i, chunk in enumerate(chunks):
