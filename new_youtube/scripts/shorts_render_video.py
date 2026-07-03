@@ -103,11 +103,16 @@ def upload_to_gcs(local_path, gcs_path):
     token = get_gcs_token()
     with open(local_path, "rb") as f:
         data = f.read()
-    r = requests.put(
+    # GCS JSON API simple upload requires POST — the /upload/storage/v1/b/.../o
+    # endpoint has no PUT route mapped, which is why the wrong verb 404s instead
+    # of failing auth or bucket-lookup: it never gets that far.
+    r = requests.post(
         f"https://storage.googleapis.com/upload/storage/v1/b/{GCS_BUCKET}/o?uploadType=media&name={gcs_path}",
         headers={"Authorization": f"Bearer {token}", "Content-Type": "video/mp4"},
         data=data,
     )
+    if r.status_code != 200:
+        print(f"  ❌ GCS upload error {r.status_code}: {r.text[:500]}")
     r.raise_for_status()
     return f"https://storage.googleapis.com/{GCS_BUCKET}/{gcs_path}"
 
