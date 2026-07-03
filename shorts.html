@@ -165,11 +165,13 @@ async function load(){
 function epGroup(ep, shorts){
   const title = ep[TITLE_COL()] || `Episode ${ep.episode_number}`;
   const cards = shorts.map(shortCard).join('');
+  const hasProgress = shorts.some(s => s.status !== 'script_ready');
+  const hasPublished = shorts.some(s => s.status === 'published');
   const genRow = shorts.length
     ? `<div class="gen-row"><span class="muted">${shorts.length} short${shorts.length>1?'s':''} for this episode</span>
-        <button class="btn btn-ghost btn-sm" onclick="genScripts(${ep.episode_number})">↻ Regenerate shorts</button></div>`
+        <button class="btn btn-ghost btn-sm" onclick="genScripts(${ep.episode_number}, ${shorts.length}, ${hasProgress}, ${hasPublished})">↻ Regenerate shorts</button></div>`
     : `<div class="gen-row"><span class="muted">No shorts yet — Gemini will decide 1 to 3 based on this script.</span>
-        <button class="btn btn-primary btn-sm" onclick="genScripts(${ep.episode_number})">⚡ Generate Shorts</button></div>`;
+        <button class="btn btn-primary btn-sm" onclick="genScripts(${ep.episode_number}, 0, false, false)">⚡ Generate Shorts</button></div>`;
 
   return `<div class="ep-group">
     <div class="ep-head">
@@ -215,6 +217,7 @@ function shortCard(s){
   else if(s.status==='video_ready'){
     body = `<div class="flow">
       ${s.video_url?`<a class="vlink" href="${s.video_url}" target="_blank">▶ Preview render</a>`:''}
+      <button class="btn btn-ghost btn-sm" onclick="run('video','${s.id}')">↻ Re-render</button>
       <button class="btn btn-approve btn-sm" onclick="run('upload','${s.id}')" style="margin-left:auto">✓ Approve &amp; Publish to YouTube</button></div>`;
   }
   else if(s.status==='published'){
@@ -229,7 +232,14 @@ function shortCard(s){
     </div>${body}</div>`;
 }
 
-async function genScripts(episodeNumber){
+async function genScripts(episodeNumber, existingCount, hasProgress, hasPublished){
+  if (existingCount > 0){
+    let msg = `This deletes all ${existingCount} existing short${existingCount>1?'s':''} for this episode and replaces them with a new set (Gemini may decide a different count — 1, 2, or 3).`;
+    if (hasPublished) msg += `\n\n⚠️ At least one of these is already PUBLISHED to YouTube. Its script/images/video row will be deleted here, but the live YouTube video itself is NOT taken down — you'd be orphaning it from this dashboard.`;
+    else if (hasProgress) msg += `\n\nAt least one already has images or a rendered video — that work will be lost.`;
+    msg += `\n\nRegenerate anyway?`;
+    if (!confirm(msg)) return;
+  }
   try{ await callShorts('scripts', {episode_number: episodeNumber}); toast('Generating shorts — refresh in a minute'); setTimeout(load,1500); }
   catch(e){ toast(e.message); }
 }
