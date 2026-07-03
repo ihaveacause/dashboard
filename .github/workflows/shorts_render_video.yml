@@ -54,7 +54,7 @@ jobs:
           key: ${{ runner.os }}-u2net-model-v1
 
       - name: Install dependencies
-        run: pip install requests google-auth rembg onnxruntime Pillow numpy
+        run: pip install requests google-auth cryptography rembg onnxruntime Pillow numpy
 
       - name: Render short video
         env:
