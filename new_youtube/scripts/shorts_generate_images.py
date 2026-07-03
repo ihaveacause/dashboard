@@ -255,7 +255,7 @@ def main():
             return
 
         ok = db_patch_short({
-            "image_urls_vertical": json.dumps(image_urls),
+            "image_urls_vertical": image_urls,
             "status":              "images_ready",
         })
 
