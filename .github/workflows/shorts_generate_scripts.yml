@@ -1,0 +1,52 @@
+name: "[SHORTS] Generate Scripts"
+
+on:
+  workflow_dispatch:
+    inputs:
+      episode_number:
+        description: 'Episode number'
+        required: true
+        type: string
+      language:
+        description: 'Language: ta (Tamil) or en (English)'
+        required: true
+        default: 'ta'
+        type: choice
+        options:
+          - ta
+          - en
+
+jobs:
+  generate-shorts-scripts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-shorts-script-v1
+
+      - name: Install dependencies
+        run: pip install requests google-cloud-aiplatform google-auth
+
+      - name: Generate shorts scripts
+        env:
+          SUPABASE_URL:                        ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY:                        ${{ secrets.SUPABASE_KEY }}
+          GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
+          EPISODE_NUMBER:                      ${{ inputs.episode_number }}
+          LANGUAGE:                            ${{ inputs.language }}
+        run: python new_youtube/scripts/shorts_generate_scripts.py
+
+      - name: Summary
+        run: echo "✅ Shorts scripts done — Episode ${{ inputs.episode_number }} (${{ inputs.language }})"

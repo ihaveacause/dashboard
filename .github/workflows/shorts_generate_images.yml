@@ -1,0 +1,53 @@
+name: "[SHORTS] Generate Images"
+
+on:
+  workflow_dispatch:
+    inputs:
+      short_id:
+        description: 'Short UUID'
+        required: true
+        type: string
+      language:
+        description: 'Language: ta (Tamil) or en (English)'
+        required: true
+        default: 'ta'
+        type: choice
+        options:
+          - ta
+          - en
+
+jobs:
+  generate-shorts-images:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-shorts-images-v1
+
+      - name: Install dependencies
+        run: pip install requests google-genai google-auth Pillow
+
+      - name: Generate shorts images
+        env:
+          SUPABASE_URL:                        ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY:                        ${{ secrets.SUPABASE_KEY }}
+          GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
+          GEMINI_API_KEY:                      ${{ secrets.GEMINI_API_KEY }}
+          SHORT_ID:                            ${{ inputs.short_id }}
+          LANGUAGE:                            ${{ inputs.language }}
+        run: python new_youtube/scripts/shorts_generate_images.py
+
+      - name: Summary
+        run: echo "✅ Shorts images done — ${{ inputs.short_id }} (${{ inputs.language }})"

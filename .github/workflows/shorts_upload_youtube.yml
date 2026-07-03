@@ -1,0 +1,53 @@
+name: "[SHORTS] Upload to YouTube"
+
+on:
+  workflow_dispatch:
+    inputs:
+      short_id:
+        description: 'Short UUID'
+        required: true
+        type: string
+      language:
+        description: 'ta or en'
+        required: true
+        default: 'ta'
+        type: choice
+        options:
+          - ta
+          - en
+
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Python dependencies
+        run: |
+          pip install --upgrade pip
+          pip install \
+            google-api-python-client \
+            google-auth-httplib2 \
+            google-auth-oauthlib \
+            supabase
+
+      - name: Upload short to YouTube
+        env:
+          SUPABASE_URL:              ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          YOUTUBE_TOKEN_JSON:        ${{ secrets.YOUTUBE_TOKEN_JSON }}
+        run: |
+          python new_youtube/scripts/shorts_upload_to_youtube.py \
+            --short_id  "${{ inputs.short_id }}" \
+            --language  "${{ inputs.language }}"
+
+      - name: Summary
+        run: echo "✅ Short ${{ inputs.short_id }} uploaded to YouTube (${{ inputs.language }})"
