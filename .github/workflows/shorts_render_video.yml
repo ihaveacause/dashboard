@@ -30,20 +30,29 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install FFmpeg
+      - name: Install FFmpeg + fonts (Tamil + English, for the hook-line overlay)
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y ffmpeg
+          sudo apt-get install -y ffmpeg fontconfig fonts-noto-core fonts-noto-tamil
+          fc-cache -f
           ffmpeg -version | head -1
 
       - name: Cache pip
         uses: actions/cache@v4
         with:
           path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-shorts-render-v1
+          key: ${{ runner.os }}-pip-shorts-render-v2
+
+      # rembg's segmentation model (~176MB) downloads once on first use; caching
+      # it means every run after the first skips that download entirely.
+      - name: Cache rembg model
+        uses: actions/cache@v4
+        with:
+          path: ~/.u2net
+          key: ${{ runner.os }}-u2net-model-v1
 
       - name: Install dependencies
-        run: pip install requests google-auth
+        run: pip install requests google-auth rembg onnxruntime Pillow numpy
 
       - name: Render short video
         env:
