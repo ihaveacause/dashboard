@@ -100,6 +100,19 @@ def get_gcs_token():
     return creds.token
 
 def upload_to_gcs(local_path, gcs_path):
+    """Uploads to GCS and returns a 30-day V2 signed URL — NOT a plain public
+    URL. The bucket is private (confirmed: a plain storage.googleapis.com/...
+    URL returns AccessDenied to an unauthenticated browser), so every other
+    working pipeline in this repo (generate_video.py, generate_images.py,
+    anchor_render.py, etc.) signs its GCS URLs instead of relying on public
+    ACLs. This mirrors that exact, already-proven pattern.
+    """
+    import base64
+    import datetime as dt
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import padding
+    from cryptography.hazmat.backends import default_backend
+
     token = get_gcs_token()
     with open(local_path, "rb") as f:
         data = f.read()
@@ -114,7 +127,21 @@ def upload_to_gcs(local_path, gcs_path):
     if r.status_code != 200:
         print(f"  ❌ GCS upload error {r.status_code}: {r.text[:500]}")
     r.raise_for_status()
-    return f"https://storage.googleapis.com/{GCS_BUCKET}/{gcs_path}"
+    print(f"  ✅ GCS upload complete")
+
+    creds_info = json.loads(CREDS_JSON)
+    expiry_ts = int((dt.datetime.utcnow() + dt.timedelta(days=30)).timestamp())
+    sts = "\n".join(["GET", "", "", str(expiry_ts), f"/{GCS_BUCKET}/{gcs_path}"])
+    pk = serialization.load_pem_private_key(
+        creds_info["private_key"].encode("utf-8"), password=None, backend=default_backend())
+    sig = pk.sign(sts.encode("utf-8"), padding.PKCS1v15(), hashes.SHA256())
+    esig = requests.utils.quote(base64.b64encode(sig).decode("utf-8"), safe="")
+    signed_url = (
+        f"https://storage.googleapis.com/{GCS_BUCKET}/{gcs_path}"
+        f"?GoogleAccessId={creds_info['client_email']}&Expires={expiry_ts}&Signature={esig}"
+    )
+    print(f"  ✅ Signed URL generated (30 days)")
+    return signed_url
 
 def get_episode_voice(episode_number):
     """Reads the exact tts_voice the parent long episode was approved with,
