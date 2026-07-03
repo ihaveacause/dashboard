@@ -200,7 +200,7 @@ function shortCard(s){
     body = `<div class="bar"><i></i></div><div class="note">Running on GitHub Actions — refresh in a minute.</div>`;
   }
   else if(s.status==='images_ready'){
-    const imgs=(s.image_urls_vertical||[]).map(i=>`<img src="${i.url}" alt="${esc(i.label||'')}">`).join('');
+    const imgs=imgList(s.image_urls_vertical).map(i=>`<img src="${i.url}" alt="${esc(i.label||'')}">`).join('');
     body = `<div class="imgs">${imgs}</div>
       <div class="flow">
         <button class="btn btn-ghost btn-sm" onclick="run('images','${s.id}')">↻ Regenerate</button>
@@ -208,7 +208,7 @@ function shortCard(s){
       </div>`;
   }
   else if(s.status==='images_approved'){
-    const imgs=(s.image_urls_vertical||[]).map(i=>`<img src="${i.url}" alt="${esc(i.label||'')}">`).join('');
+    const imgs=imgList(s.image_urls_vertical).map(i=>`<img src="${i.url}" alt="${esc(i.label||'')}">`).join('');
     body = `<div class="imgs">${imgs}</div>
       <div class="flow"><button class="btn btn-go btn-sm" onclick="run('video','${s.id}')">Render Video</button></div>`;
   }
@@ -243,6 +243,17 @@ async function approve(id, nextStatus){
 }
 
 function esc(s){return (s==null?'':String(s)).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+
+// Defensive: some older rows may have image_urls_vertical stored as a JSON
+// string instead of a real array (pre-fix data). Handles both safely.
+function imgList(v){
+  if(Array.isArray(v)) return v;
+  if(typeof v === 'string' && v.trim()){
+    try{ const p = JSON.parse(v); return Array.isArray(p) ? p : []; }
+    catch(e){ return []; }
+  }
+  return [];
+}
 
 load();
 </script>
