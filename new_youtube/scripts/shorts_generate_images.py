@@ -110,7 +110,7 @@ def call_with_retry(fn, max_retries=4, wait=30):
             else:
                 raise
 
-# ── Step 1: Scene descriptions (3 scenes — short-form needs fewer beats) ────
+# ── Step 1: Scene descriptions (5 beats — faster cutting reads as more produced) ────
 def generate_scene_descriptions(short, episode):
     print(f"\n🎨 Step 1: Generating scene descriptions...")
     title  = short.get("title", "")
@@ -127,15 +127,26 @@ Parent episode: {ep_title}
 SHORT SCRIPT:
 {script}
 
-Design exactly 3 VERTICAL (9:16) scene images that follow this short's own tiny arc:
+Design exactly 5 VERTICAL (9:16) scene images that follow this short's own tiny arc — 5
+beats over ~50s means each holds the screen for ~8-10s, which cuts noticeably faster and
+reads as more "produced" than a slow 3-image slideshow:
 - Scene 1: the opening hook — striking, immediate, matches the first line's energy
-- Scene 2: the core claim/point being made — visually reinforces the argument
-- Scene 3: the closing beat — visually open-ended, leaves tension unresolved (matches the hook ending)
+- Scene 2: building the claim — the first piece of evidence or escalation
+- Scene 3: the core argument at its sharpest point — the centre of the short
+- Scene 4: the turn — where the tension tightens toward the close
+- Scene 5: the closing beat — visually open-ended, leaves tension unresolved (matches the hook ending)
+
+Each scene should feel like a distinct beat, not a repeat of the previous one — vary
+composition, distance (wide/medium/close), and framing across the 5 so the cutting itself
+carries energy.
 
 Choose a visual style that fits the content (photorealistic/documentary for social topics,
 painterly/symbolic for philosophical ones, bold/graphic for reform topics) — same
 visual-direction approach the channel already uses for its long-form episodes, just
 composed for a vertical 9:16 frame with the subject centered so it reads well on mobile.
+Favor a single clear subject reasonably separated from its background in at least 3 of the
+5 scenes (not flat/abstract patterns) — those scenes get a foreground/background depth
+effect in the edit, which needs a distinguishable subject to work.
 
 CRITICAL RULE: no text, letters, words, numbers, writing, or watermarks anywhere in the image.
 
@@ -144,7 +155,9 @@ Return ONLY valid JSON:
   "scenes": [
     {{"id": 1, "label": "short scene label", "prompt": "detailed vertical visual prompt, no text"}},
     {{"id": 2, "label": "short scene label", "prompt": "detailed vertical visual prompt, no text"}},
-    {{"id": 3, "label": "short scene label", "prompt": "detailed vertical visual prompt, no text"}}
+    {{"id": 3, "label": "short scene label", "prompt": "detailed vertical visual prompt, no text"}},
+    {{"id": 4, "label": "short scene label", "prompt": "detailed vertical visual prompt, no text"}},
+    {{"id": 5, "label": "short scene label", "prompt": "detailed vertical visual prompt, no text"}}
   ]
 }}"""
 
