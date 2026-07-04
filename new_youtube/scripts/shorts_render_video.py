@@ -31,6 +31,7 @@ import base64
 import tempfile
 import subprocess
 import requests
+import random
 
 CREDS_JSON = os.environ["GOOGLE_APPLICATION_CREDENTIALS_JSON"]
 creds_path = "/tmp/gcp_creds.json"
@@ -41,12 +42,21 @@ os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = creds_path
 from google.auth.transport.requests import Request
 from google.oauth2.service_account import Credentials as SACreds
 
+# PIL is used both for rembg's subject cutouts AND for measuring text width to
+# wrap the hook overlay correctly — kept independent of rembg's availability so
+# a rembg failure never also silently breaks text wrapping.
+try:
+    from PIL import Image, ImageFont
+    PIL_AVAILABLE = True
+except Exception as e:
+    print(f"  ℹ️  PIL not available ({e}) — hook text will use approximate wrapping")
+    PIL_AVAILABLE = False
+
 # rembg is optional: if it's missing, fails to import, or its model download
 # fails at runtime, parallax is simply skipped for the whole render (falls
 # back to plain zoompan on every image) — never breaks the pipeline.
 try:
     from rembg import remove as rembg_remove, new_session as rembg_new_session
-    from PIL import Image
     import numpy as np
     REMBG_AVAILABLE = True
 except Exception as e:
@@ -241,7 +251,156 @@ def try_extract_subject(image_path, out_path):
 # so this doesn't break if the runner's font paths shift.
 DRAWTEXT_FONT = {"ta": "Noto Sans Tamil", "en": "Noto Sans"}
 
-def render_vertical_video(image_paths, audio_path, on_screen_text, output_path, tmpdir, fps=25):
+# Style presets for the hook overlay — each is a distinct "3D-ish" look built
+# purely from stacked drawtext layers (extrusion offset-copies, or a soft
+# glow via widening semi-transparent borders). No external rendering, no
+# extra API cost — just layered FFmpeg text. One style is picked per SHORT
+# (seeded by the short's own ID, so re-rendering the same short keeps its
+# look instead of flickering to a new style every retry) — different shorts
+# get different looks.
+HOOK_STYLES = [
+    {  # solid red extrusion block
+        "kind": "extrude", "fontcolor": "white", "bordercolor": "black", "borderw": 5,
+        "shadow_color": "0xB5121B", "layers": 6, "step": 3,
+    },
+    {  # solid cyan/navy extrusion block
+        "kind": "extrude", "fontcolor": "white", "bordercolor": "0x0A2540", "borderw": 5,
+        "shadow_color": "0x0E7C86", "layers": 6, "step": 3,
+    },
+    {  # gold pop with dark extrusion
+        "kind": "extrude", "fontcolor": "0xFFD54A", "bordercolor": "black", "borderw": 6,
+        "shadow_color": "0x3A2B00", "layers": 5, "step": 3,
+    },
+    {  # neon magenta glow
+        "kind": "glow", "fontcolor": "white", "bordercolor": "0xE0218A", "borderw": 4,
+        "glow_color": "0xE0218A", "glow_layers": 4, "glow_start": 22, "glow_step": 6,
+    },
+    {  # neon cyan glow
+        "kind": "glow", "fontcolor": "white", "bordercolor": "0x22D3EE", "borderw": 4,
+        "glow_color": "0x22D3EE", "glow_layers": 4, "glow_start": 22, "glow_step": 6,
+    },
+    {  # purple extrusion block
+        "kind": "extrude", "fontcolor": "0xF5F0FF", "bordercolor": "black", "borderw": 5,
+        "shadow_color": "0x4A1D6E", "layers": 6, "step": 3,
+    },
+]
+
+def build_hook_layers(stage_in, stage_out, textfile, font, fontsize, alpha_expr, enable_expr, style):
+    """Builds the stacked-drawtext filter string for ONE hook phrase in the
+    given style, threading intermediate ffmpeg labels from stage_in to
+    stage_out. Returns the filter fragment (caller appends with a leading ';').
+    """
+    parts = []
+    stage = stage_in
+    common = (
+        f"textfile='{textfile}':font='{font}':fontsize={fontsize}:line_spacing=14:"
+        f"x=(w-text_w)/2:alpha='{alpha_expr}':enable='{enable_expr}'"
+    )
+    y_base = "h*0.14"
+
+    if style["kind"] == "extrude":
+        # Draw N offset copies behind the main text, stepping diagonally,
+        # solid shadow color — reads as a solid "3D block letter" extrusion.
+        # Box goes on the BOTTOM-most layer so it sits behind the whole
+        # stack, not painted over the shadow layers on top of it.
+        n = style["layers"]
+        step = style["step"]
+        for i in range(n, 0, -1):
+            label = f"{stage_out}_e{i}"
+            box_part = "box=1:boxcolor=black@0.35:boxborderw=26:" if i == n else ""
+            parts.append(
+                f"[{stage}]drawtext={common}:fontcolor={style['shadow_color']}:{box_part}"
+                f"y=({y_base})+{i*step}:x=(w-text_w)/2+{i*step}[{label}]"
+            )
+            stage = label
+        parts.append(
+            f"[{stage}]drawtext={common}:fontcolor={style['fontcolor']}:"
+            f"bordercolor={style['bordercolor']}:borderw={style['borderw']}:"
+            f"y={y_base}[{stage_out}]"
+        )
+    else:  # glow
+        n = style["glow_layers"]
+        for i in range(n, 0, -1):
+            bw = style["glow_start"] + i * style["glow_step"]
+            alpha_scale = 0.12 + (0.10 * (n - i))
+            label = f"{stage_out}_g{i}"
+            box_part = "box=1:boxcolor=black@0.35:boxborderw=26:" if i == n else ""
+            parts.append(
+                f"[{stage}]drawtext={common}:fontcolor={style['glow_color']}@{alpha_scale:.2f}:"
+                f"bordercolor={style['glow_color']}@{alpha_scale:.2f}:borderw={bw}:{box_part}y={y_base}[{label}]"
+            )
+            stage = label
+        parts.append(
+            f"[{stage}]drawtext={common}:fontcolor={style['fontcolor']}:"
+            f"bordercolor={style['bordercolor']}:borderw={style['borderw']}:"
+            f"y={y_base}[{stage_out}]"
+        )
+
+    return ";".join(parts)
+
+_font_file_cache = {}
+
+def resolve_font_file(font_family):
+    """Asks fontconfig for the actual .ttf path behind a family name, so text
+    width can be measured precisely instead of guessed. Cached per family."""
+    if font_family in _font_file_cache:
+        return _font_file_cache[font_family]
+    path = None
+    try:
+        r = subprocess.run(["fc-match", "-f", "%{file}", font_family],
+                            capture_output=True, text=True, timeout=10)
+        candidate = r.stdout.strip()
+        if candidate and os.path.exists(candidate):
+            path = candidate
+    except Exception as e:
+        print(f"    ⚠️  fc-match failed for '{font_family}' ({e})")
+    _font_file_cache[font_family] = path
+    return path
+
+def wrap_text_for_overlay(text, font_family, max_width_px=920, start_fontsize=84,
+                           min_fontsize=52, max_lines=2):
+    """Word-wraps text to fit max_width_px, shrinking fontsize if needed to
+    stay within max_lines. Measures against the REAL font file via PIL when
+    available; falls back to a rough per-character estimate otherwise (still
+    functional, just less precise) — either way this always returns something
+    renderable, never raises.
+    """
+    words = text.split()
+    font_path = resolve_font_file(font_family) if PIL_AVAILABLE else None
+
+    fontsize = start_fontsize
+    lines = [text]  # last-resort fallback if the loop below never sets it
+    while fontsize >= min_fontsize:
+        if font_path:
+            try:
+                font = ImageFont.truetype(font_path, fontsize)
+                measure = lambda s: font.getlength(s)
+            except Exception:
+                measure = lambda s, fs=fontsize: len(s) * fs * 0.55
+        else:
+            measure = lambda s, fs=fontsize: len(s) * fs * 0.55
+
+        lines = []
+        current = ""
+        for w in words:
+            candidate = f"{current} {w}".strip()
+            if not current or measure(candidate) <= max_width_px:
+                current = candidate
+            else:
+                lines.append(current)
+                current = w
+        if current:
+            lines.append(current)
+
+        if len(lines) <= max_lines:
+            return "\n".join(lines), fontsize
+        fontsize -= 8
+
+    # Even the smallest allowed fontsize still wraps to more than max_lines —
+    # take the first max_lines and accept it rather than looping forever.
+    return "\n".join(lines[:max_lines]), fontsize
+
+def render_vertical_video(image_paths, audio_path, on_screen_texts, output_path, tmpdir, fps=25):
     """
     Renders a 1080x1920 vertical video with FREE motion (no AI video generation,
     no extra API cost — pure local processing on the already-generated Imagen
@@ -253,8 +412,10 @@ def render_vertical_video(image_paths, audio_path, on_screen_text, output_path, 
         Any image where segmentation isn't available/clean just gets plain
         zoompan — never blocks the render.
       - Crossfade between images, same as before.
-      - The hook line is punched onto screen over the first ~4s with a quick
-        fade in/out.
+      - on_screen_texts is a LIST of short punchy phrases (not one hook line) —
+        they're spread evenly across the whole short's runtime, each popping
+        on, holding, and popping off in its own time slice, properly word-
+        wrapped against the real font so nothing crowds or overflows.
     """
     probe = subprocess.run(
         ["ffprobe", "-v", "error", "-show_entries", "format=duration",
@@ -333,30 +494,49 @@ def render_vertical_video(image_paths, audio_path, on_screen_text, output_path, 
             xfade_chain += f"[{src}][v{i}]xfade=transition=fade:duration={fade_dur}:offset={offset:.3f}[{out_label}];"
         filtergraph = chain + xfade_chain.rstrip(";")
 
-    # Hook overlay: appears almost instantly (not a slow fade — delay costs the
-    # exact seconds you're trying to win), bold and high-contrast, positioned in
-    # the TOP third (bottom of a Short is where YouTube's own UI — captions,
-    # like/comment buttons — lives, so top is the safe + conventional spot for
-    # a hook). Held for roughly the first image's screen time, not a fixed 4s.
-    vout_label = "vout"
-    if on_screen_text and on_screen_text.strip():
-        text = on_screen_text.strip()
-        if LANGUAGE == "en":
-            text = text.upper()
-        hold_end = min(per_img, 5.5)
-        fade_out_start = max(hold_end - 0.25, 0.15)
-        lang = LANGUAGE if LANGUAGE in DRAWTEXT_FONT else "en"
-        font = DRAWTEXT_FONT[lang]
-        textfile = os.path.join(tmpdir, "hook.txt")
-        with open(textfile, "w", encoding="utf-8") as f:
-            f.write(text)
-        alpha_expr = f"if(lt(t,0.12),t/0.12,if(lt(t,{fade_out_start}),1,if(lt(t,{hold_end}),({hold_end}-t)/0.25,0)))"
-        filtergraph += (
-            f";[vbase]drawtext=textfile='{textfile}':font='{font}':fontcolor=white:fontsize=88:"
-            f"borderw=5:bordercolor=black:line_spacing=14:box=1:boxcolor=black@0.55:boxborderw=28:"
-            f"x=(w-text_w)/2:y=h*0.14:alpha='{alpha_expr}':enable='lt(t,{hold_end})'[{vout_label}]"
-        )
+    # Hook overlays: on_screen_texts is a LIST — each phrase gets its own
+    # equal time-slice across the full runtime (not just the first few
+    # seconds), so new punchy text keeps appearing as the short plays instead
+    # of a single opening hook that then goes quiet. Each phrase pops in fast
+    # (not a slow fade), holds, pops out — top third, high-contrast, properly
+    # word-wrapped against the REAL font so it never crowds or overflows.
+    texts = [t.strip() for t in (on_screen_texts or []) if t and t.strip()]
+    lang = LANGUAGE if LANGUAGE in DRAWTEXT_FONT else "en"
+    font = DRAWTEXT_FONT[lang]
+
+    if texts:
+        style = random.Random(SHORT_ID).choice(HOOK_STYLES)
+        print(f"  Hook overlays ({len(texts)}), style={style['kind']}: {texts}")
+        slice_dur = audio_dur / len(texts)
+        stage_label = "vbase"
+        for idx, raw_text in enumerate(texts):
+            text = raw_text.upper() if LANGUAGE == "en" else raw_text
+            wrapped, fontsize = wrap_text_for_overlay(text, font)
+            textfile = os.path.join(tmpdir, f"hook_{idx}.txt")
+            with open(textfile, "w", encoding="utf-8") as f:
+                f.write(wrapped)
+
+            start = idx * slice_dur
+            end = (idx + 1) * slice_dur
+            fade_in_end = start + 0.12
+            fade_out_start = max(end - 0.25, fade_in_end + 0.1)
+            alpha_expr = (
+                f"if(lt(t,{start}),0,"
+                f"if(lt(t,{fade_in_end}),(t-{start})/0.12,"
+                f"if(lt(t,{fade_out_start}),1,"
+                f"if(lt(t,{end}),({end}-t)/0.25,0))))"
+            )
+            enable_expr = f"between(t,{start:.3f},{end:.3f})"
+            out_label = f"txt{idx}" if idx < len(texts) - 1 else "vout"
+            filtergraph += ";" + build_hook_layers(
+                stage_label, out_label, textfile, font, fontsize, alpha_expr, enable_expr, style
+            )
+            stage_label = out_label
+        vout_label = "vout"
     else:
+        print(f"  ⚠️  Hook overlays SKIPPED — on_screen_texts was empty for this short "
+              f"(received: {on_screen_texts!r}). No text will appear on screen.")
+        vout_label = "vout"
         filtergraph += f";[vbase]null[{vout_label}]"
 
     cmd = (
@@ -406,9 +586,23 @@ def main():
             image_paths = download_images(raw_images, tmpdir)
 
             video_path = os.path.join(tmpdir, "short.mp4")
-            print("Rendering vertical video (Ken Burns motion + hook overlay)...")
-            overlay_text = short.get("on_screen_text") or short.get("hook_line", "")
-            render_vertical_video(image_paths, audio_path, overlay_text, video_path, tmpdir)
+            print("Rendering vertical video (Ken Burns motion + multi-hook overlay)...")
+            raw_texts = short.get("on_screen_texts")
+            if isinstance(raw_texts, str):  # defensive: guard against a double-encoded jsonb string
+                try:
+                    raw_texts = json.loads(raw_texts)
+                except Exception:
+                    raw_texts = None
+            if isinstance(raw_texts, list) and raw_texts:
+                overlay_texts = raw_texts
+            elif short.get("on_screen_text"):
+                overlay_texts = [short["on_screen_text"]]
+            elif short.get("hook_line"):
+                overlay_texts = [short["hook_line"]]
+            else:
+                overlay_texts = []
+            print(f"  DB values — on_screen_texts: {raw_texts!r} | on_screen_text: {short.get('on_screen_text')!r} | hook_line: {short.get('hook_line')!r}")
+            render_vertical_video(image_paths, audio_path, overlay_texts, video_path, tmpdir)
 
             print("Uploading to GCS...")
             gcs_path = f"shorts/{short['episode_number']}/{LANGUAGE}_{short['short_index']}.mp4"
