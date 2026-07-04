@@ -188,7 +188,7 @@ function shortCard(s){
   let body = '';
 
   if(s.status==='script_ready'){
-    body = `<div class="hook-box" style="border-color:var(--accent2)"><div class="lbl">📱 On-screen text (the visual hook)</div><b style="font-size:15px">${esc(s.on_screen_text||'⚠️ empty — nothing will show on screen')}</b></div>
+    body = `<div class="hook-box" style="border-color:var(--accent2)"><div class="lbl">📱 On-screen texts (visual hooks, shown through the whole short)</div>${onScreenTextsList(s.on_screen_texts)}</div>
       <div class="hook-box"><div class="lbl">Spoken opening line</div>${esc(s.hook_line||'')}</div>
       <div class="hook-box"><div class="lbl">Script</div>${esc(s.script||'')}</div>
       <div class="hook-box"><div class="lbl">Hook back to full video</div>${esc(s.cta_line||'')}</div>
@@ -264,6 +264,12 @@ function imgList(v){
     catch(e){ return []; }
   }
   return [];
+}
+
+function onScreenTextsList(v){
+  const arr = imgList(v).filter(t => t && String(t).trim());
+  if(!arr.length) return `<span style="color:var(--red)">⚠️ empty — nothing will show on screen</span>`;
+  return arr.map((t,i)=>`<div style="margin-top:${i?6:0}px"><b style="font-size:15px">${i+1}. ${esc(t)}</b></div>`).join('');
 }
 
 load();
