@@ -133,15 +133,21 @@ Each Short you propose MUST satisfy ALL of these:
    episode, not written separately.
 7. Written entirely in {lang_note} — not one word of another language.
 
-You ALSO write a separate on-screen hook text — this is NOT the spoken opening line.
-It's the big bold text punched onto the screen in the first second, the thing that
-actually stops a thumb mid-scroll before the viewer has processed any audio. Rules for
-this text specifically:
-- MAX 8 words. Shorter is almost always better (3-6 words is ideal).
+You ALSO write a series of on-screen hook texts — these are NOT spoken lines from the
+script. They're big bold text punched onto the screen at intervals through the WHOLE
+short (not just the opening) — the visual thread that keeps a scrolling thumb engaged
+from start to finish, not just at second one. Write 3 to 4 of them, one for each rough
+beat of the short's arc (opening hook → escalation → the sharpest point → the closing
+tension), so a new punchy phrase appears roughly every 10-15 seconds throughout.
+Rules for EACH phrase:
+- MAX 6 words. Shorter is almost always better (3-5 words is ideal) — these need to be
+  readable in under a second, not read like a sentence.
 - Phrase it as a direct QUESTION or a blunt, provocative CLAIM — never a description.
   Bad: "The truth about sleep". Good: "Sleep is lying to you." or "Why can't you sleep?"
-- It does NOT need to be a verbatim line from the script — write it fresh, purely for
-  maximum scroll-stopping punch, as long as it's true to the short's actual content.
+- Each one should escalate or shift the tension from the last — not repeat the same
+  point reworded. Think of them as a mini trail of breadcrumbs, not 4 copies of a title.
+- They do NOT need to be verbatim lines from the script — write them fresh, purely for
+  maximum scroll-stopping punch, as long as they're true to the short's actual content.
 - No hashtags, no emoji, no punctuation-as-decoration — just the bare, punchy phrase.
 
 Return ONLY valid JSON, no markdown, no explanation:
@@ -149,7 +155,7 @@ Return ONLY valid JSON, no markdown, no explanation:
   "shorts": [
     {{
       "title": "<short, punchy on-screen title, under 60 chars>",
-      "on_screen_text": "<max 8 words, a question or blunt claim, the big text overlay>",
+      "on_screen_texts": ["<max 6 words, beat 1: the opening hook>", "<beat 2: escalation>", "<beat 3: sharpest point>", "<optional beat 4: closing tension>"],
       "hook_line": "<the exact opening line of the SPOKEN script — the scroll-stopper>",
       "script": "<the complete self-contained short script, 100-150 words, spoken prose only>",
       "cta_line": "<the exact closing line — the hook toward the full episode>"
@@ -221,7 +227,7 @@ def main():
                 "episode_number": EPISODE_NUMBER,
                 "short_index":    i,
                 "title":          s.get("title", ""),
-                "on_screen_text": s.get("on_screen_text", ""),
+                "on_screen_texts": s.get("on_screen_texts", []),
                 "hook_line":      s.get("hook_line", ""),
                 "script":         s.get("script", ""),
                 "cta_line":       s.get("cta_line", ""),
