@@ -315,13 +315,14 @@ def render_hook_image(text, style, font_family, out_path, max_width=940):
             browser.close()
 
 LOGO_SVG_PATH = "assets/ihaveacause_logo.svg"
+HOOK_DISPLAY_DURATION = 3.0  # each hook shows for exactly this long, then goes — not stretched to fill the whole gap until the next pause
 
-def render_watermark_image(out_path, bar_width=620):
+def render_watermark_image(out_path, bar_width=1000):
     """Renders the persistent bottom-of-frame branding — logo + 'I Have A
     Cause' wordmark — ONCE per render (not per hook, it's shown the whole
-    video), via the same Chromium engine as the hook text. Returns False
-    (never raises) if the logo asset or Chromium is unavailable, so a
-    missing watermark never blocks a render.
+    video), via the same Chromium engine as the hook text. Spans nearly the
+    full 1080px video width. Returns False (never raises) if the logo asset
+    or Chromium is unavailable, so a missing watermark never blocks a render.
     """
     try:
         from playwright.sync_api import sync_playwright
@@ -337,12 +338,12 @@ def render_watermark_image(out_path, bar_width=620):
         svg = re.sub(r'<svg width="800" height="800"', '<svg', svg, count=1)
 
         html = f"""<html><body style="margin:0;background:transparent;">
-<div id="wm" style="display:inline-flex; align-items:center; gap:16px;
-    background:rgba(8,10,15,0.55); border-radius:40px; padding:10px 26px 10px 10px;
-    max-width:{bar_width}px;">
-  <div style="width:52px;height:52px;flex-shrink:0;">{svg}</div>
+<div id="wm" style="display:inline-flex; align-items:center; justify-content:center; gap:36px;
+    background:rgba(8,10,15,0.55); border-radius:70px; padding:18px 60px 18px 18px;
+    width:{bar_width}px; box-sizing:border-box;">
+  <div style="width:260px;height:260px;flex-shrink:0;">{svg}</div>
   <div style="font-family:'Syne','Noto Sans',sans-serif; font-weight:800;
-      font-size:32px; color:white; white-space:nowrap;">
+      font-size:68px; color:white; white-space:nowrap;">
     I Have A <span style="color:#e8412a;">Cause</span>
   </div>
 </div></body></html>"""
@@ -350,7 +351,7 @@ def render_watermark_image(out_path, bar_width=620):
         with sync_playwright() as p:
             browser = p.chromium.launch()
             try:
-                page = browser.new_page(viewport={"width": bar_width + 60, "height": 140})
+                page = browser.new_page(viewport={"width": bar_width + 60, "height": 340})
                 page.set_content(html)
                 page.locator("#wm").screenshot(path=out_path, omit_background=True)
             finally:
@@ -635,7 +636,8 @@ def render_vertical_video(image_paths, audio_path, on_screen_texts, output_path,
     if texts and not use_fallback:
         stage_label = "vbase"
         for idx in range(len(texts)):
-            start, end = boundaries[idx], boundaries[idx + 1]
+            start = boundaries[idx]
+            end = min(start + HOOK_DISPLAY_DURATION, boundaries[idx + 1])
             fade_out_start = max(end - 0.25, start + 0.12 + 0.1)
             hook_idx = hook_input_start + idx
             faded_label = f"hookfaded{idx}"
@@ -657,7 +659,8 @@ def render_vertical_video(image_paths, audio_path, on_screen_texts, output_path,
             textfile = os.path.join(tmpdir, f"hook_fb_{idx}.txt")
             with open(textfile, "w", encoding="utf-8") as f:
                 f.write(wrapped)
-            start, end = boundaries[idx], boundaries[idx + 1]
+            start = boundaries[idx]
+            end = min(start + HOOK_DISPLAY_DURATION, boundaries[idx + 1])
             fade_in_end = start + 0.12
             fade_out_start = max(end - 0.25, fade_in_end + 0.1)
             alpha_expr = (
@@ -684,7 +687,7 @@ def render_vertical_video(image_paths, audio_path, on_screen_texts, output_path,
     if watermark_idx is not None:
         filtergraph += (
             f";[{watermark_idx}:v]format=rgba[wmfmt]"
-            f";[{vout_label}][wmfmt]overlay=x=(main_w-overlay_w)/2:y=main_h*0.87[vfinal]"
+            f";[{vout_label}][wmfmt]overlay=x=(main_w-overlay_w)/2:y=main_h-overlay_h-50[vfinal]"
         )
         vout_label = "vfinal"
 
