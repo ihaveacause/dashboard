@@ -314,6 +314,92 @@ def render_hook_image(text, style, font_family, out_path, max_width=940):
         finally:
             browser.close()
 
+LOGO_SVG_PATH = "assets/ihaveacause_logo.svg"
+
+def render_watermark_image(out_path, bar_width=620):
+    """Renders the persistent bottom-of-frame branding — logo + 'I Have A
+    Cause' wordmark — ONCE per render (not per hook, it's shown the whole
+    video), via the same Chromium engine as the hook text. Returns False
+    (never raises) if the logo asset or Chromium is unavailable, so a
+    missing watermark never blocks a render.
+    """
+    try:
+        from playwright.sync_api import sync_playwright
+        import re
+
+        if not os.path.exists(LOGO_SVG_PATH):
+            print(f"    ⚠️  Logo not found at {LOGO_SVG_PATH} — skipping watermark")
+            return False
+        svg = open(LOGO_SVG_PATH, "r", encoding="utf-8").read()
+        # Strip the hardcoded width/height so it scales to our container via
+        # CSS instead of clipping to its native 800x800 — verified this was
+        # needed, the raw SVG ignores container size otherwise.
+        svg = re.sub(r'<svg width="800" height="800"', '<svg', svg, count=1)
+
+        html = f"""<html><body style="margin:0;background:transparent;">
+<div id="wm" style="display:inline-flex; align-items:center; gap:16px;
+    background:rgba(8,10,15,0.55); border-radius:40px; padding:10px 26px 10px 10px;
+    max-width:{bar_width}px;">
+  <div style="width:52px;height:52px;flex-shrink:0;">{svg}</div>
+  <div style="font-family:'Syne','Noto Sans',sans-serif; font-weight:800;
+      font-size:32px; color:white; white-space:nowrap;">
+    I Have A <span style="color:#e8412a;">Cause</span>
+  </div>
+</div></body></html>"""
+
+        with sync_playwright() as p:
+            browser = p.chromium.launch()
+            try:
+                page = browser.new_page(viewport={"width": bar_width + 60, "height": 140})
+                page.set_content(html)
+                page.locator("#wm").screenshot(path=out_path, omit_background=True)
+            finally:
+                browser.close()
+        return True
+    except Exception as e:
+        print(f"    ⚠️  Watermark render failed ({e}) — skipping, render continues without it")
+        return False
+
+def detect_silence_midpoints(audio_path, noise_db=-30, min_dur=0.15):
+    """Finds natural pauses in the narration via ffmpeg's silencedetect, so
+    hook-text transitions can snap to a real gap between sentences instead
+    of a rigid equal-time split that can land mid-word. Returns a sorted
+    list of pause midpoint timestamps (seconds). Returns [] on any failure —
+    the caller falls back to equal-time slicing, never blocks the render.
+    """
+    try:
+        cmd = [
+            "ffmpeg", "-i", audio_path,
+            "-af", f"silencedetect=noise={noise_db}dB:d={min_dur}",
+            "-f", "null", "-"
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+        starts, ends = [], []
+        for line in result.stderr.splitlines():
+            if "silence_start" in line:
+                starts.append(float(line.split("silence_start:")[1].strip().split()[0]))
+            elif "silence_end" in line:
+                # format: "silence_end: 3.456 | silence_duration: 0.234"
+                ends.append(float(line.split("silence_end:")[1].strip().split("|")[0].strip()))
+        midpoints = []
+        for s, e in zip(starts, ends):
+            if e > s:
+                midpoints.append((s + e) / 2)
+        midpoints.sort()
+        print(f"    Detected {len(midpoints)} natural pause(s) in narration")
+        return midpoints
+    except Exception as e:
+        print(f"    ⚠️  Silence detection failed ({e}) — using equal-time hook slicing")
+        return []
+
+def snap_to_nearest_pause(target, midpoints, tolerance=1.5):
+    """Snaps a target timestamp to the nearest detected pause within
+    tolerance seconds; returns target unchanged if none is close enough."""
+    if not midpoints:
+        return target
+    nearest = min(midpoints, key=lambda m: abs(m - target))
+    return nearest if abs(nearest - target) <= tolerance else target
+
 def build_fallback_drawtext(stage_in, stage_out, textfile, font, fontsize, alpha_expr, enable_expr):
     """Last-resort fallback if Chromium/Playwright fails at runtime (missing
     browser, launch failure, etc.) — a single flat drawtext layer, not 3D,
@@ -480,6 +566,26 @@ def render_vertical_video(image_paths, audio_path, on_screen_texts, output_path,
     font = DRAWTEXT_FONT[lang]
     style = random.Random(SHORT_ID).choice(HOOK_STYLES) if texts else None
 
+    # Sync fix: instead of rigid equal-time slices (which can flip mid-word),
+    # detect actual pauses in the narration and snap each internal boundary
+    # to the nearest one within 1.5s — text now changes between sentences,
+    # matching the voice, not on an arbitrary clock division.
+    boundaries = []
+    if texts:
+        pause_midpoints = detect_silence_midpoints(audio_path)
+        raw_boundaries = [i * (audio_dur / len(texts)) for i in range(len(texts) + 1)]
+        boundaries = [raw_boundaries[0]]
+        for b in raw_boundaries[1:-1]:
+            boundaries.append(snap_to_nearest_pause(b, pause_midpoints))
+        boundaries.append(raw_boundaries[-1])
+        # Guard against snapping producing a zero/negative-length or out-of-order
+        # slice (two boundaries snapping to the same nearby pause) — fall back
+        # to the unsnapped equal split for that pair if so.
+        for i in range(1, len(boundaries)):
+            if boundaries[i] <= boundaries[i - 1] + 0.3:
+                boundaries[i] = raw_boundaries[i]
+        print(f"    Hook boundaries (sync-adjusted): {[round(b,2) for b in boundaries]}")
+
     hook_png_paths = []   # (input_idx placeholder filled in below, path)
     use_fallback = False
     if texts:
@@ -495,12 +601,22 @@ def render_vertical_video(image_paths, audio_path, on_screen_texts, output_path,
             use_fallback = True
             hook_png_paths = []
 
+    # Persistent bottom-of-frame branding — rendered once, shown the whole video.
+    watermark_path = os.path.join(tmpdir, "watermark.png")
+    have_watermark = render_watermark_image(watermark_path)
+
     # Hook PNG inputs go in BEFORE audio, so audio_idx below is correct.
     hook_input_start = input_count
     if hook_png_paths:
         for png_path in hook_png_paths:
             inputs += ["-loop", "1", "-t", str(audio_dur), "-i", png_path]
             input_count += 1
+
+    watermark_idx = None
+    if have_watermark:
+        watermark_idx = input_count
+        inputs += ["-loop", "1", "-t", str(audio_dur), "-i", watermark_path]
+        input_count += 1
 
     inputs += ["-i", audio_path]
     audio_idx = input_count
@@ -517,15 +633,13 @@ def render_vertical_video(image_paths, audio_path, on_screen_texts, output_path,
         filtergraph = chain + xfade_chain.rstrip(";")
 
     if texts and not use_fallback:
-        slice_dur = audio_dur / len(texts)
         stage_label = "vbase"
         for idx in range(len(texts)):
-            start = idx * slice_dur
-            end = (idx + 1) * slice_dur
+            start, end = boundaries[idx], boundaries[idx + 1]
             fade_out_start = max(end - 0.25, start + 0.12 + 0.1)
             hook_idx = hook_input_start + idx
             faded_label = f"hookfaded{idx}"
-            out_label = f"txt{idx}" if idx < len(texts) - 1 else "vout"
+            out_label = f"txt{idx}" if idx < len(texts) - 1 else "hooksdone"
             filtergraph += (
                 f";[{hook_idx}:v]format=rgba,"
                 f"fade=t=in:st={start:.3f}:d=0.12:alpha=1,"
@@ -534,9 +648,8 @@ def render_vertical_video(image_paths, audio_path, on_screen_texts, output_path,
                 f"format=auto[{out_label}]"
             )
             stage_label = out_label
-        vout_label = "vout"
+        vout_label = stage_label
     elif texts and use_fallback:
-        slice_dur = audio_dur / len(texts)
         stage_label = "vbase"
         for idx, raw_text in enumerate(texts):
             text = raw_text.upper() if LANGUAGE == "en" else raw_text
@@ -544,8 +657,7 @@ def render_vertical_video(image_paths, audio_path, on_screen_texts, output_path,
             textfile = os.path.join(tmpdir, f"hook_fb_{idx}.txt")
             with open(textfile, "w", encoding="utf-8") as f:
                 f.write(wrapped)
-            start = idx * slice_dur
-            end = (idx + 1) * slice_dur
+            start, end = boundaries[idx], boundaries[idx + 1]
             fade_in_end = start + 0.12
             fade_out_start = max(end - 0.25, fade_in_end + 0.1)
             alpha_expr = (
@@ -555,17 +667,26 @@ def render_vertical_video(image_paths, audio_path, on_screen_texts, output_path,
                 f"if(lt(t,{end}),({end}-t)/0.25,0))))"
             )
             enable_expr = f"between(t,{start:.3f},{end:.3f})"
-            out_label = f"txt{idx}" if idx < len(texts) - 1 else "vout"
+            out_label = f"txt{idx}" if idx < len(texts) - 1 else "hooksdone"
             filtergraph += ";" + build_fallback_drawtext(
                 stage_label, out_label, textfile, font, fontsize, alpha_expr, enable_expr
             )
             stage_label = out_label
-        vout_label = "vout"
+        vout_label = stage_label
     else:
         print(f"  ⚠️  Hook overlays SKIPPED — on_screen_texts was empty for this short "
               f"(received: {on_screen_texts!r}). No text will appear on screen.")
-        vout_label = "vout"
+        vout_label = "hooksdone"
         filtergraph += f";[vbase]null[{vout_label}]"
+
+    # Persistent branding overlay — bottom-center, shown for the whole clip,
+    # composited last so it's always on top of hook text if they ever overlap.
+    if watermark_idx is not None:
+        filtergraph += (
+            f";[{watermark_idx}:v]format=rgba[wmfmt]"
+            f";[{vout_label}][wmfmt]overlay=x=(main_w-overlay_w)/2:y=main_h*0.87[vfinal]"
+        )
+        vout_label = "vfinal"
 
     cmd = (
         ["ffmpeg", "-y"] + inputs + [
