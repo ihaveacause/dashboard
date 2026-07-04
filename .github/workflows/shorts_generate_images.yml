@@ -37,14 +37,13 @@ jobs:
           key: ${{ runner.os }}-pip-shorts-images-v1
 
       - name: Install dependencies
-        run: pip install requests google-genai google-auth Pillow
+        run: pip install requests google-auth google-cloud-aiplatform Pillow
 
       - name: Generate shorts images
         env:
           SUPABASE_URL:                        ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY:                        ${{ secrets.SUPABASE_KEY }}
           GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
-          GEMINI_API_KEY:                      ${{ secrets.GEMINI_API_KEY }}
           SHORT_ID:                            ${{ inputs.short_id }}
           LANGUAGE:                            ${{ inputs.language }}
         run: python new_youtube/scripts/shorts_generate_images.py
