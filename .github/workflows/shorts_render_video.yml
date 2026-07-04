@@ -54,7 +54,25 @@ jobs:
           key: ${{ runner.os }}-u2net-model-v1
 
       - name: Install dependencies
-        run: pip install requests google-auth cryptography rembg onnxruntime Pillow numpy
+        run: pip install requests google-auth cryptography rembg onnxruntime Pillow numpy playwright
+
+      # Chromium is used to render the hook-text overlay images — needed for
+      # correct complex-script text shaping (Tamil), which ffmpeg's drawtext
+      # cannot do. Cached so the ~300MB browser download only happens once.
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        id: playwright-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-chromium-v1
+
+      - name: Install Chromium
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: python -m playwright install --with-deps chromium
+
+      - name: Install Chromium system deps (cache-hit case)
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: python -m playwright install-deps chromium
 
       - name: Render short video
         env:
