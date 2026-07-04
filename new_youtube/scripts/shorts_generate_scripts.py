@@ -133,12 +133,24 @@ Each Short you propose MUST satisfy ALL of these:
    episode, not written separately.
 7. Written entirely in {lang_note} — not one word of another language.
 
+You ALSO write a separate on-screen hook text — this is NOT the spoken opening line.
+It's the big bold text punched onto the screen in the first second, the thing that
+actually stops a thumb mid-scroll before the viewer has processed any audio. Rules for
+this text specifically:
+- MAX 8 words. Shorter is almost always better (3-6 words is ideal).
+- Phrase it as a direct QUESTION or a blunt, provocative CLAIM — never a description.
+  Bad: "The truth about sleep". Good: "Sleep is lying to you." or "Why can't you sleep?"
+- It does NOT need to be a verbatim line from the script — write it fresh, purely for
+  maximum scroll-stopping punch, as long as it's true to the short's actual content.
+- No hashtags, no emoji, no punctuation-as-decoration — just the bare, punchy phrase.
+
 Return ONLY valid JSON, no markdown, no explanation:
 {{
   "shorts": [
     {{
       "title": "<short, punchy on-screen title, under 60 chars>",
-      "hook_line": "<the exact opening line of the script — the scroll-stopper>",
+      "on_screen_text": "<max 8 words, a question or blunt claim, the big text overlay>",
+      "hook_line": "<the exact opening line of the SPOKEN script — the scroll-stopper>",
       "script": "<the complete self-contained short script, 100-150 words, spoken prose only>",
       "cta_line": "<the exact closing line — the hook toward the full episode>"
     }}
@@ -184,12 +196,23 @@ def main():
         return
 
     try:
+        existing = db_get(SHORTS_TABLE, {"episode_number": f"eq.{EPISODE_NUMBER}", "select": "id,status,short_index"})
+        published = [r for r in existing if r.get("status") == "published"]
+        if published:
+            indices = ", ".join(str(r["short_index"]) for r in published)
+            print(f"❌ Refusing to regenerate — short #{indices} for episode {EPISODE_NUMBER} is already "
+                  f"published to YouTube. Regenerating would delete its row here while leaving the live "
+                  f"video up, orphaning it from the dashboard. Delete/unpublish it manually first if you "
+                  f"really want to replace it.")
+            return
+
         shorts = generate_shorts(episode)
         if not shorts:
             print("❌ No usable shorts found for this episode — nothing written")
             return
 
-        # Replace any existing shorts for this episode (re-runnable, e.g. regenerate)
+        # Replace any existing (non-published) shorts for this episode — safe to
+        # re-run/regenerate now that we've confirmed none are published above.
         db_delete(SHORTS_TABLE, {"episode_number": f"eq.{EPISODE_NUMBER}"})
 
         rows = []
@@ -198,6 +221,7 @@ def main():
                 "episode_number": EPISODE_NUMBER,
                 "short_index":    i,
                 "title":          s.get("title", ""),
+                "on_screen_text": s.get("on_screen_text", ""),
                 "hook_line":      s.get("hook_line", ""),
                 "script":         s.get("script", ""),
                 "cta_line":       s.get("cta_line", ""),
