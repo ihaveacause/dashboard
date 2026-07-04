@@ -241,7 +241,7 @@ def try_extract_subject(image_path, out_path):
 # so this doesn't break if the runner's font paths shift.
 DRAWTEXT_FONT = {"ta": "Noto Sans Tamil", "en": "Noto Sans"}
 
-def render_vertical_video(image_paths, audio_path, hook_line, output_path, tmpdir, fps=25):
+def render_vertical_video(image_paths, audio_path, on_screen_text, output_path, tmpdir, fps=25):
     """
     Renders a 1080x1920 vertical video with FREE motion (no AI video generation,
     no extra API cost — pure local processing on the already-generated Imagen
@@ -333,22 +333,28 @@ def render_vertical_video(image_paths, audio_path, hook_line, output_path, tmpdi
             xfade_chain += f"[{src}][v{i}]xfade=transition=fade:duration={fade_dur}:offset={offset:.3f}[{out_label}];"
         filtergraph = chain + xfade_chain.rstrip(";")
 
-    # Hook-line overlay: fade in at 0.3s, hold, fade out by 4s (or 80% of total
-    # duration for very short clips), safe-area margins for Shorts UI overlap.
+    # Hook overlay: appears almost instantly (not a slow fade — delay costs the
+    # exact seconds you're trying to win), bold and high-contrast, positioned in
+    # the TOP third (bottom of a Short is where YouTube's own UI — captions,
+    # like/comment buttons — lives, so top is the safe + conventional spot for
+    # a hook). Held for roughly the first image's screen time, not a fixed 4s.
     vout_label = "vout"
-    if hook_line and hook_line.strip():
-        hook_end = min(4.0, audio_dur * 0.8)
-        hook_hold = max(hook_end - 0.6, 0.3)
+    if on_screen_text and on_screen_text.strip():
+        text = on_screen_text.strip()
+        if LANGUAGE == "en":
+            text = text.upper()
+        hold_end = min(per_img, 5.5)
+        fade_out_start = max(hold_end - 0.25, 0.15)
         lang = LANGUAGE if LANGUAGE in DRAWTEXT_FONT else "en"
         font = DRAWTEXT_FONT[lang]
         textfile = os.path.join(tmpdir, "hook.txt")
         with open(textfile, "w", encoding="utf-8") as f:
-            f.write(hook_line.strip())
-        alpha_expr = f"if(lt(t,0.3),t/0.3,if(lt(t,{hook_hold}),1,if(lt(t,{hook_end}),({hook_end}-t)/0.6,0)))"
+            f.write(text)
+        alpha_expr = f"if(lt(t,0.12),t/0.12,if(lt(t,{fade_out_start}),1,if(lt(t,{hold_end}),({hold_end}-t)/0.25,0)))"
         filtergraph += (
-            f";[vbase]drawtext=textfile='{textfile}':font='{font}':fontcolor=white:fontsize=64:"
-            f"line_spacing=10:box=1:boxcolor=black@0.45:boxborderw=24:"
-            f"x=(w-text_w)/2:y=h*0.62:alpha='{alpha_expr}':enable='lt(t,{hook_end})'[{vout_label}]"
+            f";[vbase]drawtext=textfile='{textfile}':font='{font}':fontcolor=white:fontsize=88:"
+            f"borderw=5:bordercolor=black:line_spacing=14:box=1:boxcolor=black@0.55:boxborderw=28:"
+            f"x=(w-text_w)/2:y=h*0.14:alpha='{alpha_expr}':enable='lt(t,{hold_end})'[{vout_label}]"
         )
     else:
         filtergraph += f";[vbase]null[{vout_label}]"
@@ -401,7 +407,8 @@ def main():
 
             video_path = os.path.join(tmpdir, "short.mp4")
             print("Rendering vertical video (Ken Burns motion + hook overlay)...")
-            render_vertical_video(image_paths, audio_path, short.get("hook_line", ""), video_path, tmpdir)
+            overlay_text = short.get("on_screen_text") or short.get("hook_line", "")
+            render_vertical_video(image_paths, audio_path, overlay_text, video_path, tmpdir)
 
             print("Uploading to GCS...")
             gcs_path = f"shorts/{short['episode_number']}/{LANGUAGE}_{short['short_index']}.mp4"
