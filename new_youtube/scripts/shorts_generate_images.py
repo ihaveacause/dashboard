@@ -7,11 +7,12 @@ short is "mimicked from the long version" except the script, so the images
 here follow the exact same visual-direction approach as the episode/idea
 image pipelines, just cropped for vertical.
 
-Mirrors idea_image_pipeline.py exactly (same Imagen 3 model, same auth,
-same Supabase storage bucket) — only the aspect ratio and source table differ.
+Both the scene-description step (Gemini) and the image step (Imagen) run
+through Vertex AI using the service account — NOT the direct Gemini
+Developer API (api_key auth), which bills separately and outside Vertex.
 
 Triggered by: shorts_generate_images.yml
-Env vars: SUPABASE_URL, SUPABASE_KEY, GEMINI_API_KEY,
+Env vars: SUPABASE_URL, SUPABASE_KEY,
           GOOGLE_APPLICATION_CREDENTIALS_JSON, SHORT_ID, LANGUAGE (ta or en)
 """
 
@@ -19,7 +20,8 @@ import os
 import json
 import base64
 import requests
-from google import genai
+import vertexai
+from vertexai.generative_models import GenerativeModel
 from google.oauth2 import service_account
 import google.auth.transport.requests
 from datetime import datetime
@@ -27,7 +29,6 @@ from datetime import datetime
 # ── Config ─────────────────────────────────────────────────
 SUPABASE_URL   = os.environ["SUPABASE_URL"]
 SUPABASE_KEY   = os.environ["SUPABASE_KEY"]
-GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
 SHORT_ID       = os.environ["SHORT_ID"]
 LANGUAGE       = os.environ.get("LANGUAGE", "ta")
 GCP_CREDS_JSON = os.environ["GOOGLE_APPLICATION_CREDENTIALS_JSON"]
@@ -41,13 +42,13 @@ SHORTS_TABLE  = "tamil_shorts"   if LANGUAGE == "ta" else "english_shorts"
 EPISODE_TABLE = "tamil_episodes" if LANGUAGE == "ta" else "english_episodes"
 
 # ── Clients ─────────────────────────────────────────────────
-gemini_client = genai.Client(api_key=GEMINI_API_KEY)
-
 creds_info  = json.loads(GCP_CREDS_JSON)
 credentials = service_account.Credentials.from_service_account_info(
     creds_info,
     scopes=["https://www.googleapis.com/auth/cloud-platform"]
 )
+vertexai.init(project=PROJECT_ID, location=LOCATION, credentials=credentials)
+gemini_model = GenerativeModel("gemini-2.5-flash")
 
 def get_vertex_token():
     auth_req = google.auth.transport.requests.Request()
@@ -162,7 +163,7 @@ Return ONLY valid JSON:
 }}"""
 
     def _call():
-        response = gemini_client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
+        response = gemini_model.generate_content(prompt)
         raw = response.text.strip().replace("```json", "").replace("```", "").strip()
         return json.loads(raw)
 
