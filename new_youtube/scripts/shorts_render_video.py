@@ -251,92 +251,81 @@ def try_extract_subject(image_path, out_path):
 # so this doesn't break if the runner's font paths shift.
 DRAWTEXT_FONT = {"ta": "Noto Sans Tamil", "en": "Noto Sans"}
 
-# Style presets for the hook overlay — each is a distinct "3D-ish" look built
-# purely from stacked drawtext layers (extrusion offset-copies, or a soft
-# glow via widening semi-transparent borders). No external rendering, no
-# extra API cost — just layered FFmpeg text. One style is picked per SHORT
-# (seeded by the short's own ID, so re-rendering the same short keeps its
-# look instead of flickering to a new style every retry) — different shorts
-# get different looks.
+# Style presets for the hook overlay — each is a distinct "3D-ish" look,
+# built as real CSS (text-shadow extrusion / glow) and rendered through a
+# headless Chromium (see render_hook_image below). One style is picked per
+# SHORT (seeded by the short's own ID, so re-rendering the same short keeps
+# its look instead of flickering to a new style every retry) — different
+# shorts get different looks.
 HOOK_STYLES = [
-    {  # solid red extrusion block
-        "kind": "extrude", "fontcolor": "white", "bordercolor": "black", "borderw": 5,
-        "shadow_color": "0xB5121B", "layers": 6, "step": 3,
-    },
-    {  # solid cyan/navy extrusion block
-        "kind": "extrude", "fontcolor": "white", "bordercolor": "0x0A2540", "borderw": 5,
-        "shadow_color": "0x0E7C86", "layers": 6, "step": 3,
-    },
-    {  # gold pop with dark extrusion
-        "kind": "extrude", "fontcolor": "0xFFD54A", "bordercolor": "black", "borderw": 6,
-        "shadow_color": "0x3A2B00", "layers": 5, "step": 3,
-    },
-    {  # neon magenta glow
-        "kind": "glow", "fontcolor": "white", "bordercolor": "0xE0218A", "borderw": 4,
-        "glow_color": "0xE0218A", "glow_layers": 4, "glow_start": 22, "glow_step": 6,
-    },
-    {  # neon cyan glow
-        "kind": "glow", "fontcolor": "white", "bordercolor": "0x22D3EE", "borderw": 4,
-        "glow_color": "0x22D3EE", "glow_layers": 4, "glow_start": 22, "glow_step": 6,
-    },
-    {  # purple extrusion block
-        "kind": "extrude", "fontcolor": "0xF5F0FF", "bordercolor": "black", "borderw": 5,
-        "shadow_color": "0x4A1D6E", "layers": 6, "step": 3,
-    },
+    {"kind": "extrude", "color": "white",     "border": "black", "shadow": "#B5121B", "layers": 6, "step": 3},
+    {"kind": "extrude", "color": "white",     "border": "#0A2540", "shadow": "#0E7C86", "layers": 6, "step": 3},
+    {"kind": "extrude", "color": "#FFD54A",   "border": "black", "shadow": "#3A2B00", "layers": 5, "step": 3},
+    {"kind": "glow",    "color": "white",     "border": "#E0218A", "glow": "#E0218A"},
+    {"kind": "glow",    "color": "white",     "border": "#22D3EE", "glow": "#22D3EE"},
+    {"kind": "extrude", "color": "#F5F0FF",   "border": "black", "shadow": "#4A1D6E", "layers": 6, "step": 3},
 ]
 
-def build_hook_layers(stage_in, stage_out, textfile, font, fontsize, alpha_expr, enable_expr, style):
-    """Builds the stacked-drawtext filter string for ONE hook phrase in the
-    given style, threading intermediate ffmpeg labels from stage_in to
-    stage_out. Returns the filter fragment (caller appends with a leading ';').
+def render_hook_image(text, style, font_family, out_path, max_width=940):
+    """Renders ONE hook phrase as a transparent PNG using a headless Chromium
+    (Playwright) — NOT ffmpeg drawtext. drawtext has no complex-script text
+    shaping (no harfbuzz reordering), so Tamil vowel signs and conjuncts
+    render in the wrong order / drop glyphs entirely. A real browser's text
+    engine shapes Tamil correctly, same as any webpage — verified against
+    OCR ground-truth before shipping this. Free, local, no API cost.
+    Word-wrapping is handled by the browser's own CSS layout, which is also
+    more correct for Indic scripts than a manual character-count wrap.
     """
-    parts = []
-    stage = stage_in
-    common = (
-        f"textfile='{textfile}':font='{font}':fontsize={fontsize}:line_spacing=14:"
-        f"x=(w-text_w)/2:alpha='{alpha_expr}':enable='{enable_expr}'"
-    )
-    y_base = "h*0.14"
+    from playwright.sync_api import sync_playwright
+
+    # Tamil glyphs carry fine detail (vowel signs, loops, dots) that a heavy
+    # multi-layer shadow/thick stroke starts to visually clog — verified via
+    # OCR regression when testing the full-intensity version. English caps
+    # (blockier, simpler glyph shapes) tolerate the fuller effect fine.
+    is_tamil = LANGUAGE == "ta"
 
     if style["kind"] == "extrude":
-        # Draw N offset copies behind the main text, stepping diagonally,
-        # solid shadow color — reads as a solid "3D block letter" extrusion.
-        # Box goes on the BOTTOM-most layer so it sits behind the whole
-        # stack, not painted over the shadow layers on top of it.
-        n = style["layers"]
-        step = style["step"]
-        for i in range(n, 0, -1):
-            label = f"{stage_out}_e{i}"
-            box_part = "box=1:boxcolor=black@0.35:boxborderw=26:" if i == n else ""
-            parts.append(
-                f"[{stage}]drawtext={common}:fontcolor={style['shadow_color']}:{box_part}"
-                f"y=({y_base})+{i*step}:x=(w-text_w)/2+{i*step}[{label}]"
-            )
-            stage = label
-        parts.append(
-            f"[{stage}]drawtext={common}:fontcolor={style['fontcolor']}:"
-            f"bordercolor={style['bordercolor']}:borderw={style['borderw']}:"
-            f"y={y_base}[{stage_out}]"
-        )
-    else:  # glow
-        n = style["glow_layers"]
-        for i in range(n, 0, -1):
-            bw = style["glow_start"] + i * style["glow_step"]
-            alpha_scale = 0.12 + (0.10 * (n - i))
-            label = f"{stage_out}_g{i}"
-            box_part = "box=1:boxcolor=black@0.35:boxborderw=26:" if i == n else ""
-            parts.append(
-                f"[{stage}]drawtext={common}:fontcolor={style['glow_color']}@{alpha_scale:.2f}:"
-                f"bordercolor={style['glow_color']}@{alpha_scale:.2f}:borderw={bw}:{box_part}y={y_base}[{label}]"
-            )
-            stage = label
-        parts.append(
-            f"[{stage}]drawtext={common}:fontcolor={style['fontcolor']}:"
-            f"bordercolor={style['bordercolor']}:borderw={style['borderw']}:"
-            f"y={y_base}[{stage_out}]"
-        )
+        n = 3 if is_tamil else style["layers"]
+        step = 2 if is_tamil else style["step"]
+        shadow = ", ".join(f"{i*step}px {i*step}px 0 {style['shadow']}" for i in range(1, n + 1))
+        text_shadow = shadow
+        stroke_px = 1.5 if is_tamil else 2
+    else:
+        g = style["glow"]
+        text_shadow = (f"0 0 8px {g}, 0 0 16px {g}" if is_tamil
+                        else f"0 0 14px {g}, 0 0 28px {g}, 0 0 46px {g}")
+        stroke_px = 1 if is_tamil else 1.5
 
-    return ";".join(parts)
+    html = f"""<html><body style="margin:0;background:transparent;">
+<div id="hook" style="
+    display:inline-block; max-width:{max_width}px;
+    font-family:'{font_family}', sans-serif; font-weight:900;
+    font-size:74px; line-height:1.3; color:{style['color']};
+    text-shadow:{text_shadow}; -webkit-text-stroke:{stroke_px}px {style['border']};
+    padding:22px; text-align:center;
+">{text}</div></body></html>"""
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch()
+        try:
+            page = browser.new_page(viewport={"width": max_width + 100, "height": 700})
+            page.set_content(html)
+            page.locator("#hook").screenshot(path=out_path, omit_background=True)
+        finally:
+            browser.close()
+
+def build_fallback_drawtext(stage_in, stage_out, textfile, font, fontsize, alpha_expr, enable_expr):
+    """Last-resort fallback if Chromium/Playwright fails at runtime (missing
+    browser, launch failure, etc.) — a single flat drawtext layer, not 3D,
+    but still wrapped and functional so the render never breaks. This still
+    has the Tamil shaping limitation described above, but only kicks in if
+    the proper path is unavailable — a plain readable line beats no line.
+    """
+    return (
+        f"[{stage_in}]drawtext=textfile='{textfile}':font='{font}':fontsize={fontsize}:"
+        f"fontcolor=white:bordercolor=black:borderw=5:line_spacing=14:box=1:boxcolor=black@0.5:"
+        f"boxborderw=26:x=(w-text_w)/2:y=h*0.14:alpha='{alpha_expr}':enable='{enable_expr}'[{stage_out}]"
+    )
 
 _font_file_cache = {}
 
@@ -480,6 +469,39 @@ def render_vertical_video(image_paths, audio_path, on_screen_texts, output_path,
                 f"setsar=1,format=yuva420p[v{i}];"
             )
 
+    # Hook overlays: on_screen_texts is a LIST — each phrase gets its own
+    # equal time-slice across the full runtime (not just the first few
+    # seconds). Rendered via headless Chromium (correct Tamil/complex-script
+    # shaping — drawtext cannot do this, see render_hook_image docstring),
+    # composited onto the video as image overlays. Falls back to a flat
+    # drawtext line only if Chromium fails at runtime for some reason.
+    texts = [t.strip() for t in (on_screen_texts or []) if t and t.strip()]
+    lang = LANGUAGE if LANGUAGE in DRAWTEXT_FONT else "en"
+    font = DRAWTEXT_FONT[lang]
+    style = random.Random(SHORT_ID).choice(HOOK_STYLES) if texts else None
+
+    hook_png_paths = []   # (input_idx placeholder filled in below, path)
+    use_fallback = False
+    if texts:
+        try:
+            for idx, raw_text in enumerate(texts):
+                text = raw_text.upper() if LANGUAGE == "en" else raw_text
+                png_path = os.path.join(tmpdir, f"hook_{idx}.png")
+                render_hook_image(text, style, font, png_path)
+                hook_png_paths.append(png_path)
+            print(f"  Hook overlays ({len(texts)}) rendered via Chromium, style={style['kind']}: {texts}")
+        except Exception as e:
+            print(f"  ⚠️  Chromium hook render failed ({e}) — falling back to flat drawtext")
+            use_fallback = True
+            hook_png_paths = []
+
+    # Hook PNG inputs go in BEFORE audio, so audio_idx below is correct.
+    hook_input_start = input_count
+    if hook_png_paths:
+        for png_path in hook_png_paths:
+            inputs += ["-loop", "1", "-t", str(audio_dur), "-i", png_path]
+            input_count += 1
+
     inputs += ["-i", audio_path]
     audio_idx = input_count
 
@@ -494,28 +516,34 @@ def render_vertical_video(image_paths, audio_path, on_screen_texts, output_path,
             xfade_chain += f"[{src}][v{i}]xfade=transition=fade:duration={fade_dur}:offset={offset:.3f}[{out_label}];"
         filtergraph = chain + xfade_chain.rstrip(";")
 
-    # Hook overlays: on_screen_texts is a LIST — each phrase gets its own
-    # equal time-slice across the full runtime (not just the first few
-    # seconds), so new punchy text keeps appearing as the short plays instead
-    # of a single opening hook that then goes quiet. Each phrase pops in fast
-    # (not a slow fade), holds, pops out — top third, high-contrast, properly
-    # word-wrapped against the REAL font so it never crowds or overflows.
-    texts = [t.strip() for t in (on_screen_texts or []) if t and t.strip()]
-    lang = LANGUAGE if LANGUAGE in DRAWTEXT_FONT else "en"
-    font = DRAWTEXT_FONT[lang]
-
-    if texts:
-        style = random.Random(SHORT_ID).choice(HOOK_STYLES)
-        print(f"  Hook overlays ({len(texts)}), style={style['kind']}: {texts}")
+    if texts and not use_fallback:
+        slice_dur = audio_dur / len(texts)
+        stage_label = "vbase"
+        for idx in range(len(texts)):
+            start = idx * slice_dur
+            end = (idx + 1) * slice_dur
+            fade_out_start = max(end - 0.25, start + 0.12 + 0.1)
+            hook_idx = hook_input_start + idx
+            faded_label = f"hookfaded{idx}"
+            out_label = f"txt{idx}" if idx < len(texts) - 1 else "vout"
+            filtergraph += (
+                f";[{hook_idx}:v]format=rgba,"
+                f"fade=t=in:st={start:.3f}:d=0.12:alpha=1,"
+                f"fade=t=out:st={fade_out_start:.3f}:d=0.25:alpha=1[{faded_label}]"
+                f";[{stage_label}][{faded_label}]overlay=x=(main_w-overlay_w)/2:y=main_h*0.14:"
+                f"format=auto[{out_label}]"
+            )
+            stage_label = out_label
+        vout_label = "vout"
+    elif texts and use_fallback:
         slice_dur = audio_dur / len(texts)
         stage_label = "vbase"
         for idx, raw_text in enumerate(texts):
             text = raw_text.upper() if LANGUAGE == "en" else raw_text
             wrapped, fontsize = wrap_text_for_overlay(text, font)
-            textfile = os.path.join(tmpdir, f"hook_{idx}.txt")
+            textfile = os.path.join(tmpdir, f"hook_fb_{idx}.txt")
             with open(textfile, "w", encoding="utf-8") as f:
                 f.write(wrapped)
-
             start = idx * slice_dur
             end = (idx + 1) * slice_dur
             fade_in_end = start + 0.12
@@ -528,8 +556,8 @@ def render_vertical_video(image_paths, audio_path, on_screen_texts, output_path,
             )
             enable_expr = f"between(t,{start:.3f},{end:.3f})"
             out_label = f"txt{idx}" if idx < len(texts) - 1 else "vout"
-            filtergraph += ";" + build_hook_layers(
-                stage_label, out_label, textfile, font, fontsize, alpha_expr, enable_expr, style
+            filtergraph += ";" + build_fallback_drawtext(
+                stage_label, out_label, textfile, font, fontsize, alpha_expr, enable_expr
             )
             stage_label = out_label
         vout_label = "vout"
