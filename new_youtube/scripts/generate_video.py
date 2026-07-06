@@ -249,18 +249,57 @@ def synthesize_chirp3(script_text, voice_name, out_path, tmpdir):
     _mx = max((len(c.encode("utf-8")) for c in chunks), default=0)
     print(f"   🔧 TTS chunker: byte-safe v2 — {len(chunks)} chunk(s), largest {_mx}B (must be <5000)", flush=True)
     print(f"   🎙  Chirp 3 HD voice: {voice_name} ({lang_code}) — {len(chunks)} chunk(s)", flush=True)
+
+    def _synthesize_chunk_with_retry(chunk, max_retries=5, base_wait=15):
+        """POST one chunk to Cloud TTS (Vertex service-account auth). Retries on
+        transient errors — 503 UNAVAILABLE, 429 rate-limit, 500 — with exponential
+        backoff, since these clear up on their own within seconds to a couple
+        minutes. A fresh access token is pulled on each retry in case the prior
+        one is close to expiry on a long-running job. Non-transient errors
+        (4xx other than 429) fail immediately — retrying won't fix those."""
+        import time
+        last_err = None
+        for attempt in range(max_retries):
+            try:
+                tok = _google_access_token() if attempt > 0 else token
+                r = requests.post(
+                    "https://texttospeech.googleapis.com/v1/text:synthesize",
+                    headers={"Authorization": f"Bearer {tok}", "Content-Type": "application/json"},
+                    json={
+                        "input": {"text": chunk},
+                        "voice": {"languageCode": lang_code, "name": voice_name},
+                        "audioConfig": {"audioEncoding": "MP3"},
+                    }, timeout=120)
+                if r.status_code == 200:
+                    return r
+                if r.status_code in (429, 500, 503) and attempt < max_retries - 1:
+                    wait = base_wait * (2 ** attempt)
+                    print(f"   ⚠️  TTS chunk got {r.status_code} (attempt {attempt+1}/{max_retries}): "
+                          f"{r.text[:150]}", flush=True)
+                    print(f"   ⏳ Waiting {wait}s before retry...", flush=True)
+                    time.sleep(wait)
+                    last_err = r
+                    continue
+                return r  # non-retryable status, or out of retries — return as-is
+            except requests.exceptions.RequestException as e:
+                last_err = e
+                if attempt < max_retries - 1:
+                    wait = base_wait * (2 ** attempt)
+                    print(f"   ⚠️  TTS request exception (attempt {attempt+1}/{max_retries}): "
+                          f"{str(e)[:150]}", flush=True)
+                    print(f"   ⏳ Waiting {wait}s before retry...", flush=True)
+                    time.sleep(wait)
+                    continue
+                raise
+        return last_err
+
     part_files = []
     for i, chunk in enumerate(chunks):
-        r = requests.post(
-            "https://texttospeech.googleapis.com/v1/text:synthesize",
-            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
-            json={
-                "input": {"text": chunk},
-                "voice": {"languageCode": lang_code, "name": voice_name},
-                "audioConfig": {"audioEncoding": "MP3"},
-            }, timeout=120)
-        if r.status_code != 200:
-            print(f"   ❌ TTS chunk {i} failed {r.status_code}: {r.text[:200]}", flush=True)
+        r = _synthesize_chunk_with_retry(chunk)
+        if r is None or r.status_code != 200:
+            status = getattr(r, "status_code", "no-response")
+            body = getattr(r, "text", str(r))[:200]
+            print(f"   ❌ TTS chunk {i} failed {status} after retries: {body}", flush=True)
             return False
         pf = os.path.join(tmpdir, f"tts_{i:03d}.mp3")
         with open(pf, "wb") as f:

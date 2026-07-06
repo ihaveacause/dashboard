@@ -161,9 +161,12 @@ def get_episode_voice(episode_number):
     print(f"  Voice: {voice}")
     return voice
 
-def synthesize_speech(text, voice_name, output_path):
-    creds = SACreds.from_service_account_file(creds_path, scopes=["https://www.googleapis.com/auth/cloud-platform"])
-    creds.refresh(Request())
+def synthesize_speech(text, voice_name, output_path, max_retries=5, base_wait=15):
+    """Synthesize via Cloud TTS (Vertex service-account auth). Retries on
+    transient errors — 503 UNAVAILABLE, 429 rate-limit, 500 — with exponential
+    backoff, since these clear on their own within seconds to a couple minutes.
+    A fresh token is pulled on every attempt (cheap, and avoids expiry issues)."""
+    import time
     lang_code = "-".join(voice_name.split("-")[:2])  # e.g. "ta-IN-Chirp3-HD-Callirrhoe" -> "ta-IN"
     payload = {
         "input": {"text": text},
@@ -171,13 +174,25 @@ def synthesize_speech(text, voice_name, output_path):
         # Chirp 3: HD rejects speakingRate/pitch/SSML — audioEncoding only.
         "audioConfig": {"audioEncoding": "MP3"},
     }
-    r = requests.post(
-        "https://texttospeech.googleapis.com/v1/text:synthesize",
-        headers={"Authorization": f"Bearer {creds.token}", "Content-Type": "application/json"},
-        json=payload,
-    )
-    if r.status_code != 200:
+    r = None
+    for attempt in range(max_retries):
+        creds = SACreds.from_service_account_file(creds_path, scopes=["https://www.googleapis.com/auth/cloud-platform"])
+        creds.refresh(Request())
+        r = requests.post(
+            "https://texttospeech.googleapis.com/v1/text:synthesize",
+            headers={"Authorization": f"Bearer {creds.token}", "Content-Type": "application/json"},
+            json=payload,
+        )
+        if r.status_code == 200:
+            break
+        if r.status_code in (429, 500, 503) and attempt < max_retries - 1:
+            wait = base_wait * (2 ** attempt)
+            print(f"  ⚠️  TTS got {r.status_code} (attempt {attempt+1}/{max_retries}): {r.text[:150]}")
+            print(f"  ⏳ Waiting {wait}s before retry...")
+            time.sleep(wait)
+            continue
         print(f"  ❌ TTS error {r.status_code}: {r.text[:500]}")
+        break
     r.raise_for_status()
     audio_b64 = r.json()["audioContent"]
     with open(output_path, "wb") as f:
