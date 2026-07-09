@@ -682,6 +682,8 @@ function buildActions(ep, s, n) {
         : '<span style="color:var(--muted);font-size:12px">⚠ No thumbnail — regenerate it from the image step before publishing</span>'}
       ${candidateThumbsHtml(ep, n)}
       ${localizedThumbsHtml(ep)}
+      <div style="font-size:10px;color:var(--muted2)">Or upload your own final thumbnail:</div>
+      <input type="file" accept="image/*" id="final-thumb-${n}" style="display:block;font-size:11px;color:var(--muted)" onchange="uploadFinalThumbnail(${n},this)">
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
         ${ep.video_url?`<a href="${ep.video_url}" target="_blank" class="btn btn-preview">▶ Preview Video</a>`:''}
         <button class="btn btn-yt" onclick="triggerYouTube(${n})">🚀 Publish to YouTube</button>
@@ -726,6 +728,9 @@ function buildImagesReview(ep, n) {
         <input type="file" accept="image/*" id="regen-ref-${n}-${img.order}" style="margin-top:7px;display:block;font-size:11px;color:var(--muted)">
         <div style="font-size:10px;color:var(--muted2);margin-top:3px">${img.order===1?'📌 Reference on Image 1 restyles the WHOLE episode to match it.':'Reference restyles just this image.'}</div>
         <button class="btn btn-regen" style="margin-top:6px" onclick="regenImage(${n},${img.order})">↺ Regenerate image ${img.order}</button>
+        <div style="height:1px;background:var(--border);margin:10px 0"></div>
+        <div style="font-size:10px;color:var(--muted2);margin-bottom:4px">Or skip AI regeneration — upload your own final image for this slot:</div>
+        <input type="file" accept="image/*" id="final-img-${n}-${img.order}" style="display:block;font-size:11px;color:var(--muted)" onchange="uploadFinalImage(${n},${img.order},this)">
       </div>
     </div>`).join('');
 
@@ -743,6 +748,9 @@ function buildImagesReview(ep, n) {
     <input type="file" accept="image/*" id="thumb-ref-${n}" style="margin-top:7px;display:block;font-size:11px;color:var(--muted)">
     <div style="font-size:10px;color:var(--muted2);margin-top:3px">Optional: upload a reference image to set the thumbnail's style.</div>
     <button class="btn btn-regen" style="margin-top:6px" onclick="regenThumbnail(${n})">↺ Regenerate thumbnail</button>
+    <div style="height:1px;background:var(--border);margin:10px 0"></div>
+    <div style="font-size:10px;color:var(--muted2);margin-bottom:4px">Or skip AI regeneration entirely — upload your own final thumbnail (keeps this exact image, no risk of new spelling mistakes):</div>
+    <input type="file" accept="image/*" id="final-thumb-${n}" style="display:block;font-size:11px;color:var(--muted)" onchange="uploadFinalThumbnail(${n},this)">
     <div style="height:1px;background:var(--border);margin:14px 0"></div>
     <button class="btn btn-approve" onclick="quickSet(${n},'images_approved')">✓ Approve Images &amp; Thumbnail</button>
   </div>`;
@@ -816,6 +824,61 @@ async function regenImage(n, order) {
     showToast(order===1 && refFile ? 'Restyling whole episode from your reference...' : `Regenerating image ${order}...`,'success');
     setTimeout(loadEpisodes, 1500);
   } catch(e){ showToast(`Error: ${e.message}`,'error'); }
+}
+
+// ── Direct manual uploads — bypass AI entirely, set the final URL immediately ──
+// (For when regeneration risks losing a good result, e.g. thumbnail spelling mistakes.)
+async function uploadFinalImage(n, order, input) {
+  const file = input.files[0];
+  if (!file) return;
+  input.disabled = true;
+  try {
+    showToast(`Uploading image ${order}...`,'success');
+    const ext    = (file.name.split('.').pop() || 'jpg');
+    const epLang = document.querySelector(`#card-${n}`)?.classList.contains('lang-en') ? 'en' : 'ta';
+    const path   = `ep${String(n).padStart(3,'0')}/${epLang}/manual_img_${order}_${Date.now()}.${ext}`;
+    const r = await fetch(`${SB_URL}/storage/v1/object/episode-images/${path}`, {
+      method:'POST',
+      headers:{'apikey':SB_KEY,'Authorization':`Bearer ${SB_KEY}`,'Content-Type':file.type||'image/jpeg','x-upsert':'true'},
+      body:file
+    });
+    if (!r.ok) throw new Error(`Upload failed ${r.status}`);
+    const publicUrl = `${SB_URL}/storage/v1/object/public/episode-images/${path}`;
+    const ep = episodes.find(e => e.episode_number === n);
+    if (!ep) throw new Error('Episode not found in loaded list — refresh and try again');
+    const imgs = epImages(ep).map(img => img.order === order ? {...img, url: publicUrl} : img);
+    await patch(n, {episode_images: imgs});
+    showToast(`Image ${order} replaced with your upload`,'success');
+    loadEpisodes();
+  } catch(e) {
+    showToast(`Upload failed: ${e.message}`,'error');
+    input.disabled = false;
+  }
+}
+
+async function uploadFinalThumbnail(n, input) {
+  const file = input.files[0];
+  if (!file) return;
+  input.disabled = true;
+  try {
+    showToast('Uploading thumbnail...','success');
+    const ext    = (file.name.split('.').pop() || 'jpg');
+    const epLang = document.querySelector(`#card-${n}`)?.classList.contains('lang-en') ? 'en' : 'ta';
+    const path   = `ep${String(n).padStart(3,'0')}/${epLang}/manual_thumb_${Date.now()}.${ext}`;
+    const r = await fetch(`${SB_URL}/storage/v1/object/episode-images/${path}`, {
+      method:'POST',
+      headers:{'apikey':SB_KEY,'Authorization':`Bearer ${SB_KEY}`,'Content-Type':file.type||'image/jpeg','x-upsert':'true'},
+      body:file
+    });
+    if (!r.ok) throw new Error(`Upload failed ${r.status}`);
+    const publicUrl = `${SB_URL}/storage/v1/object/public/episode-images/${path}`;
+    await patch(n, {thumbnail_url: publicUrl});
+    showToast('Thumbnail replaced with your upload','success');
+    loadEpisodes();
+  } catch(e) {
+    showToast(`Upload failed: ${e.message}`,'error');
+    input.disabled = false;
+  }
 }
 
 async function regenThumbnail(n) {
