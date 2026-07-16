@@ -354,10 +354,28 @@ async function submitUpload(){
       body:JSON.stringify({filename:file.name, content_type:file.type||'video/mp4'})
     });
     if(!sres.ok){ throw new Error('upload-url '+sres.status+': '+(await sres.text())); }
-    const {session_uri, object_url}=await sres.json();
+    const {session_uri, object_url, gcs_path}=await sres.json();
 
     // 2) upload the bytes straight to GCS
-    await gcsPut(session_uri, file, setBar);
+    try{
+      await gcsPut(session_uri, file, setBar);
+    }catch(putErr){
+      // GCS's completion response for a single-PUT resumable upload sometimes
+      // lacks CORS headers even when the bucket's CORS rule is correct — the
+      // file can finish uploading fine while the browser still reports a
+      // network error. Double-check server-side (no CORS on server calls)
+      // before treating this as a genuine failure.
+      toast('Upload response was blocked by the browser — verifying with the server…');
+      const vres=await fetch(`${SB_URL}/functions/v1/anchor-upload-url`,{
+        method:'POST', headers:H,
+        body:JSON.stringify({action:'verify', gcs_path})
+      });
+      const v = vres.ok ? await vres.json() : {exists:false};
+      if(!(v.exists && Number(v.size)===file.size)){
+        throw putErr; // genuinely failed — surface the original error
+      }
+      setBar(1); // upload actually succeeded — show it as complete
+    }
 
     // 3) create the record pointing at the GCS object
     const {error:insErr}=await SB.from(TABLE()).insert({
