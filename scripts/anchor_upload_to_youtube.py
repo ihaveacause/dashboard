@@ -21,6 +21,7 @@ from datetime import datetime, timedelta, timezone
 import requests
 import google.oauth2.credentials
 from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaFileUpload
 from google.auth.transport.requests import Request
 from supabase import create_client, Client
@@ -150,6 +151,21 @@ def upload_video(youtube, video_path, row, language, publish_time):
     print(f"✅ Uploaded: {vid}")
     return vid
 
+def set_thumbnail(youtube, video_id, thumbnail_url, tmp):
+    if not thumbnail_url:
+        print("   ℹ️  No thumbnail_url on this record — YouTube will auto-pick a frame.")
+        return
+    try:
+        tp = download(thumbnail_url, os.path.join(tmp, "thumb.jpg"))
+        youtube.thumbnails().set(
+            videoId=video_id, media_body=MediaFileUpload(tp, mimetype="image/jpeg"),
+        ).execute()
+        print("✅ Thumbnail set")
+    except HttpError as e:
+        print(f"⚠️  Thumbnail skipped — verify your YouTube channel to enable custom thumbnails: {e}")
+    except Exception as e:
+        print(f"⚠️  Thumbnail skipped — {e}")
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--record_id", required=True)
@@ -170,6 +186,7 @@ def main():
     with tempfile.TemporaryDirectory() as tmp:
         vp = download(row["video_url"], os.path.join(tmp, "final.mp4"))
         vid = upload_video(youtube, vp, row, args.language, publish_time)
+        set_thumbnail(youtube, vid, row.get("thumbnail_url"), tmp)
 
     module_name = row.get("module") or "Commentary"
     pid = get_or_create_playlist(youtube, module_name, args.language)
