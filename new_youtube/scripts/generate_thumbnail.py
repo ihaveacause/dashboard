@@ -77,7 +77,9 @@ THUMB_USE_ANCHOR = False   # keep thumbnails free/catchy; flip True to match vid
 # stored in `thumbnail_candidates`, and you pick one in the dashboard. The live thumbnail_url
 # defaults to candidate #1 so publishing never stalls. Set THUMB_CANDIDATES=1 to go back to a
 # single render (no code change needed) once you've decided what works.
-THUMB_CANDIDATES = max(1, int(os.environ.get("THUMB_CANDIDATES", "10")))
+# Lowered default 10 -> 3 (Jul 2026): 10 candidates cost ~$0.67/episode in Gemini
+# image-gen alone; 3 still gives real choice at less than a third of the cost.
+THUMB_CANDIDATES = max(1, int(os.environ.get("THUMB_CANDIDATES", "3")))
 
 LANG_NAME = {"ta": "Tamil", "en": "English"}.get(LANGUAGE, "Tamil")
 
