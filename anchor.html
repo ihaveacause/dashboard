@@ -265,10 +265,19 @@ function card(row){
       </div>`;
   }
   else if(row.status==='rendered'){
-    body=`<div class="flow">
-      ${row.video_url?`<a class="vlink" href="${row.video_url}" target="_blank">▶ Preview render</a>`:''}
-      <span class="step-dot" style="margin-left:auto">4 ·</span>
-      <button class="btn btn-go btn-sm" onclick="run('upload','${row.id}')">Publish to YouTube</button></div>`;
+    body=`
+      ${row.thumbnail_url
+        ? `<img src="${row.thumbnail_url}" alt="Thumbnail" style="width:100%;max-width:340px;border-radius:8px;border:1px solid var(--border2);margin-top:12px;display:block">`
+        : `<div class="muted" style="margin-top:12px">⚠ No thumbnail — auto-generation may have failed. YouTube will pick a random frame unless you upload one.</div>`}
+      ${row.thumbnail_source_url
+        ? `<a class="vlink" href="${row.thumbnail_source_url}" download target="_blank" style="display:inline-block;margin-top:6px">⬇ Download my photo (no text/branding — design your own)</a>`
+        : ''}
+      <div style="font-size:10px;color:var(--muted2);margin-top:6px">Auto-picked from your recording. Not right? Upload your own:</div>
+      <input type="file" accept="image/*" style="display:block;font-size:11px;color:var(--muted);margin-top:4px" onchange="uploadThumbnail('${row.id}',this)">
+      <div class="flow">
+        ${row.video_url?`<a class="vlink" href="${row.video_url}" target="_blank">▶ Preview render</a>`:''}
+        <span class="step-dot" style="margin-left:auto">4 ·</span>
+        <button class="btn btn-go btn-sm" onclick="run('upload','${row.id}')">Publish to YouTube</button></div>`;
   }
   else if(row.status==='published'){
     body=`<div class="flow">${row.youtube_url?`<a class="vlink" href="${row.youtube_url}" target="_blank">▶ View on YouTube</a>`:''}
@@ -362,6 +371,42 @@ function setBar(p){
   const bar=document.getElementById('upBar'); bar.style.display='block';
   const i=bar.querySelector('i'); i.style.animation='none'; i.style.marginLeft='0';
   i.style.width=Math.max(3,Math.round(p*100))+'%';
+}
+
+// Manually replace the auto-generated thumbnail — same mint-session + PUT
+// flow as the video upload, just with an image file.
+async function uploadThumbnail(id, input){
+  const file = input.files[0];
+  if(!file) return;
+  input.disabled = true;
+  try{
+    toast('Uploading thumbnail...');
+    const sres = await fetch(`${SB_URL}/functions/v1/anchor-upload-url`,{
+      method:'POST', headers:H,
+      body:JSON.stringify({filename:file.name, content_type:file.type||'image/jpeg'})
+    });
+    if(!sres.ok) throw new Error('upload-url '+sres.status+': '+(await sres.text()));
+    const {session_uri, object_url, gcs_path} = await sres.json();
+
+    try{
+      await gcsPut(session_uri, file, ()=>{});
+    }catch(putErr){
+      // Same GCS CORS quirk as the video upload — verify server-side before failing.
+      const vres = await fetch(`${SB_URL}/functions/v1/anchor-upload-url`,{
+        method:'POST', headers:H,
+        body:JSON.stringify({action:'verify', gcs_path})
+      });
+      const v = vres.ok ? await vres.json() : {exists:false};
+      if(!(v.exists && Number(v.size)===file.size)) throw putErr;
+    }
+
+    await patch(id, {thumbnail_url: object_url});
+    toast('Thumbnail replaced');
+    load();
+  }catch(e){
+    toast('Thumbnail upload failed: '+(e.message||e));
+    input.disabled = false;
+  }
 }
 
 async function submitUpload(){
