@@ -274,6 +274,72 @@ def ffprobe_dur(path):
     except Exception:
         return 0.0
 
+# ── Auto thumbnail: grab a frame from the RAW recording + brand it ─────────
+# Auto-picked timestamp only (no manual override yet): ~30% into the clip,
+# clamped away from the first/last couple seconds (usually dead air / you
+# settling in or wrapping up) — a simple stand-in for "a few seconds in,
+# mid-expression" without needing face-detection.
+def make_thumbnail(src_path, src_dur, title, font_path, logo_im, out_path):
+    t = 2.0
+    if src_dur and src_dur > 4.0:
+        t = max(2.0, min(src_dur * 0.30, src_dur - 2.0))
+    frame_path = out_path + ".raw.jpg"
+    r = subprocess.run(["ffmpeg", "-y", "-ss", f"{t:.2f}", "-i", src_path,
+                        "-frames:v", "1", "-q:v", "2", frame_path],
+                       capture_output=True, text=True)
+    if r.returncode != 0 or not os.path.exists(frame_path):
+        print(f"   ⚠️  Thumbnail frame extraction failed: {r.stderr[-300:]}", flush=True)
+        return None, None
+
+    TW, TH = 1280, 720
+    try:
+        im = Image.open(frame_path).convert("RGB")
+    except Exception as e:
+        print(f"   ⚠️  Thumbnail frame unreadable: {e}", flush=True)
+        return None, None
+    scale = max(TW / im.width, TH / im.height)
+    im = im.resize((int(im.width * scale) + 1, int(im.height * scale) + 1), Image.LANCZOS)
+    x0 = (im.width - TW) // 2; y0 = (im.height - TH) // 2
+    im = im.crop((x0, y0, x0 + TW, y0 + TH)).convert("RGBA")
+
+    # Save the clean, unbranded photo too — no title/tag/logo — so you can
+    # download it and design your own thumbnail elsewhere if you'd rather.
+    clean_path = out_path + ".clean.jpg"
+    im.convert("RGB").save(clean_path, "JPEG", quality=92)
+
+    overlay = Image.new("RGBA", (TW, TH), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(overlay)
+
+    # Bottom gradient so white title text stays legible over any frame.
+    grad_h = 300
+    for i in range(grad_h):
+        a = int(200 * (i / grad_h))
+        draw.line([(0, TH - grad_h + i), (TW, TH - grad_h + i)], fill=(6, 7, 10, a))
+    draw.rectangle([0, TH - 40, TW, TH], fill=(6, 7, 10, 235))
+    draw.rectangle([0, TH - grad_h - 4, TW, TH - grad_h], fill=C_ACCENT)
+
+    f_title = load_font(font_path, 66)
+    f_tag   = load_font(font_path, 30)
+
+    lines = wrap_text(draw, (title or "").strip() or "On Camera", f_title, TW - 140)[:2]
+    ty = TH - 46 - len(lines) * 76
+    for ln in lines:
+        draw.text((72, ty), ln, font=f_title, fill=(255, 255, 255, 255))
+        ty += 76
+
+    tag_w = int(draw.textlength(OPINION_LABEL, font=f_tag)) + 40
+    rounded(draw, [40, 36, 40 + tag_w, 86], 22, C_TAG)
+    draw.text((60, 46), OPINION_LABEL, font=f_tag, fill=(255, 255, 255, 255))
+
+    if logo_im is not None:
+        lw = 84; logo = logo_im.resize((lw, lw))
+        overlay.paste(logo, (TW - lw - 36, 30), logo if logo.mode == "RGBA" else None)
+
+    final = Image.alpha_composite(im, overlay).convert("RGB")
+    final.save(out_path, "JPEG", quality=92)
+    print(f"   ✅ Thumbnail: frame @ {t:.1f}s → {out_path}", flush=True)
+    return out_path, clean_path
+
 # ── Build the background concat (green mode) ──────────────────
 # (removed — green mode now composites image backgrounds with the same timed
 #  overlay mechanism as real_room, which is frame-exact and PTS-drift-free.)
@@ -289,12 +355,12 @@ def render(row, tmp):
         beats = json.loads(beats)
     beats = sorted(beats, key=lambda b: b.get("order", 0))
     if not beats:
-        print("❌ No beats — run Beats first."); return None
+        print("❌ No beats — run Beats first."); return None, None, None
 
     # source
     src = os.path.join(tmp, "source.mp4")
     if not download_file(row["source_video_url"], src, "Recording"):
-        return None
+        return None, None, None
     src_dur = ffprobe_dur(src)
     print(f"   ⏱  Source duration: {src_dur:.1f}s", flush=True)
     # clamp beat ends to the real source duration
@@ -322,6 +388,12 @@ def render(row, tmp):
             print("   ✅ Logo loaded", flush=True)
     except Exception as e:
         print(f"   ℹ️  Logo skipped: {e}", flush=True)
+
+    # Auto thumbnail — grab a frame from the raw recording (before beat graphics
+    # are burned in) and brand it; failures here never block the video render.
+    thumb_path = os.path.join(tmp, "thumbnail.jpg")
+    title = (row.get("title") or row.get("working_title") or "").strip()
+    thumb_path, clean_photo_path = make_thumbnail(src, src_dur, title, font_path, logo_im, thumb_path)
 
     # download beat images + build overlay PNGs
     beat_images = {}     # order -> local jpg path (full image, for green bg / panel thumb)
@@ -353,7 +425,7 @@ def render(row, tmp):
         image_beats = [(beat_images[b["order"]], b["start"], b["end"])
                        for b in beats if b["mode"] == "image" and beat_images.get(b["order"])]
         ok = render_green(src, studio_bg, image_beats, overlay_pngs, total, out)
-    return out if ok else None
+    return (out, thumb_path, clean_photo_path) if ok else (None, None, None)
 
 def _overlay_chain(n_inputs_start, overlay_pngs):
     """Build the chained overlay filter for N overlay PNG inputs.
@@ -463,14 +535,36 @@ def main():
 
     db_patch(RECORD_ID, {"status": "rendering"})
     with tempfile.TemporaryDirectory() as tmp:
-        out = render(row, tmp)
+        out, thumb_path, clean_photo_path = render(row, tmp)
         if not out:
             db_patch(RECORD_ID, {"status": "beats_ready"}); return
         print("\n☁️  Uploading studio render...", flush=True)
         url = upload_to_gcs(out, f"anchor/{RECORD_ID}/{LANGUAGE}/studio_final.mp4")
         if not url:
             db_patch(RECORD_ID, {"status": "beats_ready"}); return
-        db_patch(RECORD_ID, {"video_url": url, "status": "rendered"})
+
+        updates = {"video_url": url, "status": "rendered"}
+        if thumb_path and os.path.exists(thumb_path):
+            print("\n☁️  Uploading thumbnail...", flush=True)
+            thumb_url = upload_to_gcs(thumb_path, f"anchor/{RECORD_ID}/{LANGUAGE}/thumbnail.jpg",
+                                      content_type="image/jpeg")
+            if thumb_url:
+                updates["thumbnail_url"] = thumb_url
+            else:
+                print("   ⚠️  Thumbnail upload failed — continuing without one", flush=True)
+        else:
+            print("   ⚠️  Thumbnail generation failed — continuing without one", flush=True)
+
+        if clean_photo_path and os.path.exists(clean_photo_path):
+            print("\n☁️  Uploading clean source photo...", flush=True)
+            clean_url = upload_to_gcs(clean_photo_path, f"anchor/{RECORD_ID}/{LANGUAGE}/photo.jpg",
+                                      content_type="image/jpeg")
+            if clean_url:
+                updates["thumbnail_source_url"] = clean_url
+            else:
+                print("   ⚠️  Clean photo upload failed — continuing without one", flush=True)
+
+        db_patch(RECORD_ID, updates)
     print(f"\n{'='*60}", flush=True)
     print(f"✅ Studio video rendered — review in dashboard, then Publish.", flush=True)
     print(f"{'='*60}", flush=True)
