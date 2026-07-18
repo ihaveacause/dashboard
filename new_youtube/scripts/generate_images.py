@@ -69,7 +69,7 @@ IMAGE_MODEL  = "gemini-3.1-flash-image"
 # your Anthropic account serves if this one isn't available.
 CLAUDE_MODEL = "claude-sonnet-4-6"
 
-MIN_BEATS, MAX_BEATS = 8, 12
+MIN_BEATS, MAX_BEATS = 6, 8  # lowered from 8,12 (Jul 2026) — each beat is one Gemini image ($0.067)
 TARGET_W, TARGET_H   = 1920, 1080     # 16:9, enforced by normalize
 GEN_SLEEP            = 8              # seconds between image calls (rate limit)
 SIGNED_URL_DAYS      = 30             # GCS signed-URL validity
