@@ -24,7 +24,13 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 .lang-toggle{display:flex;background:var(--surface2);border:1px solid var(--border2);border-radius:10px;padding:3px;gap:3px;margin-left:auto}
 .lang-btn{padding:5px 16px;border-radius:7px;border:none;background:transparent;color:var(--muted2);font-family:'Syne',sans-serif;font-size:12px;font-weight:600;cursor:pointer}
 .lang-btn.en{background:var(--en);color:#fff}.lang-btn.ta{background:var(--ta);color:#000}
-.wrap{max-width:1100px;margin:0 auto;padding:26px 28px 80px}
+.wrap{max-width:1600px;margin:0 auto;padding:26px 28px 80px}
+.board{display:flex;gap:14px;overflow-x:auto;padding-bottom:16px;align-items:flex-start}
+.col{flex:0 0 320px;background:var(--surface2);border:1px solid var(--border);border-radius:14px;max-height:calc(100vh - 200px);display:flex;flex-direction:column}
+.col-head{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:14px 16px;border-bottom:1px solid var(--border);font-family:'Syne',sans-serif;font-weight:700;font-size:13px;position:sticky;top:0;background:var(--surface2);border-radius:14px 14px 0 0;z-index:2}
+.col-count{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted2);background:var(--surface3);padding:2px 8px;border-radius:20px;flex-shrink:0}
+.col-body{overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:10px}
+.col-empty{color:var(--muted);font-size:11px;text-align:center;padding:24px 8px;font-family:'JetBrains Mono',monospace}
 .row-top{display:flex;align-items:center;gap:14px;margin-bottom:20px}
 .h1{font-family:'Syne',sans-serif;font-size:22px;font-weight:800}
 .sub{color:var(--muted2);font-size:13px;margin-top:3px}
@@ -35,7 +41,7 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 .btn-go{background:var(--green);color:#04210f}
 .btn-sm{padding:7px 12px;font-size:12px;border-radius:8px}
 .btn:disabled{opacity:.45;cursor:not-allowed}
-.card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px 20px;margin-bottom:14px}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:16px 17px}
 .card-head{display:flex;align-items:flex-start;gap:14px}
 .card-title{font-family:'Syne',sans-serif;font-size:16px;font-weight:700;flex:1}
 .muted{color:var(--muted2);font-size:12px}
@@ -191,6 +197,16 @@ const STATUS = {
   rendered:['Rendered','b-done'], publishing:['Publishing…','b-work'], published:['Published','b-pub'],
 };
 
+// Horizontal pipeline: script → upload, left to right, same idea as YouTube Long's board.
+const COLUMNS = [
+  {label:'📥 Pending',        match:s=>s==='pending'},
+  {label:'📝 Transcribing',   match:s=>s==='transcribing'},
+  {label:'🏷 Pick a Title',   match:s=>s==='transcribed'},
+  {label:'🧩 Plan Beats',     match:s=>['generating_beats','beats_ready'].includes(s)},
+  {label:'🎬 Render',         match:s=>['rendering','rendered'].includes(s)},
+  {label:'🚀 Publish',        match:s=>['publishing','published'].includes(s)},
+];
+
 async function load(){
   const list=document.getElementById('list');
   list.innerHTML='<div class="empty"><div class="big">🎬</div>Loading…</div>';
@@ -198,8 +214,20 @@ async function load(){
     const r=await fetch(`${SB_URL}/rest/v1/${TABLE()}?select=*&order=created_at.desc&limit=100`,{headers:H});
     const rows=await r.json();
     if(!rows.length){ list.innerHTML='<div class="empty"><div class="big">🎥</div>No recordings yet. Upload one to begin.</div>'; return; }
-    list.innerHTML=rows.map(card).join('');
+    renderBoard(rows);
   }catch(e){ list.innerHTML=`<div class="empty">⚠️ ${e.message}</div>`; }
+}
+
+function renderBoard(rows){
+  const cols = COLUMNS.map(col=>{
+    const items = rows.filter(r=>col.match(r.status||'pending'));
+    const body = items.length ? items.map(card).join('') : `<div class="col-empty">Nothing here</div>`;
+    return `<div class="col">
+      <div class="col-head"><span>${col.label}</span><span class="col-count">${items.length}</span></div>
+      <div class="col-body">${body}</div>
+    </div>`;
+  }).join('');
+  document.getElementById('list').innerHTML = `<div class="board">${cols}</div>`;
 }
 
 function card(row){
