@@ -80,11 +80,14 @@ def get_youtube():
 
 def get_or_create_playlist(youtube, module_name, language):
     sb: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+    lang_label = "Tamil" if language in ("ta", "tamil") else "English"
+    # module_playlists.language check-constraint expects the full word
+    # ('English'/'Tamil'), matching what the Long-form pipeline already
+    # writes — use lang_label consistently for both lookup and insert.
     res = (sb.table("module_playlists").select("playlist_id")
-             .eq("module_name", module_name).eq("language", language).execute())
+             .eq("module_name", module_name).eq("language", lang_label).execute())
     if res.data:
         return res.data[0]["playlist_id"]
-    lang_label = "Tamil" if language in ("ta", "tamil") else "English"
     resp = youtube.playlists().insert(part="snippet,status", body={
         "snippet": {"title": f"{module_name} | I Have a Cause ({lang_label})",
                     "description": f"On-camera commentary — module '{module_name}', I Have a Cause.",
@@ -92,7 +95,7 @@ def get_or_create_playlist(youtube, module_name, language):
         "status": {"privacyStatus": "public"}}).execute()
     pid = resp["id"]
     sb.table("module_playlists").insert(
-        {"module_name": module_name, "language": language, "playlist_id": pid}).execute()
+        {"module_name": module_name, "language": lang_label, "playlist_id": pid}).execute()
     print(f"✅ Created playlist {pid}")
     return pid
 
