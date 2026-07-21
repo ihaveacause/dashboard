@@ -386,7 +386,7 @@ async function uploadThumbnail(id, input){
       body:JSON.stringify({filename:file.name, content_type:file.type||'image/jpeg'})
     });
     if(!sres.ok) throw new Error('upload-url '+sres.status+': '+(await sres.text()));
-    const {session_uri, object_url, gcs_path} = await sres.json();
+    const {session_uri, read_url, gcs_path} = await sres.json();
 
     try{
       await gcsPut(session_uri, file, ()=>{});
@@ -400,7 +400,7 @@ async function uploadThumbnail(id, input){
       if(!(v.exists && Number(v.size)===file.size)) throw putErr;
     }
 
-    await patch(id, {thumbnail_url: object_url});
+    await patch(id, {thumbnail_url: read_url});
     toast('Thumbnail replaced');
     load();
   }catch(e){
