@@ -1,0 +1,32 @@
+name: Anchor Shorts Upload to YouTube (On Camera Shorts)
+on:
+  workflow_dispatch:
+    inputs:
+      record_id:
+        description: 'Anchor Shorts record id (uuid)'
+        required: true
+        type: string
+      language:
+        description: 'Lane: ta (Tamil) or en (English)'
+        required: true
+        default: 'en'
+        type: choice
+        options: [ta, en]
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install Python deps
+        run: pip install google-api-python-client google-auth google-auth-oauthlib supabase requests
+      - name: Upload to YouTube
+        env:
+          SUPABASE_URL:               ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY:  ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          YOUTUBE_TOKEN_JSON:         ${{ secrets.YOUTUBE_TOKEN_JSON }}
+          PYTHONUNBUFFERED:           '1'
+        run: python new_youtube/scripts/anchor_shorts_upload_to_youtube.py --record_id "${{ inputs.record_id }}" --language "${{ inputs.language }}"
