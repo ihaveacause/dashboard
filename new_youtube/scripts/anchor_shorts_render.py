@@ -132,12 +132,12 @@ def upload_to_gcs(local_path, gcs_path, content_type="video/mp4", days=30):
 
 # ── Fonts (same lookup as the rest of the repo) ────────────────
 def font_paths():
-    if LANGUAGE == "ta":
-        cands = ["/usr/share/fonts/opentype/noto/NotoSansTamil-Regular.ttf",
-                 "/usr/share/fonts/truetype/noto/NotoSansTamil-Bold.ttf"]
-    else:
-        cands = ["/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-                 "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"]
+    # The brand wordmark ("I Have a Cause" / "@IHaveACause") is always
+    # English text, regardless of LANGUAGE — this script doesn't draw any
+    # Tamil-script text anywhere else, so always use a Latin-coverage font.
+    # (A Tamil-only font here was producing tofu boxes for the English text.)
+    cands = ["/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+             "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"]
     for c in cands:
         if os.path.exists(c):
             return c
@@ -162,10 +162,11 @@ def ffprobe_dur(path):
 
 
 # ── The persistent bottom banner (built once, overlaid for the whole clip) ──
-def build_banner_png(font_path, logo_im, out_path):
+def build_banner_png(font_path, logo_im, out_path, hook=""):
     """1080x1920 RGBA, transparent everywhere except a semi-opaque bar across
     the bottom ~11% of the frame — footage stays visible through it — carrying
-    the logo + 'I Have a Cause' wordmark."""
+    the logo + 'I Have a Cause' wordmark, plus an optional punchy hook line
+    floating just above the bar."""
     img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
 
@@ -173,6 +174,26 @@ def build_banner_png(font_path, logo_im, out_path):
     bar_top = H - bar_h
     draw.rectangle([0, bar_top, W, H], fill=C_BAR)
     draw.rectangle([0, bar_top, W, bar_top + 4], fill=C_BAR_LINE)  # thin accent line
+
+    if hook.strip():
+        f_hook = load_font(font_path, 44)
+        hx, hy = 36, bar_top - 70
+        # wrap to at most 2 lines within the frame width
+        words, lines, cur = hook.strip().split(), [], ""
+        for w in words:
+            trial = (cur + " " + w).strip()
+            if draw.textlength(trial, font=f_hook) <= (W - 72):
+                cur = trial
+            else:
+                if cur: lines.append(cur)
+                cur = w
+        if cur: lines.append(cur)
+        lines = lines[:2]
+        hy = bar_top - 20 - len(lines) * 54
+        for ln in lines:
+            draw.text((hx + 2, hy + 2), ln, font=f_hook, fill=(0, 0, 0, 160))
+            draw.text((hx, hy), ln, font=f_hook, fill=(255, 255, 255, 255))
+            hy += 54
 
     pad = 36
     logo_size = 120
@@ -205,7 +226,7 @@ def build_banner_png(font_path, logo_im, out_path):
     return out_path
 
 
-def make_thumbnail(src_path, src_dur, title, font_path, logo_im, out_path):
+def make_thumbnail(src_path, src_dur, title, font_path, logo_im, out_path, hook=""):
     """Grab a frame ~35% into the clip and brand it the same way as the video."""
     grab_t = max(0.3, (src_dur or 3) * 0.35)
     frame_path = out_path.replace(".jpg", "_raw.jpg")
@@ -219,7 +240,7 @@ def make_thumbnail(src_path, src_dur, title, font_path, logo_im, out_path):
         img = img.resize((W, H)) if img.size != (W, H) else img
         img = img.convert("RGBA")
         banner_path = frame_path.replace("_raw.jpg", "_banner.png")
-        build_banner_png(font_path, logo_im, banner_path)
+        build_banner_png(font_path, logo_im, banner_path, hook=hook)
         banner = Image.open(banner_path)
         img.alpha_composite(banner)
         img.convert("RGB").save(out_path, quality=90)
@@ -274,10 +295,12 @@ def render(row, tmp):
         print(f"   ℹ️  Logo skipped: {e}", flush=True)
 
     title = (row.get("title") or row.get("working_title") or "").strip()
-    thumb_path = make_thumbnail(src, src_dur, title, font_path, logo_im, os.path.join(tmp, "thumbnail.jpg"))
+    hook  = (row.get("hook_text") or "").strip()
+    thumb_path = make_thumbnail(src, src_dur, title, font_path, logo_im,
+                                os.path.join(tmp, "thumbnail.jpg"), hook=hook)
 
     banner_png = os.path.join(tmp, "banner.png")
-    build_banner_png(font_path, logo_im, banner_png)
+    build_banner_png(font_path, logo_im, banner_png, hook=hook)
 
     out = os.path.join(tmp, "final.mp4")
     ok = render_vertical(src, banner_png, out)
