@@ -167,6 +167,18 @@ def font_paths():
             return c
     return None
 
+def english_font_path():
+    # BRAND_TAG ("I HAVE A CAUSE") is always English, regardless of LANGUAGE.
+    # The Tamil font used elsewhere for headlines/hook has no Latin glyphs,
+    # which was rendering this tag as tofu boxes on Tamil recordings.
+    cands = ["/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+             "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+             "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"]
+    for c in cands:
+        if os.path.exists(c):
+            return c
+    return None
+
 def load_font(path, size):
     try:
         return ImageFont.truetype(path, size) if path else ImageFont.load_default()
@@ -196,7 +208,7 @@ def build_overlay_png(beat, mode, font_path, logo_im, beat_img, out_path, hook="
     f_head = load_font(font_path, 46)
     f_panel = load_font(font_path, 40)
     f_bul  = load_font(font_path, 34)
-    f_tag  = load_font(font_path, 28)
+    f_tag  = load_font(english_font_path(), 28)
     f_hook = load_font(font_path, 32)
 
     headline = beat.get("headline", "") or ""
@@ -330,7 +342,7 @@ def make_thumbnail(src_path, src_dur, title, font_path, logo_im, out_path, hook=
     draw.rectangle([0, TH - grad_h - 4, TW, TH - grad_h], fill=C_ACCENT)
 
     f_title = load_font(font_path, 66)
-    f_tag   = load_font(font_path, 30)
+    f_tag   = load_font(english_font_path(), 30)
     f_hook  = load_font(font_path, 32)
 
     lines = wrap_text(draw, (title or "").strip() or "On Camera", f_title, TW - 140)[:2]
