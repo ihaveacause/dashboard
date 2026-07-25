@@ -247,7 +247,13 @@ function card(row){
       <div class="title-opt" onclick="pickTitle('${row.id}', this)" data-title="${esc(t.text)}">
         <span class="sty ${t.style}">${t.style||'punchy'}</span>
         <span style="flex:1">${esc(t.text)}</span></div>`).join('');
-    body=`<div class="titles">${opts||'<div class="muted">No suggestions parsed — type your own below.</div>'}
+    body=`
+      <div style="font-size:10px;color:var(--muted2);margin-top:10px">HOOK LINE — sits above the brand tag on the video &amp; thumbnail:</div>
+      <div class="flow">
+        <input class="beat hl" id="hook_${row.id}" value="${esc(row.hook_text||'')}" placeholder="Punchy 4-8 word line…" style="flex:1;min-width:200px">
+        <button class="btn btn-ghost btn-sm" onclick="saveHook('${row.id}')">💾 Save</button>
+      </div>
+      <div class="titles" style="margin-top:12px">${opts||'<div class="muted">No suggestions parsed — type your own below.</div>'}
       <div class="flow">
         <input class="beat hl" id="man_${row.id}" placeholder="…or type your own title" style="flex:1;min-width:200px">
         <button class="btn btn-ghost btn-sm" onclick="useManual('${row.id}')">Use this</button>
@@ -319,6 +325,11 @@ async function useManual(id){
   const v=document.getElementById('man_'+id).value.trim();
   if(!v){ toast('Type a title first'); return; }
   try{ await patch(id,{title:v}); toast('Title set — planning beats…'); await callAnchor('beats',id); setTimeout(load,1200);}
+  catch(e){ toast(e.message); }
+}
+async function saveHook(id){
+  const v=document.getElementById('hook_'+id).value.trim();
+  try{ await patch(id,{hook_text:v}); toast('Hook line saved'); }
   catch(e){ toast(e.message); }
 }
 function setMode(id,order,mode,btn){
