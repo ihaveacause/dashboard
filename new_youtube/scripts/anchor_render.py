@@ -63,6 +63,9 @@ C_SUB      = (180, 185, 195, 255)
 C_ACCENT   = (120, 220, 180, 255)
 
 OPINION_LABEL = {"ta": "கருத்து", "en": "OPINION"}.get(LANGUAGE, "OPINION")
+# Brand identity tag — standardized across languages per your request (Jul 2026):
+# always "I HAVE A CAUSE", not translated, unlike OPINION_LABEL above.
+BRAND_TAG = "I HAVE A CAUSE"
 
 # ── Supabase ──────────────────────────────────────────────────
 SB_HEADERS = {
@@ -186,14 +189,15 @@ def rounded(draw, box, r, fill, outline=None, width=0):
     draw.rounded_rectangle(box, radius=r, fill=fill, outline=outline, width=width)
 
 # ── Per-beat overlay PNG (the graphics layer for one beat) ────
-def build_overlay_png(beat, mode, font_path, logo_im, beat_img, out_path):
-    """One 1920x1080 RGBA PNG: panel/image/headline/bullets/OPINION tag/logo."""
+def build_overlay_png(beat, mode, font_path, logo_im, beat_img, out_path, hook=""):
+    """One 1920x1080 RGBA PNG: panel/image/headline/bullets/hook/brand tag/logo."""
     img  = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
     f_head = load_font(font_path, 46)
     f_panel = load_font(font_path, 40)
     f_bul  = load_font(font_path, 34)
     f_tag  = load_font(font_path, 28)
+    f_hook = load_font(font_path, 32)
 
     headline = beat.get("headline", "") or ""
     bullets  = beat.get("bullets", []) or []
@@ -242,10 +246,17 @@ def build_overlay_png(beat, mode, font_path, logo_im, beat_img, out_path):
     for ln in strap_lines[:2]:
         draw.text((sx0 + 28, ty), ln, font=f_head, fill=C_TEXT); ty += 48
 
-    # Persistent OPINION tag (top-left)
-    tag_w = int(draw.textlength(OPINION_LABEL, font=f_tag)) + 40
-    rounded(draw, [70, 70, 70 + tag_w, 120], 25, C_TAG)
-    draw.text((90, 80), OPINION_LABEL, font=f_tag, fill=(255, 255, 255, 255))
+    # Punchy hook line (Claude, from the transcript) — sits just above the brand tag
+    tag_top = 70
+    if hook.strip():
+        hx0, hy1 = 70, tag_top - 14
+        draw.text((hx0 + 2, hy1 - 42 + 2), hook.strip(), font=f_hook, fill=(0, 0, 0, 160))
+        draw.text((hx0, hy1 - 42), hook.strip(), font=f_hook, fill=(255, 255, 255, 255))
+
+    # Persistent brand tag (top-left) — standardized text, same in EN and TA
+    tag_w = int(draw.textlength(BRAND_TAG, font=f_tag)) + 40
+    rounded(draw, [70, tag_top, 70 + tag_w, tag_top + 50], 25, C_TAG)
+    draw.text((90, tag_top + 10), BRAND_TAG, font=f_tag, fill=(255, 255, 255, 255))
 
     # Logo (top-right) if available
     if logo_im is not None:
@@ -279,7 +290,7 @@ def ffprobe_dur(path):
 # clamped away from the first/last couple seconds (usually dead air / you
 # settling in or wrapping up) — a simple stand-in for "a few seconds in,
 # mid-expression" without needing face-detection.
-def make_thumbnail(src_path, src_dur, title, font_path, logo_im, out_path):
+def make_thumbnail(src_path, src_dur, title, font_path, logo_im, out_path, hook=""):
     t = 2.0
     if src_dur and src_dur > 4.0:
         t = max(2.0, min(src_dur * 0.30, src_dur - 2.0))
@@ -320,6 +331,7 @@ def make_thumbnail(src_path, src_dur, title, font_path, logo_im, out_path):
 
     f_title = load_font(font_path, 66)
     f_tag   = load_font(font_path, 30)
+    f_hook  = load_font(font_path, 32)
 
     lines = wrap_text(draw, (title or "").strip() or "On Camera", f_title, TW - 140)[:2]
     ty = TH - 46 - len(lines) * 76
@@ -327,9 +339,14 @@ def make_thumbnail(src_path, src_dur, title, font_path, logo_im, out_path):
         draw.text((72, ty), ln, font=f_title, fill=(255, 255, 255, 255))
         ty += 76
 
-    tag_w = int(draw.textlength(OPINION_LABEL, font=f_tag)) + 40
-    rounded(draw, [40, 36, 40 + tag_w, 86], 22, C_TAG)
-    draw.text((60, 46), OPINION_LABEL, font=f_tag, fill=(255, 255, 255, 255))
+    tag_top = 110 if hook.strip() else 36   # extra headroom when there's a hook line above
+    if hook.strip():
+        draw.text((60 + 2, 62 + 2), hook.strip(), font=f_hook, fill=(0, 0, 0, 160))
+        draw.text((60, 62), hook.strip(), font=f_hook, fill=(255, 255, 255, 255))
+
+    tag_w = int(draw.textlength(BRAND_TAG, font=f_tag)) + 40
+    rounded(draw, [40, tag_top, 40 + tag_w, tag_top + 50], 22, C_TAG)
+    draw.text((60, tag_top + 10), BRAND_TAG, font=f_tag, fill=(255, 255, 255, 255))
 
     if logo_im is not None:
         lw = 84; logo = logo_im.resize((lw, lw))
@@ -393,7 +410,8 @@ def render(row, tmp):
     # are burned in) and brand it; failures here never block the video render.
     thumb_path = os.path.join(tmp, "thumbnail.jpg")
     title = (row.get("title") or row.get("working_title") or "").strip()
-    thumb_path, clean_photo_path = make_thumbnail(src, src_dur, title, font_path, logo_im, thumb_path)
+    thumb_path, clean_photo_path = make_thumbnail(
+        src, src_dur, title, font_path, logo_im, thumb_path, hook=(row.get("hook_text") or "").strip())
 
     # download beat images + build overlay PNGs
     beat_images = {}     # order -> local jpg path (full image, for green bg / panel thumb)
@@ -409,10 +427,11 @@ def render(row, tmp):
                     pass
 
     overlay_pngs = []
+    hook_text = (row.get("hook_text") or "").strip()
     for b in beats:
         op = os.path.join(tmp, f"ov_{b['order']:02d}.png")
         build_overlay_png(b, studio_mode, font_path, logo_im,
-                          beat_pils.get(b["order"]), op)
+                          beat_pils.get(b["order"]), op, hook=hook_text)
         overlay_pngs.append((op, b["start"], b["end"]))
 
     out = os.path.join(tmp, "final.mp4")
