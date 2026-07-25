@@ -132,10 +132,25 @@ def upload_to_gcs(local_path, gcs_path, content_type="video/mp4", days=30):
 
 # ── Fonts (same lookup as the rest of the repo) ────────────────
 def font_paths():
+    # Used for the hook line, which IS in the recording's own language —
+    # Tamil hook text needs the Tamil font here.
+    if LANGUAGE == "ta":
+        cands = ["/usr/share/fonts/opentype/noto/NotoSansTamil-Regular.ttf",
+                 "/usr/share/fonts/truetype/noto/NotoSansTamil-Regular.ttf",
+                 "/usr/share/fonts/truetype/noto/NotoSansTamil-Bold.ttf"]
+    else:
+        cands = ["/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+                 "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"]
+    for c in cands:
+        if os.path.exists(c):
+            return c
+    return None
+
+def english_font_path():
     # The brand wordmark ("I Have a Cause" / "@IHaveACause") is always
-    # English text, regardless of LANGUAGE — this script doesn't draw any
-    # Tamil-script text anywhere else, so always use a Latin-coverage font.
-    # (A Tamil-only font here was producing tofu boxes for the English text.)
+    # English text, regardless of LANGUAGE — use a dedicated Latin-coverage
+    # font for it specifically, separate from font_paths() above (which is
+    # language-aware, for the hook line).
     cands = ["/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
              "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"]
     for c in cands:
@@ -205,8 +220,8 @@ def build_banner_png(font_path, logo_im, out_path, hook=""):
     else:
         text_x = pad
 
-    name_font = load_font(font_path, 52)
-    tag_font  = load_font(font_path, 30)
+    name_font = load_font(english_font_path(), 52)
+    tag_font  = load_font(english_font_path(), 30)
     name_txt  = "I Have a Cause"
     tag_txt   = "@IHaveACause"
 
