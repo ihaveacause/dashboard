@@ -61,6 +61,11 @@ body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-h
 .beat{display:flex;gap:10px;align-items:flex-start;background:var(--surface2);border:1px solid var(--border2);border-radius:9px;padding:10px 12px;margin-top:8px}
 .beat .ord{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted);min-width:22px;padding-top:8px}
 .beat input.hl{flex:1;background:var(--surface3);border:1px solid var(--border2);border-radius:7px;color:var(--text);font-family:'Inter';font-size:13px;padding:7px 9px}
+.beat input.time{width:60px;background:var(--surface3);border:1px solid var(--border2);border-radius:7px;color:var(--accent2,#7fd);font-family:'JetBrains Mono',monospace;font-size:12px;padding:7px 6px;text-align:center}
+.beat .dur{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--muted2);min-width:44px;padding-top:9px;text-align:right}
+.beat{flex-direction:column;align-items:stretch}
+.beat .beat-top{display:flex;gap:10px;align-items:flex-start}
+.beat textarea.bullets{margin-top:8px;width:100%;background:var(--surface3);border:1px solid var(--border2);border-radius:7px;color:var(--muted);font-family:'Inter';font-size:12px;padding:7px 9px;resize:vertical;min-height:44px}
 .mode-toggle{display:flex;border:1px solid var(--border2);border-radius:7px;overflow:hidden}
 .mode-toggle button{border:none;background:var(--surface3);color:var(--muted2);font-size:11px;font-weight:600;padding:7px 10px;cursor:pointer}
 .mode-toggle button.on{background:var(--purple);color:#fff}
@@ -256,7 +261,7 @@ function card(row){
   }
   else if(row.status==='beats_ready'){
     const beats=(row.beats||[]).map(b=>beatRow(row.id,b)).join('');
-    body=`<div class="muted" style="margin-top:12px">Toggle image/text or edit a headline, then render.</div>
+    body=`<div class="muted" style="margin-top:12px">Drag a beat's start time earlier/later (m:ss), edit its headline or bullet points, or toggle image/text — then Save edits before rendering. Durations recompute automatically from each beat's start.</div>
       ${beats}
       <div class="flow" style="margin-top:12px">
         <button class="btn btn-ghost btn-sm" onclick="saveBeats('${row.id}')">💾 Save edits</button>
@@ -294,15 +299,32 @@ function card(row){
     </div>${body}</div>`;
 }
 
+function fmtTime(s){
+  s = Math.max(0, Math.round(s||0));
+  return `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
+}
+function parseTime(str){
+  str=(str||'').trim();
+  if(str.includes(':')){ const [m,s]=str.split(':'); return (+m||0)*60+(+s||0); }
+  return +str||0;
+}
 function beatRow(id,b){
   const img=b.mode==='image', txt=b.mode==='text';
+  const dur = (b.end!=null && b.start!=null) ? (b.end-b.start) : null;
+  const bulletsText = (b.bullets||[]).join('\n');
   return `<div class="beat" data-bid="${b.order}">
-    <div class="ord">${b.order}</div>
-    <input class="hl" value="${esc(b.headline||'')}" data-bh="${b.order}">
-    <div class="mode-toggle">
-      <button class="${img?'on':''}" onclick="setMode('${id}',${b.order},'image',this)">image</button>
-      <button class="${txt?'on':''}" onclick="setMode('${id}',${b.order},'text',this)">text</button>
-    </div></div>`;
+    <div class="beat-top">
+      <div class="ord">${b.order}</div>
+      <input class="time" value="${fmtTime(b.start)}" data-bt="${b.order}" title="Start time (m:ss) — drag this beat earlier/later">
+      <input class="hl" value="${esc(b.headline||'')}" data-bh="${b.order}" placeholder="Headline / on-screen chyron">
+      <div class="mode-toggle">
+        <button class="${img?'on':''}" onclick="setMode('${id}',${b.order},'image',this)">image</button>
+        <button class="${txt?'on':''}" onclick="setMode('${id}',${b.order},'text',this)">text</button>
+      </div>
+      <div class="dur">${dur!=null?fmtTime(dur):''}</div>
+    </div>
+    <textarea class="bullets" data-bb="${b.order}" placeholder="One bullet point per line (max 3, shown under the headline)&#10;leave blank for none">${esc(bulletsText)}</textarea>
+  </div>`;
 }
 
 // ── per-record actions ───────────────────────────────────────
@@ -326,16 +348,40 @@ function setMode(id,order,mode,btn){
   btn.classList.add('on');
   btn.closest('.beat').dataset.mode=mode;
 }
+const MIN_BEAT_SECONDS=4; // floor so a manual edit can't crush a neighboring beat to near-zero
 async function saveBeats(id){
-  // read current row, apply headline + mode edits, patch back
+  // read current row, apply start-time + headline + mode edits, recompute ends, patch back
   const r=await fetch(`${SB_URL}/rest/v1/${TABLE()}?id=eq.${id}&select=beats`,{headers:H});
   const [row]=await r.json(); const beats=row.beats||[];
+  const lastEnd = beats.length ? beats[beats.length-1].end : null; // preserve total clip length
+  let bumped=false;
   document.querySelectorAll(`.beat`).forEach(el=>{
     const ord=+el.dataset.bid; const b=beats.find(x=>x.order===ord); if(!b) return;
     const hi=el.querySelector(`[data-bh="${ord}"]`); if(hi) b.headline=hi.value;
     if(el.dataset.mode) b.mode=el.dataset.mode;
+    const ti=el.querySelector(`[data-bt="${ord}"]`);
+    if(ti) b.start=parseTime(ti.value);
+    const bi=el.querySelector(`[data-bb="${ord}"]`);
+    if(bi) b.bullets=bi.value.split('\n').map(s=>s.trim()).filter(Boolean).slice(0,3);
   });
-  try{ await patch(id,{beats}); toast('Beat edits saved'); }catch(e){ toast(e.message); }
+  beats.sort((a,b)=>a.order-b.order);
+  // enforce start=0 on the first beat, monotonic ordering with a minimum gap on the rest
+  if(beats.length) beats[0].start=0;
+  for(let i=1;i<beats.length;i++){
+    const floor=beats[i-1].start+MIN_BEAT_SECONDS;
+    if(beats[i].start<floor){ beats[i].start=floor; bumped=true; }
+  }
+  // recompute each beat's end from the NEXT beat's start; keep the clip's total length
+  for(let i=0;i<beats.length-1;i++) beats[i].end=beats[i+1].start;
+  if(beats.length){
+    const tail=beats[beats.length-1];
+    tail.end = (lastEnd!=null && lastEnd>tail.start) ? lastEnd : tail.start+5;
+  }
+  try{
+    await patch(id,{beats});
+    toast(bumped ? 'Saved — some times were nudged to keep beats in order' : 'Beat edits saved');
+    setTimeout(load,600);
+  }catch(e){ toast(e.message); }
 }
 
 // ── upload modal ─────────────────────────────────────────────
