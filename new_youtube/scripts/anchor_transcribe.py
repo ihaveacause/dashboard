@@ -166,62 +166,60 @@ def transcribe(wav_path):
 
 # ── Claude: 3 title suggestions (2 punchy + 1 descriptive) ────
 def suggest_titles(transcript):
-    print(f"\n🏷️  Claude suggesting 3 titles + a hook line ({LANG_NAME})...", flush=True)
+    print(f"\n🏷️  Claude suggesting 3 titles ({LANG_NAME})...", flush=True)
     prompt = f"""You are titling ONE episode of a {LANG_NAME} opinion / commentary
 video where the host speaks to camera. Below is the transcript of what the host
 actually said.
 
-Return a JSON OBJECT with two keys:
-
-"titles": exactly THREE YouTube titles, as an array of 3 objects, each:
+Propose exactly THREE YouTube titles, as a JSON array of 3 objects, each:
   "text"  : the title, in {LANG_NAME}, under ~70 characters, no surrounding quotes
   "style" : either "punchy" or "descriptive"
 
-"hook": ONE short, punchy standalone phrase, 4-8 words, in {LANG_NAME}, that
-  captures the single sharpest idea from the transcript. This is NOT a title —
-  it's a small line of text that sits on screen above the channel's brand tag,
-  so it needs to work as a fragment on its own (not a full sentence), be
-  provocative/curiosity-driving, and be readable at a glance.
-
 Rules:
-- Titles: return TWO "punchy" titles (click-earning, a little provocative,
-  curiosity-driven) and ONE "descriptive" title (a clean, accurate summary).
-- Base everything strictly on what was actually said. Invent no facts.
+- Return TWO "punchy" titles (click-earning, a little provocative, curiosity-driven)
+  and ONE "descriptive" title (a clean, accurate summary of the content).
+- Base every title strictly on what was actually said. Invent no facts.
 - No clickbait that misrepresents the content. No ALL CAPS. No emoji.
 
 TRANSCRIPT:
 {transcript[:6000]}
 
-Return ONLY the JSON object — {{"titles": [...], "hook": "..."}}. No prose, no markdown."""
+Return ONLY the JSON array. No prose, no markdown."""
 
     last_err = None
     for attempt in range(3):
         extra = "" if attempt == 0 else (
             "\n\nIMPORTANT: your previous reply was NOT valid JSON. Return ONLY a "
-            "valid JSON object: {\"titles\": [3 objects with \"text\"/\"style\"], \"hook\": \"...\"}.")
+            "valid JSON array of 3 objects with keys \"text\" and \"style\".")
         msg = claude_client.messages.create(
             model=CLAUDE_MODEL, max_tokens=1000,
             messages=[{"role": "user", "content": prompt + extra}])
         try:
-            obj = parse_json(msg.content[0].text)
+            arr = parse_json(msg.content[0].text)
+            # Defensive against Claude occasionally wrapping the array one level
+            # deeper (e.g. [[{...},{...},{...}]]) or keying it under a field
+            # (e.g. {"titles": [...]}) — normalize back to a flat list of dicts.
+            if isinstance(arr, dict):
+                arr = next((v for v in arr.values() if isinstance(v, list)), [])
+            while isinstance(arr, list) and len(arr) == 1 and isinstance(arr[0], list):
+                arr = arr[0]
+            arr = [o for o in arr if isinstance(o, dict)] if isinstance(arr, list) else []
             out = []
-            for o in (obj.get("titles") or [])[:3]:
+            for o in arr[:3]:
                 t = str(o.get("text", "")).strip().strip('"')
                 s = str(o.get("style", "punchy")).strip().lower()
                 if t:
                     out.append({"text": t, "style": "descriptive" if s == "descriptive" else "punchy"})
-            hook = str(obj.get("hook", "")).strip().strip('"')
             if out:
                 for o in out:
                     print(f"      • [{o['style']:>11}] {o['text']}", flush=True)
-                print(f"      • [{'hook':>11}] {hook}", flush=True)
-                return out, hook
+                return out
             raise ValueError("no titles parsed")
         except Exception as e:
             last_err = e
-            print(f"   ⚠️  Title/hook JSON invalid (attempt {attempt+1}/3): {e} — retrying...", flush=True)
-    print(f"   ⚠️  Title/hook suggestion failed ({last_err}); leaving empty for manual entry", flush=True)
-    return [], ""
+            print(f"   ⚠️  Title JSON invalid (attempt {attempt+1}/3): {e} — retrying...", flush=True)
+    print(f"   ⚠️  Title suggestion failed ({last_err}); leaving empty for manual entry", flush=True)
+    return []
 
 # ── Main ──────────────────────────────────────────────────────
 def main():
@@ -259,15 +257,14 @@ def main():
         if not transcript.strip():
             print("❌ Empty transcript"); db_patch(RECORD_ID, {"status": "pending"}); return
 
-        print("\n🏷️  Step 3/3 — Title suggestions + hook line...", flush=True)
-        titles, hook = suggest_titles(transcript)
+        print("\n🏷️  Step 3/3 — Title suggestions...", flush=True)
+        titles = suggest_titles(transcript)
 
         db_patch(RECORD_ID, {
             "transcript":        transcript,
             "word_timings":      words,
             "detected_lang":     detected,
             "title_suggestions": titles,
-            "hook_text":         hook,
             "status":            "transcribed",
         })
 
