@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>On Camera Shorts — I Have a Cause</title>
+<title>On Camera — I Have a Cause</title>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500&family=Inter:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
@@ -90,7 +90,7 @@ input,select,textarea{font-family:'Inter',sans-serif}
 <div class="topbar">
   <a class="back" href="index.html">← Dashboard</a>
   <div class="logo">I Have A <em>Cause</em></div>
-  <span class="pill-title">🤳 On Camera Shorts</span>
+  <span class="pill-title">🎥 On Camera · Studio Desk</span>
   <div class="lang-toggle">
     <button class="lang-btn en" id="lang-en" onclick="setLang('en')">English</button>
     <button class="lang-btn" id="lang-ta" onclick="setLang('ta')">தமிழ்</button>
@@ -100,10 +100,10 @@ input,select,textarea{font-family:'Inter',sans-serif}
 <div class="wrap">
   <div class="row-top">
     <div style="flex:1">
-      <div class="h1">Your vertical recordings</div>
-      <div class="sub">Hold the camera vertically and talk → we transcribe, suggest titles, crop your footage to 9:16, burn in the "I Have a Cause" bottom banner + logo, and publish as a YouTube Short.</div>
+      <div class="h1">Your recordings</div>
+      <div class="sub">Record yourself talking → we transcribe, suggest titles, plan studio graphics, and composite the video.</div>
     </div>
-    <button class="btn btn-primary" onclick="openUpload()">⬆ Upload Vertical Recording</button>
+    <button class="btn btn-primary" onclick="openUpload()">⬆ Upload Recording</button>
   </div>
   <div id="list"><div class="empty"><div class="big">🎬</div>Loading…</div></div>
 </div>
@@ -111,11 +111,11 @@ input,select,textarea{font-family:'Inter',sans-serif}
 <!-- Upload modal -->
 <div class="overlay" id="upOverlay">
   <div class="modal">
-    <h2>Upload a vertical recording</h2>
-    <div class="muted">Hold the phone vertically (9:16) and keep it under 3 minutes — that's YouTube's hard ceiling for Shorts. 15–60s tends to perform best.</div>
+    <h2>Upload a recording</h2>
+    <div class="muted">Short natural-room clips work great for testing — no green screen needed.</div>
 
     <div class="field">
-      <label>Recording (mp4 / mov, vertical)</label>
+      <label>Recording (mp4 / mov)</label>
       <input type="file" id="upFile" accept="video/*">
       <div class="note" id="upFileNote"></div>
     </div>
@@ -138,7 +138,13 @@ input,select,textarea{font-family:'Inter',sans-serif}
       <label>Script you read</label>
       <textarea id="upScript" rows="4" placeholder="Paste the exact words you read aloud…"></textarea>
     </div>
-    <div class="note" style="margin-top:14px">🌟 The "I Have a Cause" logo + name bar is added automatically along the bottom of every render — nothing to choose here.</div>
+    <div class="field">
+      <label>Studio mode</label>
+      <div class="seg" id="segStudio">
+        <label class="sel"><input type="radio" name="studio" value="real_room" checked> <span><b>Real room</b><br><span class="muted">No green screen — graphics in a side panel</span></span></label>
+        <label><input type="radio" name="studio" value="green"> <span><b>Green screen</b><br><span class="muted">Key me out, image fills behind</span></span></label>
+      </div>
+    </div>
     <div class="flow" style="justify-content:flex-end;margin-top:20px">
       <button class="btn btn-ghost" onclick="closeUpload()">Cancel</button>
       <button class="btn btn-primary" id="upSubmit" onclick="submitUpload()">Upload &amp; create</button>
@@ -156,7 +162,7 @@ const SB = window.supabase.createClient(SB_URL, SB_KEY);
 const H  = {apikey:SB_KEY, Authorization:`Bearer ${SB_KEY}`, 'Content-Type':'application/json'};
 
 let lang = 'en';
-const TABLE = () => lang === 'ta' ? 'tamil_anchor_shorts' : 'english_anchor_shorts';
+const TABLE = () => lang === 'ta' ? 'tamil_anchor' : 'english_anchor';
 
 function toast(msg){const t=document.getElementById('toast');t.textContent=msg;t.style.display='block';clearTimeout(t._h);t._h=setTimeout(()=>t.style.display='none',3200);}
 
@@ -169,11 +175,11 @@ function setLang(l){
 
 // trigger a pipeline step through the single edge function
 async function callAnchor(step, id){
-  const r = await fetch(`${SB_URL}/functions/v1/trigger-anchor-shorts`, {
+  const r = await fetch(`${SB_URL}/functions/v1/trigger-anchor`, {
     method:'POST', headers:H,
     body: JSON.stringify({ step, record_id:id, language:lang })
   });
-  if(!r.ok){ const t=await r.text(); throw new Error(`trigger-anchor-shorts ${r.status}: ${t}`); }
+  if(!r.ok){ const t=await r.text(); throw new Error(`trigger-anchor ${r.status}: ${t}`); }
   return r.json();
 }
 
@@ -186,17 +192,17 @@ async function patch(id, data){
 
 const STATUS = {
   pending:['Pending','b-pending'], transcribing:['Transcribing…','b-work'],
-  transcribed:['Pick a title','b-ready'], rendering:['Rendering…','b-work'],
+  transcribed:['Pick a title','b-ready'], generating_beats:['Planning beats…','b-work'],
+  beats_ready:['Review beats','b-ready'], rendering:['Rendering…','b-work'],
   rendered:['Rendered','b-done'], publishing:['Publishing…','b-work'], published:['Published','b-pub'],
 };
 
-// Horizontal pipeline: upload → transcribe → title → render → publish. No beats
-// stage here — Shorts stay simple: your footage + the brand bar, nothing more
-// to plan per-video.
+// Horizontal pipeline: script → upload, left to right, same idea as YouTube Long's board.
 const COLUMNS = [
   {label:'📥 Pending',        match:s=>s==='pending'},
   {label:'📝 Transcribing',   match:s=>s==='transcribing'},
   {label:'🏷 Pick a Title',   match:s=>s==='transcribed'},
+  {label:'🧩 Plan Beats',     match:s=>['generating_beats','beats_ready'].includes(s)},
   {label:'🎬 Render',         match:s=>['rendering','rendered'].includes(s)},
   {label:'🚀 Publish',        match:s=>['publishing','published'].includes(s)},
 ];
@@ -233,7 +239,7 @@ function card(row){
     body=`<div class="flow"><span class="step-dot">1 ·</span>
       <button class="btn btn-go btn-sm" onclick="run('transcribe','${row.id}')">Transcribe + suggest titles</button></div>`;
   }
-  else if(row.status==='transcribing'||row.status==='rendering'||row.status==='publishing'){
+  else if(row.status==='transcribing'||row.status==='generating_beats'||row.status==='rendering'||row.status==='publishing'){
     body=`<div class="bar"><i></i></div><div class="note">Running on GitHub Actions — refresh in a minute.</div>`;
   }
   else if(row.status==='transcribed'){
@@ -241,37 +247,45 @@ function card(row){
       <div class="title-opt" onclick="pickTitle('${row.id}', this)" data-title="${esc(t.text)}">
         <span class="sty ${t.style}">${t.style||'punchy'}</span>
         <span style="flex:1">${esc(t.text)}</span></div>`).join('');
-    body=`
-      <div style="font-size:10px;color:var(--muted2);margin-top:10px">HOOK LINE — sits above the brand banner on the video &amp; thumbnail:</div>
-      <div class="flow">
-        <input class="beat hl" id="hook_${row.id}" value="${esc(row.hook_text||'')}" placeholder="Punchy 4-8 word line…" style="flex:1;min-width:200px">
-        <button class="btn btn-ghost btn-sm" onclick="saveHook('${row.id}')">💾 Save</button>
-      </div>
-      <div class="titles" style="margin-top:12px">${opts||'<div class="muted">No suggestions parsed — type your own below.</div>'}
+    body=`<div class="titles">${opts||'<div class="muted">No suggestions parsed — type your own below.</div>'}
       <div class="flow">
         <input class="beat hl" id="man_${row.id}" placeholder="…or type your own title" style="flex:1;min-width:200px">
-        <button class="btn btn-ghost btn-sm" onclick="useManual('${row.id}')">Use this &amp; render</button>
+        <button class="btn btn-ghost btn-sm" onclick="useManual('${row.id}')">Use this</button>
         <button class="btn btn-ghost btn-sm" onclick="run('transcribe','${row.id}')">↻ Regenerate</button>
       </div></div>`;
+  }
+  else if(row.status==='beats_ready'){
+    const beats=(row.beats||[]).map(b=>beatRow(row.id,b)).join('');
+    body=`<div class="muted" style="margin-top:12px">Toggle image/text or edit a headline, then render.</div>
+      ${beats}
+      <div class="flow" style="margin-top:12px">
+        <button class="btn btn-ghost btn-sm" onclick="saveBeats('${row.id}')">💾 Save edits</button>
+        <span class="step-dot">3 ·</span>
+        <button class="btn btn-go btn-sm" onclick="run('render','${row.id}')">Render studio video</button>
+      </div>`;
   }
   else if(row.status==='rendered'){
     body=`
       ${row.thumbnail_url
-        ? `<img src="${row.thumbnail_url}" alt="Thumbnail" style="width:100%;max-width:200px;border-radius:8px;border:1px solid var(--border2);margin-top:12px;display:block">`
+        ? `<img src="${row.thumbnail_url}" alt="Thumbnail" style="width:100%;max-width:340px;border-radius:8px;border:1px solid var(--border2);margin-top:12px;display:block">`
         : `<div class="muted" style="margin-top:12px">⚠ No thumbnail — auto-generation may have failed. YouTube will pick a random frame unless you upload one.</div>`}
-      <div style="font-size:10px;color:var(--muted2);margin-top:6px">Auto-picked from your recording, banner already burned in. Not right? Upload your own:</div>
+      ${row.thumbnail_source_url
+        ? `<a class="vlink" href="${row.thumbnail_source_url}" download target="_blank" style="display:inline-block;margin-top:6px">⬇ Download my photo (no text/branding — design your own)</a>`
+        : ''}
+      <div style="font-size:10px;color:var(--muted2);margin-top:6px">Auto-picked from your recording. Not right? Upload your own:</div>
       <input type="file" accept="image/*" style="display:block;font-size:11px;color:var(--muted);margin-top:4px" onchange="uploadThumbnail('${row.id}',this)">
       <div class="flow">
         ${row.video_url?`<a class="vlink" href="${row.video_url}" target="_blank">▶ Preview render</a>`:''}
-        <span class="step-dot" style="margin-left:auto">3 ·</span>
-        <button class="btn btn-go btn-sm" onclick="run('upload','${row.id}')">Publish as Short</button></div>`;
+        <span class="step-dot" style="margin-left:auto">4 ·</span>
+        <button class="btn btn-go btn-sm" onclick="run('upload','${row.id}')">Publish to YouTube</button></div>`;
   }
   else if(row.status==='published'){
-    body=`<div class="flow">${row.youtube_url?`<a class="vlink" href="${row.youtube_url}" target="_blank">▶ View Short on YouTube</a>`:''}
+    body=`<div class="flow">${row.youtube_url?`<a class="vlink" href="${row.youtube_url}" target="_blank">▶ View on YouTube</a>`:''}
       ${row.scheduled_at?`<span class="muted" style="margin-left:auto">scheduled ${new Date(row.scheduled_at).toLocaleString()}</span>`:''}</div>`;
   }
 
   const meta=[row.source_mode==='script'?'read script':'free speak',
+              row.studio_mode==='green'?'green':'real room',
               row.detected_lang?('lang '+row.detected_lang):null].filter(Boolean).join(' · ');
   return `<div class="card">
     <div class="card-head">
@@ -280,25 +294,48 @@ function card(row){
     </div>${body}</div>`;
 }
 
+function beatRow(id,b){
+  const img=b.mode==='image', txt=b.mode==='text';
+  return `<div class="beat" data-bid="${b.order}">
+    <div class="ord">${b.order}</div>
+    <input class="hl" value="${esc(b.headline||'')}" data-bh="${b.order}">
+    <div class="mode-toggle">
+      <button class="${img?'on':''}" onclick="setMode('${id}',${b.order},'image',this)">image</button>
+      <button class="${txt?'on':''}" onclick="setMode('${id}',${b.order},'text',this)">text</button>
+    </div></div>`;
+}
+
 // ── per-record actions ───────────────────────────────────────
+const _cache={};   // id -> row beats during edit
 async function run(step,id){
   try{ await callAnchor(step,id); toast(`Started: ${step}`); setTimeout(load,1200); }
   catch(e){ toast(e.message); }
 }
 async function pickTitle(id,el){
-  try{ await patch(id,{title:el.dataset.title}); toast('Title set — rendering…'); await callAnchor('render',id); setTimeout(load,1200);}
+  try{ await patch(id,{title:el.dataset.title}); toast('Title set — planning beats…'); await callAnchor('beats',id); setTimeout(load,1200);}
   catch(e){ toast(e.message); }
 }
 async function useManual(id){
   const v=document.getElementById('man_'+id).value.trim();
   if(!v){ toast('Type a title first'); return; }
-  try{ await patch(id,{title:v}); toast('Title set — rendering…'); await callAnchor('render',id); setTimeout(load,1200);}
+  try{ await patch(id,{title:v}); toast('Title set — planning beats…'); await callAnchor('beats',id); setTimeout(load,1200);}
   catch(e){ toast(e.message); }
 }
-async function saveHook(id){
-  const v=document.getElementById('hook_'+id).value.trim();
-  try{ await patch(id,{hook_text:v}); toast('Hook line saved'); }
-  catch(e){ toast(e.message); }
+function setMode(id,order,mode,btn){
+  btn.parentElement.querySelectorAll('button').forEach(b=>b.classList.remove('on'));
+  btn.classList.add('on');
+  btn.closest('.beat').dataset.mode=mode;
+}
+async function saveBeats(id){
+  // read current row, apply headline + mode edits, patch back
+  const r=await fetch(`${SB_URL}/rest/v1/${TABLE()}?id=eq.${id}&select=beats`,{headers:H});
+  const [row]=await r.json(); const beats=row.beats||[];
+  document.querySelectorAll(`.beat`).forEach(el=>{
+    const ord=+el.dataset.bid; const b=beats.find(x=>x.order===ord); if(!b) return;
+    const hi=el.querySelector(`[data-bh="${ord}"]`); if(hi) b.headline=hi.value;
+    if(el.dataset.mode) b.mode=el.dataset.mode;
+  });
+  try{ await patch(id,{beats}); toast('Beat edits saved'); }catch(e){ toast(e.message); }
 }
 
 // ── upload modal ─────────────────────────────────────────────
@@ -308,6 +345,10 @@ document.getElementById('segMode').addEventListener('change',e=>{
   document.querySelectorAll('#segMode label').forEach(l=>l.classList.remove('sel'));
   e.target.closest('label').classList.add('sel');
   document.getElementById('scriptField').style.display = e.target.value==='script'?'block':'none';
+});
+document.getElementById('segStudio').addEventListener('change',e=>{
+  document.querySelectorAll('#segStudio label').forEach(l=>l.classList.remove('sel'));
+  e.target.closest('label').classList.add('sel');
 });
 document.getElementById('upFile').addEventListener('change',e=>{
   const f=e.target.files[0];
@@ -374,6 +415,7 @@ async function submitUpload(){
   if(!file){ toast('Choose a video file'); return; }
   if(!wtitle){ toast('Add a working title'); return; }
   const smode=document.querySelector('input[name="smode"]:checked').value;
+  const studio=document.querySelector('input[name="studio"]:checked').value;
   const script=document.getElementById('upScript').value.trim();
   const module=document.getElementById('upModule').value.trim();
 
@@ -412,7 +454,7 @@ async function submitUpload(){
     const {error:insErr}=await SB.from(TABLE()).insert({
       working_title:wtitle, source_video_url:object_url,
       source_mode:smode, script_text:smode==='script'?script:null,
-      module:module||null, status:'pending'
+      studio_mode:studio, module:module||null, status:'pending'
     });
     if(insErr) throw insErr;
 
