@@ -34,6 +34,8 @@ import re
 import json
 import time
 import base64
+import subprocess
+import tempfile
 from io import BytesIO
 from datetime import datetime, timedelta
 
@@ -134,6 +136,34 @@ def upload_bytes_to_gcs(data_bytes, gcs_path, content_type="image/jpeg", days=SI
     return (f"https://storage.googleapis.com/{GCS_BUCKET}/{gcs_path}"
             f"?GoogleAccessId={creds_info['client_email']}&Expires={expiry_ts}&Signature={encoded_sig}")
 
+def probe_recording_duration(source_video_url):
+    """When there's no word_timings (e.g. the transcript was pasted in from
+    an outside tool like Google Docs Voice Typing instead of coming from our
+    own Whisper step), we have no per-word timing data to derive the clip's
+    total length from. Download the actual recording and ask ffprobe for its
+    real duration instead, so the equal-spacing fallback in main() spreads
+    beats across the WHOLE clip rather than collapsing them into the first
+    few seconds."""
+    if not source_video_url:
+        return 0.0
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".mp4", delete=True) as tmp:
+            r = requests.get(source_video_url, stream=True, timeout=300)
+            if r.status_code != 200:
+                print(f"   ⚠️  Couldn't fetch recording to probe duration ({r.status_code})", flush=True)
+                return 0.0
+            for chunk in r.iter_content(1 << 16):
+                tmp.write(chunk)
+            tmp.flush()
+            p = subprocess.run(
+                ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+                 "-of", "default=noprint_wrappers=1:nokey=1", tmp.name],
+                capture_output=True, text=True)
+            return float(p.stdout.strip())
+    except Exception as e:
+        print(f"   ⚠️  Duration probe failed: {e}", flush=True)
+        return 0.0
+
 # ── JSON parse + verbatim trigger (mirrors generate_images.py) ─
 def parse_json(raw):
     raw = raw.strip().replace("```json", "").replace("```", "").strip()
@@ -151,8 +181,11 @@ def parse_json(raw):
 def _norm(w):
     return re.sub(r"[^\w]", "", w.lower())
 
-def trigger_start_time(trigger, word_timings):
-    """Find the verbatim trigger phrase in the spoken word_timings → its start time."""
+def trigger_start_time(trigger, word_timings, min_time=0.0):
+    """Find the verbatim trigger phrase in the spoken word_timings → its start time.
+    Only accepts a match at or after min_time, so a beat can't lock onto an
+    earlier repeat of the same phrase (hosts often restate connector words —
+    without this floor, beat N can jump backwards onto beat N-1's territory)."""
     if not trigger or not word_timings:
         return None
     spoken = [_norm(w["word"]) for w in word_timings]
@@ -160,11 +193,11 @@ def trigger_start_time(trigger, word_timings):
     if not tw:
         return None
     for i in range(len(spoken) - len(tw) + 1):
-        if spoken[i:i + len(tw)] == tw:
+        if word_timings[i]["start"] >= min_time and spoken[i:i + len(tw)] == tw:
             return word_timings[i]["start"]
     if len(tw) >= 3:                      # looser 3-word match
         for i in range(len(spoken) - 3 + 1):
-            if spoken[i:i + 3] == tw[:3]:
+            if word_timings[i]["start"] >= min_time and spoken[i:i + 3] == tw[:3]:
                 return word_timings[i]["start"]
     return None
 
@@ -326,26 +359,53 @@ def main():
     # 1) Plan beats
     beats = plan_beats(row)
 
-    # 2) Time each beat from the trigger against the spoken word_timings
+    # 2) Time each beat from the trigger against the spoken word_timings.
+    # MIN_BEAT_SECONDS is a floor on how briefly any beat can be on screen —
+    # without it, a bad timestamp collapses a beat to a near-invisible flash.
+    MIN_BEAT_SECONDS = 4.0
     total = word_timings[-1]["end"] if word_timings else 0.0
+    if not word_timings:
+        print("   ℹ️  No word-level timestamps on this record (transcript wasn't "
+              "produced by our own transcribe step) — probing the actual "
+              "recording's length so beats spread across the whole clip...", flush=True)
+        total = probe_recording_duration(row.get("source_video_url"))
+        if total:
+            print(f"   ✅ Recording length: {total:.1f}s. Beat timing will be evenly "
+                  f"spread across it (no per-word matching is possible without "
+                  f"timestamps) — use the Render-beats editor in the dashboard to "
+                  f"drag each beat to its real position afterward.", flush=True)
+        else:
+            print("   ⚠️  Could not determine recording length either — beats will "
+                  "default to 4s apart. Fix timings manually in the dashboard before rendering.", flush=True)
     n = len(beats)
     for i, b in enumerate(beats):
         if i == 0:
             b["start"] = 0.0
-        else:
-            ts = trigger_start_time(b["trigger"], word_timings)
-            if ts is None:
-                ts = round((total / n) * i, 3) if total else 0.0
-                print(f"   ℹ️  Beat {b['order']} trigger not found — equal-spacing → {ts:.1f}s", flush=True)
-            b["start"] = ts
+            continue
+        prev_start = beats[i - 1]["start"]
+        # Only accept a match at/after the previous beat's start, so this beat
+        # can't lock onto an earlier repeat of its trigger phrase.
+        ts = trigger_start_time(b["trigger"], word_timings, min_time=prev_start + MIN_BEAT_SECONDS)
+        if ts is None:
+            # Fallback: interpolate between the previous beat's real start and
+            # the end of the clip, spread across the beats still remaining —
+            # not a blind total/n*i, which ignores where neighbors actually
+            # landed and is what caused beats to invert and collapse.
+            remaining = n - i
+            ts = round(prev_start + max(MIN_BEAT_SECONDS, (total - prev_start) / max(remaining, 1)), 3)
+            ts = min(ts, total) if total else ts
+            print(f"   ℹ️  Beat {b['order']} trigger not found — interpolated → {ts:.1f}s", flush=True)
+        b["start"] = max(ts, prev_start + MIN_BEAT_SECONDS)
     for i in range(n - 1):
         beats[i]["end"] = beats[i + 1]["start"]
-    beats[-1]["end"] = total if total else (beats[-1]["start"] + 5.0)
-    # guard inversions
-    for i in range(1, n):
-        if beats[i]["start"] <= beats[i - 1]["start"]:
-            beats[i]["start"] = beats[i - 1]["start"] + 1.0
-        beats[i - 1]["end"] = beats[i]["start"]
+    beats[-1]["end"] = total if total > beats[-1]["start"] else (beats[-1]["start"] + 5.0)
+    # final guard: clamp any beat that still ended up shorter than the floor
+    # (only possible if total duration itself is too short for n beats)
+    for i in range(n):
+        dur = beats[i]["end"] - beats[i]["start"]
+        if dur < MIN_BEAT_SECONDS:
+            print(f"   ⚠️  Beat {beats[i]['order']} only {dur:.1f}s on screen — "
+                  f"transcript may be too short for {n} beats", flush=True)
 
     # 3) Render the image beats on Vertex (anchor-conditioned)
     img_beats = [b for b in beats if b["mode"] == "image"]
