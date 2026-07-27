@@ -26,7 +26,9 @@ Env vars:
   ANTHROPIC_API_KEY
   RECORD_ID   (uuid of the row)
   LANGUAGE    (ta | en  — which table/lane this recording belongs to)
-  WHISPER_MODEL (optional, default 'small'; 'medium' is more accurate, slower)
+  WHISPER_MODEL (optional, default 'medium' — 'small' struggles noticeably on
+                 Tamil and is prone to repetition-loop hallucinations; 'large-v3'
+                 is more accurate still but much slower on a CPU runner)
 """
 
 import os
@@ -46,7 +48,7 @@ ANTHROPIC_KEY = os.environ["ANTHROPIC_API_KEY"]
 GCP_CREDS_JSON = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS_JSON", "")  # to read the GCS recording
 RECORD_ID     = os.environ["RECORD_ID"]
 LANGUAGE      = os.environ.get("LANGUAGE", "en")
-WHISPER_MODEL = os.environ.get("WHISPER_MODEL", "small")
+WHISPER_MODEL = os.environ.get("WHISPER_MODEL", "medium")
 GCS_BUCKET    = "ihaveacause-media"
 
 CLAUDE_MODEL  = "claude-sonnet-4-6"
@@ -142,16 +144,58 @@ def extract_audio(video_path, wav_path):
     return os.path.exists(wav_path)
 
 # ── Whisper transcription with word timestamps ────────────────
+def dedupe_repeats(words, max_repeat=3):
+    """Collapse a run of the same word repeated more than max_repeat times in a
+    row down to max_repeat — Whisper's classic hallucination failure mode is
+    getting stuck looping one syllable/word (e.g. 'விட்டுவிட்டுவிட்டு...'
+    dozens of times), usually triggered by a rough patch of audio (noise, a
+    long pause, or the mic clipping). This doesn't fix the source audio, but
+    it stops that loop from wrecking the whole transcript, title suggestions,
+    and beat planning that all read off of this text."""
+    out, run = [], []
+    def flush():
+        if not run:
+            return
+        if len(run) > max_repeat:
+            print(f"   ⚠️  Collapsed a {len(run)}x repeat of "
+                  f"'{run[0]['word']}' — check that stretch of audio "
+                  f"({run[0]['start']:.1f}s–{run[-1]['end']:.1f}s), it's likely noisy/unclear", flush=True)
+            out.extend(run[:max_repeat])
+        else:
+            out.extend(run)
+        run.clear()
+    for w in words:
+        if run and _norm(run[-1]["word"]) == _norm(w["word"]):
+            run.append(w)
+        else:
+            flush()
+            run.append(w)
+    flush()
+    return out
+
+def _norm(w):
+    return re.sub(r"[^\w]", "", w.lower())
+
 def transcribe(wav_path):
     """faster-whisper → (transcript_text, [{word,start,end}], detected_lang)."""
     from faster_whisper import WhisperModel
     print(f"   🧠 Loading faster-whisper '{WHISPER_MODEL}' (CPU int8)...", flush=True)
     model = WhisperModel(WHISPER_MODEL, device="cpu", compute_type="int8")
-    # language=None lets Whisper auto-detect Tamil vs English.
+    # Pin the language instead of auto-detecting: for Tamil/English-mixed
+    # commentary, auto-detect can flip mid-clip and drag the decoder into a
+    # bad state — that's often exactly when repetition-loop hallucinations
+    # start. LANGUAGE is already known (it's how you uploaded this recording).
+    whisper_lang = LANGUAGE if LANGUAGE in ("ta", "en") else None
     segments, info = model.transcribe(
-        wav_path, language=None, word_timestamps=True, vad_filter=True)
+        wav_path, language=whisper_lang, word_timestamps=True, vad_filter=True,
+        vad_parameters={"min_silence_duration_ms": 500},
+        condition_on_previous_text=False,   # stop one bad segment's errors from compounding into later ones
+        compression_ratio_threshold=2.2,    # flag/drop segments that look like repetition loops
+        no_repeat_ngram_size=3,             # discourage the decoder from looping short phrases
+    )
     detected = info.language
-    print(f"   🌐 Detected language: {detected} (p={info.language_probability:.2f})", flush=True)
+    print(f"   🌐 Language: {detected} (p={info.language_probability:.2f})"
+          f"{' [pinned]' if whisper_lang else ' [auto-detected]'}", flush=True)
 
     words, parts = [], []
     for seg in segments:
@@ -160,7 +204,8 @@ def transcribe(wav_path):
             tok = w.word.strip()
             if tok:
                 words.append({"word": tok, "start": round(w.start, 3), "end": round(w.end, 3)})
-    transcript = " ".join(p for p in parts if p).strip()
+    words = dedupe_repeats(words)
+    transcript = " ".join(w["word"] for w in words).strip()
     print(f"   ✅ Transcript: {len(transcript.split())} words, {len(words)} timed tokens", flush=True)
     return transcript, words, detected
 
