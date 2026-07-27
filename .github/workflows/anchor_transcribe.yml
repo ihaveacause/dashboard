@@ -41,6 +41,6 @@ jobs:
           GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
           RECORD_ID:                           ${{ inputs.record_id }}
           LANGUAGE:                            ${{ inputs.language }}
-          WHISPER_MODEL:                       'small'
+          WHISPER_MODEL:                       'medium'
           PYTHONUNBUFFERED:                    '1'
         run: python new_youtube/scripts/anchor_transcribe.py
