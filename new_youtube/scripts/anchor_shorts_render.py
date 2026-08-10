@@ -14,6 +14,12 @@ Composites your VERTICAL recording into the final Short:
     the landscape On Camera track's look (anchor_render.py). Shorts stay
     simple: your footage + the brand bar.
   - Auto-thumbnail: a branded frame grabbed from partway through the clip.
+  - OPTIONAL: publicly-sourced clips (news footage etc.) you've attached via
+    the `clips` column, shown as-is (no crop) in a small picture-in-picture
+    box floating just above the bottom banner during their time window —
+    your face and voice stay the through-line the whole time. If `clips` is
+    empty (the default for every recording), this whole block is a no-op
+    and the render is identical to before.
 
 Env vars:
   SUPABASE_URL, SUPABASE_KEY, GOOGLE_APPLICATION_CREDENTIALS_JSON
@@ -40,6 +46,15 @@ LANGUAGE       = os.environ.get("LANGUAGE", "en")
 GCS_BUCKET = "ihaveacause-media"
 TABLE      = "tamil_anchor_shorts" if LANGUAGE == "ta" else "english_anchor_shorts"
 W, H, FPS  = 1080, 1920, 30
+
+# PiP box for optional overlay clips — sits just above the bottom banner,
+# right-aligned, small margin. Clips are shown AS-IS (letterboxed, never
+# cropped) inside this box.
+PIP_W, PIP_H   = 380, 214
+PIP_MARGIN     = 24
+BANNER_H       = 210
+PIP_X          = W - PIP_W - PIP_MARGIN
+PIP_Y          = (H - BANNER_H) - PIP_MARGIN - PIP_H
 
 # Brand palette (matches the dashboard's dark editorial look)
 C_BAR      = (10, 12, 18, 190)       # bottom banner fill (semi-transparent — footage shows through)
@@ -245,7 +260,7 @@ def make_thumbnail(src_path, src_dur, title, font_path, logo_im, out_path, hook=
     """Grab a frame ~35% into the clip and brand it the same way as the video."""
     grab_t = max(0.3, (src_dur or 3) * 0.35)
     frame_path = out_path.replace(".jpg", "_raw.jpg")
-    subprocess.run(["ffmpeg", "-y", "-ss", f"{grab_t:.2f}", "-i", src_path,
+    subprocess.run(["ffmpeg", "-y", "-nostdin", "-ss", f"{grab_t:.2f}", "-i", src_path,
                     "-frames:v", "1", "-q:v", "2", frame_path],
                    capture_output=True)
     if not os.path.exists(frame_path):
@@ -266,13 +281,93 @@ def make_thumbnail(src_path, src_dur, title, font_path, logo_im, out_path, hook=
 
 
 # ── FFmpeg render ────────────────────────────────────────────────
-def render_vertical(src, banner_png, out):
-    fc = (f"[0:v]scale={W}:{H}:force_original_aspect_ratio=increase,"
-          f"crop={W}:{H},fps={FPS},setsar=1[base];"
-          f"[base][1:v]overlay=0:0[vout]")
-    cmd = ["ffmpeg", "-y", "-i", src, "-loop", "1", "-i", banner_png,
+def render_vertical(src, banner_png, out, clips=None):
+    """
+    clips: list of {local_path, start, duration, mute_original, kind} —
+    already downloaded to local_path by render(). `kind` is 'video' or
+    'image' (render() infers it from the file if not already set). Each one
+    is:
+      - scaled to fit inside PIP_W x PIP_H with NO crop (letterboxed with
+        plain black bars if its aspect ratio isn't exactly 16:9)
+      - video clips are timeline-shifted with setpts so they start playing
+        at `start`; images are just a static frame, so no shift is needed —
+        they're looped the same way the banner already is
+      - overlaid into the PiP box, visible only during [start, start+duration]
+    Clips render in order, on top of your footage, underneath the banner
+    (banner is always the last, topmost layer). If `clips` is empty this
+    collapses back to exactly the original single-overlay graph.
+    """
+    clips = clips or []
+
+    IMAGE_EXT = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp"}
+
+    def is_image(c):
+        if c.get("kind"):
+            return c["kind"] == "image"
+        return os.path.splitext(c["local_path"])[1].lower() in IMAGE_EXT
+
+    inputs = ["-i", src]
+    for c in clips:
+        if is_image(c):
+            inputs += ["-loop", "1", "-i", c["local_path"]]
+        else:
+            inputs += ["-i", c["local_path"]]
+    inputs += ["-loop", "1", "-i", banner_png]
+    banner_idx = 1 + len(clips)
+
+    fc_parts = [
+        f"[0:v]scale={W}:{H}:force_original_aspect_ratio=increase,"
+        f"crop={W}:{H},fps={FPS},setsar=1[base]"
+    ]
+
+    # audio for any VIDEO clip explicitly asking to keep its own sound
+    # (images never have audio, so they're skipped here regardless of
+    # mute_original)
+    unmuted_audio_labels = []
+
+    stage = "base"
+    for i, c in enumerate(clips):
+        idx = i + 1
+        start = float(c.get("start", 0) or 0)
+        dur = float(c.get("duration", 5) or 5)
+        end = start + dur
+        clip_label = f"clip{i}"
+        next_stage = f"s{i}"
+        img = is_image(c)
+        shift = "" if img else f",setpts=PTS+{start}/TB"
+        fc_parts.append(
+            f"[{idx}:v]scale={PIP_W}:{PIP_H}:force_original_aspect_ratio=decrease,"
+            f"pad={PIP_W}:{PIP_H}:(ow-iw)/2:(oh-ih)/2:black{shift}[{clip_label}]"
+        )
+        fc_parts.append(
+            f"[{stage}][{clip_label}]overlay={PIP_X}:{PIP_Y}:"
+            f"enable='between(t,{start},{end})'[{next_stage}]"
+        )
+        stage = next_stage
+
+        if not img and not c.get("mute_original", True):
+            a_label = f"a{i}"
+            fc_parts.append(
+                f"[{idx}:a]adelay={int(start*1000)}|{int(start*1000)},"
+                f"atrim=0:{end},volume=1[{a_label}]"
+            )
+            unmuted_audio_labels.append(a_label)
+
+    fc_parts.append(f"[{stage}][{banner_idx}:v]overlay=0:0[vout]")
+
+    audio_map = ["-map", "0:a?"]
+    if unmuted_audio_labels:
+        mix_inputs = "".join(f"[{lbl}]" for lbl in unmuted_audio_labels)
+        fc_parts.append(
+            f"[0:a]{mix_inputs}amix=inputs={1+len(unmuted_audio_labels)}:"
+            f"duration=first:dropout_transition=0[aout]"
+        )
+        audio_map = ["-map", "[aout]"]
+
+    fc = ";".join(fc_parts)
+    cmd = ["ffmpeg", "-y", "-nostdin", *inputs,
            "-filter_complex", fc,
-           "-map", "[vout]", "-map", "0:a?",
+           "-map", "[vout]", *audio_map,
            "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
            "-c:a", "aac", "-b:a", "192k", "-shortest",
            "-movflags", "+faststart", "-pix_fmt", "yuv420p", out]
@@ -280,7 +375,8 @@ def render_vertical(src, banner_png, out):
     if r.returncode != 0:
         print("FFmpeg stderr:", r.stderr[-2000:], flush=True)
         return False
-    print(f"   ✅ Rendered: {out} ({os.path.getsize(out)//1024}KB)", flush=True)
+    print(f"   ✅ Rendered: {out} ({os.path.getsize(out)//1024}KB, "
+          f"{len(clips)} PiP clip(s))", flush=True)
     return True
 
 
@@ -317,8 +413,21 @@ def render(row, tmp):
     banner_png = os.path.join(tmp, "banner.png")
     build_banner_png(font_path, logo_im, banner_png, hook=hook)
 
+    # Optional PiP clips — empty by default, so this is a no-op for every
+    # recording unless clips were explicitly attached in the dashboard.
+    clips_meta = row.get("clips") or []
+    clips = []
+    for i, c in enumerate(clips_meta):
+        if not c.get("clip_url"):
+            continue
+        local_path = os.path.join(tmp, f"clip_{i}.mp4")
+        if download_file(c["clip_url"], local_path, f"Clip {i+1}"):
+            clips.append({**c, "local_path": local_path})
+        else:
+            print(f"   ⚠️  Skipping clip {i+1} — download failed", flush=True)
+
     out = os.path.join(tmp, "final.mp4")
-    ok = render_vertical(src, banner_png, out)
+    ok = render_vertical(src, banner_png, out, clips=clips)
     return (out, thumb_path) if ok else (None, None)
 
 
