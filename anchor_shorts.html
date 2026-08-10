@@ -246,7 +246,8 @@ function card(row){
         <input class="beat hl" id="man_${row.id}" placeholder="…or type your own title" style="flex:1;min-width:200px">
         <button class="btn btn-ghost btn-sm" onclick="useManual('${row.id}')">Use this &amp; render</button>
         <button class="btn btn-ghost btn-sm" onclick="run('transcribe','${row.id}')">↻ Regenerate</button>
-      </div></div>`;
+      </div></div>
+      ${clipsSection(row)}`;
   }
   else if(row.status==='rendered'){
     body=`
@@ -272,6 +273,101 @@ function card(row){
       <div class="card-title">${esc(name)}<div class="muted" style="font-weight:400;margin-top:3px">${meta}</div></div>
       <span class="badge ${cls}">${lbl}</span>
     </div>${body}</div>`;
+}
+
+// ── optional PiP clips (publicly-sourced footage, e.g. news clips) ──
+// Shown only at the 'transcribed' stage, before you pick a title (picking a
+// title immediately kicks off the render, so clips need to be attached
+// before that). Empty by default — a recording with no clips renders
+// exactly as before: just your footage + the banner.
+function clipsSection(row){
+  const clips = row.clips || [];
+  const rowId = row.id;
+  const listHtml = clips.length ? clips.map((c,i)=>`
+    <div class="flow" style="background:var(--surface2);border:1px solid var(--border2);border-radius:8px;padding:8px 10px;margin-top:6px">
+      <span class="muted" style="flex:1">${c.kind==='image'?'🖼️':'🎬'} ${c.start}s → ${(c.start+c.duration).toFixed(1)}s (${c.duration}s)${c.kind==='image'?'':(c.mute_original===false?' · clip audio on':' · muted')}</span>
+      <button class="btn btn-ghost btn-sm" onclick="removeClip('${rowId}',${i})">Remove</button>
+    </div>`).join('') : `<div class="muted" style="margin-top:6px">No clips attached — this Short will just be your footage.</div>`;
+
+  return `<details style="margin-top:14px;border-top:1px solid var(--border);padding-top:12px">
+    <summary style="cursor:pointer;font-family:'Syne',sans-serif;font-size:12px;font-weight:700;color:var(--muted2)">🎥 Optional: mix in a clip or image (PiP, above the banner)</summary>
+    <div style="margin-top:10px">
+      ${row.source_video_url ? `<video src="${row.source_video_url}" controls style="width:100%;max-width:260px;border-radius:8px;border:1px solid var(--border2);display:block"></video>` : ''}
+      <div class="muted" style="margin-top:6px;font-size:11px">Scrub your recording above to find the moment — note the timestamp, then attach a clip or still image to show there.</div>
+      ${row.transcript ? `<div class="muted" style="margin-top:8px;max-height:70px;overflow-y:auto;font-size:11px;line-height:1.5;background:var(--surface2);border-radius:8px;padding:8px">${esc(row.transcript)}</div>` : ''}
+      ${listHtml}
+      <div class="flow" style="margin-top:10px;flex-wrap:wrap">
+        <input type="file" accept="video/*,image/*" id="clipFile_${rowId}" style="font-size:11px;color:var(--muted);max-width:150px" onchange="onClipFileChange('${rowId}',this)">
+        <input type="number" id="clipStart_${rowId}" placeholder="start (s)" style="width:90px;background:var(--surface2);border:1px solid var(--border2);border-radius:7px;padding:6px 8px;color:var(--text);font-size:12px">
+        <input type="number" id="clipDur_${rowId}" placeholder="duration (s)" value="5" style="width:100px;background:var(--surface2);border:1px solid var(--border2);border-radius:7px;padding:6px 8px;color:var(--text);font-size:12px">
+        <label class="muted" id="clipMuteLabel_${rowId}" style="font-size:11px;display:flex;align-items:center;gap:4px"><input type="checkbox" id="clipMute_${rowId}" checked> mute clip audio</label>
+        <button class="btn btn-ghost btn-sm" onclick="addClip('${rowId}')">+ Add clip</button>
+      </div>
+    </div>
+  </details>`;
+}
+
+// images have no audio track — hide the mute toggle when an image is chosen
+function onClipFileChange(id, input){
+  const file = input.files[0];
+  const label = document.getElementById('clipMuteLabel_'+id);
+  if(!label) return;
+  label.style.display = (file && file.type && file.type.startsWith('image/')) ? 'none' : 'flex';
+}
+
+async function addClip(id){
+  const fileInput = document.getElementById('clipFile_'+id);
+  const file = fileInput.files[0];
+  const start = parseFloat(document.getElementById('clipStart_'+id).value);
+  const duration = parseFloat(document.getElementById('clipDur_'+id).value);
+  const muteOriginal = document.getElementById('clipMute_'+id).checked;
+  if(!file){ toast('Choose a clip or image file first'); return; }
+  if(isNaN(start) || start<0){ toast('Enter a valid start time (seconds)'); return; }
+  if(isNaN(duration) || duration<=0){ toast('Enter a valid duration (seconds)'); return; }
+  const kind = (file.type && file.type.startsWith('image/')) ? 'image' : 'video';
+
+  try{
+    toast(kind==='image' ? 'Uploading image...' : 'Uploading clip...');
+    // reuse the same generic signed-upload function everything else uses
+    const sres = await fetch(`${SB_URL}/functions/v1/anchor-upload-url`,{
+      method:'POST', headers:H,
+      body:JSON.stringify({filename:file.name, content_type:file.type||(kind==='image'?'image/jpeg':'video/mp4')})
+    });
+    if(!sres.ok) throw new Error('upload-url '+sres.status+': '+(await sres.text()));
+    const {session_uri, object_url, gcs_path} = await sres.json();
+
+    try{
+      await gcsPut(session_uri, file, ()=>{});
+    }catch(putErr){
+      const vres = await fetch(`${SB_URL}/functions/v1/anchor-upload-url`,{
+        method:'POST', headers:H, body:JSON.stringify({action:'verify', gcs_path})
+      });
+      const v = vres.ok ? await vres.json() : {exists:false};
+      if(!(v.exists && Number(v.size)===file.size)) throw putErr;
+    }
+
+    // fetch current row fresh so we append to the latest clips array, not a stale one
+    const r = await fetch(`${SB_URL}/rest/v1/${TABLE()}?id=eq.${id}&select=clips`,{headers:H});
+    const rows = await r.json();
+    const clips = (rows[0] && rows[0].clips) || [];
+    clips.push({clip_url:object_url, start, duration, kind, mute_original: kind==='image'?false:muteOriginal});
+    await patch(id, {clips});
+
+    toast(kind==='image' ? 'Image attached' : 'Clip attached');
+    load();
+  }catch(e){ toast('Upload failed: '+(e.message||e)); }
+}
+
+async function removeClip(id, index){
+  try{
+    const r = await fetch(`${SB_URL}/rest/v1/${TABLE()}?id=eq.${id}&select=clips`,{headers:H});
+    const rows = await r.json();
+    const clips = (rows[0] && rows[0].clips) || [];
+    clips.splice(index,1);
+    await patch(id, {clips});
+    toast('Clip removed');
+    load();
+  }catch(e){ toast(e.message); }
 }
 
 // ── per-record actions ───────────────────────────────────────
