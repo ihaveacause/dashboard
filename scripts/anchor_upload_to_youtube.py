@@ -1,20 +1,13 @@
 """
 anchor_upload_to_youtube.py — On Camera (YouTube Long) · Publish + GCS Cleanup
 ================================================================================
-Uploads the studio render to YouTube as a scheduled video and routes it to a
-playlist by `module`.
+Sprint 19 changes:
+  - Series episode: title pulled from tamil/english_episodes table by episode_number
+  - Standalone: title used as entered in dashboard
+  - Thumbnail upload REMOVED — set manually in YouTube Studio after publish
+  - GCS delete step unchanged from Sprint 17
 
-Sprint 17 addition:
-  --step upload   → upload video to YouTube (existing behaviour)
-  --step delete_gcs → delete all GCS files for this record AFTER you confirm
-                      the YouTube video looks good. Called from the dashboard's
-                      "Delete GCS Files" button, which only appears post-published.
-
-Reuses the SAME secrets your existing uploader uses:
-  YOUTUBE_TOKEN_JSON, YOUTUBE_CHANNEL_ID, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
-
-Args (from the workflow):
-  --record_id <uuid>  --language <ta|en>  --step <upload|delete_gcs>
+Args: --record_id <uuid>  --language <ta|en>  --step <upload|delete_gcs>
 """
 
 import argparse
@@ -39,32 +32,62 @@ SCOPES = [
     "https://www.googleapis.com/auth/youtube.force-ssl",
 ]
 
-SUPABASE_URL    = os.environ["SUPABASE_URL"]
-SUPABASE_KEY    = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
-GCP_CREDS_JSON  = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS_JSON", "")
-GCS_BUCKET      = "ihaveacause-media"
+SUPABASE_URL   = os.environ["SUPABASE_URL"]
+SUPABASE_KEY   = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
+GCP_CREDS_JSON = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS_JSON", "")
+GCS_BUCKET     = "ihaveacause-media"
 
 PUBLISH_HOUR_UTC, PUBLISH_MINUTE_UTC = 1, 30   # 7:00 AM IST
 
 
 # ── Supabase helpers ──────────────────────────────────────────
-def table(language):
+def anchor_table(language):
     return "tamil_anchor" if language in ("ta", "tamil") else "english_anchor"
+
+def episode_table(language):
+    return "tamil_episodes" if language in ("ta", "tamil") else "english_episodes"
 
 def get_row(record_id, language):
     sb: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-    res = sb.table(table(language)).select("*").eq("id", record_id).single().execute()
+    res = sb.table(anchor_table(language)).select("*").eq("id", record_id).single().execute()
     return res.data
 
 def update_row(record_id, language, updates):
     sb: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-    sb.table(table(language)).update(updates).eq("id", record_id).execute()
+    sb.table(anchor_table(language)).update(updates).eq("id", record_id).execute()
     print(f"✅ Supabase updated: {list(updates.keys())}")
+
+def get_episode_title(episode_number, language):
+    """
+    Fetch the episode title from tamil/english_episodes by episode_number.
+    Returns title string or None if not found.
+    """
+    sb: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+    table = episode_table(language)
+    try:
+        res = (sb.table(table)
+                 .select("title_tamil,title_english")
+                 .eq("episode_number", episode_number)
+                 .single()
+                 .execute())
+        ep = res.data
+        if not ep:
+            return None
+        # Use language-appropriate title, fall back to the other
+        if language in ("ta", "tamil"):
+            return ep.get("title_tamil") or ep.get("title_english")
+        else:
+            return ep.get("title_english") or ep.get("title_tamil")
+    except Exception as e:
+        print(f"   ⚠️  Episode lookup failed: {e}", flush=True)
+        return None
 
 def count_published(language):
     sb: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-    res = (sb.table(table(language)).select("id", count="exact")
-             .not_.is_("youtube_video_id", "null").execute())
+    res = (sb.table(anchor_table(language))
+             .select("id", count="exact")
+             .not_.is_("youtube_video_id", "null")
+             .execute())
     return res.count or 0
 
 
@@ -100,29 +123,50 @@ def download(url, dest):
             f.write(chunk)
     return dest
 
-def build_description(row, language):
-    title   = row.get("title") or row.get("working_title") or ""
+def build_description(row, language, title):
     module  = row.get("module") or "Commentary"
+    ep_num  = row.get("episode_number")
     lang    = "Tamil" if language in ("ta", "tamil") else "English"
-    opinion = "இது என் தனிப்பட்ட கருத்து." if language in ("ta", "tamil") else "This is my personal opinion."
+    opinion = "இது என் தனிப்பட்ட கருத்து." if language in ("ta", "tamil") \
+              else "This is my personal opinion."
+    ep_line = f"Episode: {ep_num}\n" if ep_num else ""
     return (
         f"{title}\n\n"
+        f"{ep_line}"
         f"{opinion}\n\n"
         f"Module: {module}\n\n"
         f"#IHaveACause #{lang} #Opinion #{module.replace(' ','')}"
     )
 
+def resolve_title(row, language):
+    """
+    Series episode  → pull title from episodes table by episode_number
+    Standalone      → use row.title directly
+    Falls back to row.working_title if nothing else available.
+    """
+    ep_num = row.get("episode_number")
+    if ep_num:
+        print(f"   📺 Series episode {ep_num} — fetching title from episodes table…", flush=True)
+        ep_title = get_episode_title(ep_num, language)
+        if ep_title:
+            print(f"   ✅ Episode title: {ep_title}", flush=True)
+            return ep_title
+        else:
+            print(f"   ⚠️  Episode title not found — falling back to row title", flush=True)
+    return row.get("title") or row.get("working_title") or "On Camera"
+
 def upload_video(youtube, video_path, row, language, publish_time):
-    lang     = "ta" if language in ("ta", "tamil") else "en"
-    title    = row.get("title") or row.get("working_title") or "On Camera"
-    suffix   = "| ஒரு காரணம் இருக்கிறது" if lang == "ta" else "| I Have a Cause"
+    lang    = "ta" if language in ("ta", "tamil") else "en"
+    title   = resolve_title(row, language)
+    suffix  = "| ஒரு காரணம் இருக்கிறது" if lang == "ta" else "| I Have a Cause"
     yt_title = f"{title} {suffix}"[:100]
 
     body = {
         "snippet": {
             "title": yt_title,
-            "description": build_description(row, language),
-            "tags": ["IHaveACause", "Opinion", "Commentary", row.get("module") or "Commentary"],
+            "description": build_description(row, language, title),
+            "tags": ["IHaveACause", "Opinion", "Commentary",
+                     row.get("module") or "Commentary"],
             "categoryId": "25",  # News & Politics
             "defaultLanguage": lang,
             "defaultAudioLanguage": lang,
@@ -144,23 +188,9 @@ def upload_video(youtube, video_path, row, language, publish_time):
             print(f"   {int(status.progress()*100)}%", flush=True)
     vid = resp["id"]
     print(f"✅ Uploaded: {vid}", flush=True)
+    print(f"   ℹ️  Add your custom thumbnail in YouTube Studio: "
+          f"https://studio.youtube.com/video/{vid}/edit", flush=True)
     return vid
-
-def set_thumbnail(youtube, video_id, thumbnail_url, tmp):
-    if not thumbnail_url:
-        print("   ℹ️  No thumbnail — YouTube will auto-pick a frame.")
-        return
-    try:
-        tp = download(thumbnail_url, os.path.join(tmp, "thumb.jpg"))
-        youtube.thumbnails().set(
-            videoId=video_id,
-            media_body=MediaFileUpload(tp, mimetype="image/jpeg")
-        ).execute()
-        print("✅ Thumbnail set")
-    except HttpError as e:
-        print(f"⚠️  Thumbnail skipped — verify your YouTube channel to enable custom thumbnails: {e}")
-    except Exception as e:
-        print(f"⚠️  Thumbnail skipped — {e}")
 
 def get_or_create_playlist(youtube, module_name, language):
     lang     = "ta" if language in ("ta", "tamil") else "en"
@@ -169,15 +199,14 @@ def get_or_create_playlist(youtube, module_name, language):
         res = youtube.playlists().list(part="snippet", mine=True, maxResults=50).execute()
         for pl in res.get("items", []):
             if pl["snippet"]["title"] == pl_title:
-                print(f"   📋 Playlist found: {pl['id']}")
+                print(f"   📋 Playlist: {pl['id']}")
                 return pl["id"]
-        # Create
         pl = youtube.playlists().insert(
             part="snippet,status",
             body={"snippet": {"title": pl_title, "defaultLanguage": lang},
                   "status": {"privacyStatus": "public"}}
         ).execute()
-        print(f"   📋 Playlist created: {pl['id']}")
+        print(f"   📋 Created playlist: {pl['id']}")
         return pl["id"]
     except Exception as e:
         print(f"   ⚠️  Playlist error: {e}")
@@ -190,7 +219,8 @@ def add_to_playlist(youtube, video_id, playlist_id):
         youtube.playlistItems().insert(
             part="snippet",
             body={"snippet": {"playlistId": playlist_id,
-                              "resourceId": {"kind": "youtube#video", "videoId": video_id}}}
+                              "resourceId": {"kind": "youtube#video",
+                                             "videoId": video_id}}}
         ).execute()
         print(f"✅ Added to playlist {playlist_id}")
     except Exception as e:
@@ -208,90 +238,54 @@ def _gcs_token():
     return creds.token
 
 def _list_gcs_objects(prefix, token):
-    """List all objects under prefix in the GCS bucket."""
     r = requests.get(
         f"https://storage.googleapis.com/storage/v1/b/{GCS_BUCKET}/o",
         headers={"Authorization": f"Bearer {token}"},
-        params={"prefix": prefix},
-        timeout=30)
-    if r.status_code != 200:
-        print(f"   ⚠️  GCS list failed {r.status_code}: {r.text[:200]}")
-        return []
-    items = r.json().get("items", [])
-    return [item["name"] for item in items]
+        params={"prefix": prefix}, timeout=30)
+    return [item["name"] for item in r.json().get("items", [])] if r.status_code == 200 else []
 
 def _delete_gcs_object(name, token):
-    """Delete a single GCS object by name."""
     encoded = quote(name, safe="")
     r = requests.delete(
         f"https://storage.googleapis.com/storage/v1/b/{GCS_BUCKET}/o/{encoded}",
-        headers={"Authorization": f"Bearer {token}"},
-        timeout=30)
+        headers={"Authorization": f"Bearer {token}"}, timeout=30)
     if r.status_code in (200, 204):
-        print(f"   🗑  Deleted: {name}", flush=True)
-        return True
-    print(f"   ⚠️  Failed to delete {name}: {r.status_code}", flush=True)
-    return False
+        print(f"   🗑  {name}", flush=True); return True
+    print(f"   ⚠️  Failed {name}: {r.status_code}", flush=True); return False
 
 def delete_gcs_files(record_id, language):
-    """
-    Delete all GCS files for this record:
-      anchor/{record_id}/{language}/*   — render, thumbnail, photo
-    Also deletes any image overlay files stored under:
-      anchor/{record_id}/images/*       — if they were stored there
-    Only runs after status == 'published' (enforced here as safety check).
-    """
-    print(f"\n🗑  Deleting GCS files for {record_id} ({language})…", flush=True)
-
+    print(f"\n🗑  Deleting GCS files for {record_id}…", flush=True)
     row = get_row(record_id, language)
     if not row:
         print("❌ Record not found"); return False
     if row.get("status") != "published":
-        print(f"❌ Status is '{row.get('status')}' not 'published' — refusing to delete GCS files for safety.")
-        return False
+        print(f"❌ Status is '{row.get('status')}' — only deletes after published"); return False
     if not row.get("youtube_video_id"):
-        print("❌ No youtube_video_id found — refusing to delete before confirmed YouTube upload.")
-        return False
+        print("❌ No youtube_video_id — won't delete before confirmed YouTube upload"); return False
 
-    token = _gcs_token()
-
-    # Find and delete all objects under anchor/{record_id}/
-    prefix = f"anchor/{record_id}/"
+    token   = _gcs_token()
+    prefix  = f"anchor/{record_id}/"
     objects = _list_gcs_objects(prefix, token)
-    if not objects:
-        print(f"   ℹ️  No GCS objects found under {prefix}")
-    else:
-        print(f"   Found {len(objects)} object(s) to delete:", flush=True)
-        deleted = sum(1 for name in objects if _delete_gcs_object(name, token))
-        print(f"   ✅ Deleted {deleted}/{len(objects)} objects", flush=True)
+    print(f"   Found {len(objects)} object(s) under {prefix}", flush=True)
+    deleted = sum(1 for name in objects if _delete_gcs_object(name, token))
 
-    # Also check for image overlays stored elsewhere (from anchor-upload-url)
-    # These are stored at the root with the original filename — we find them
-    # from the image_overlays column URLs
+    # Also delete image overlay files
     img_overlays = row.get("image_overlays") or []
     if isinstance(img_overlays, str):
-        try:
-            img_overlays = json.loads(img_overlays)
-        except Exception:
-            img_overlays = []
-
+        try: img_overlays = json.loads(img_overlays)
+        except: img_overlays = []
     for ov in img_overlays:
         url = ov.get("url", "")
-        # Extract GCS object name from the URL
         marker = f"storage.googleapis.com/{GCS_BUCKET}/"
         if marker in url:
             obj_name = url.split(marker, 1)[1].split("?")[0]
             _delete_gcs_object(obj_name, token)
 
-    # Mark GCS as deleted in Supabase — clear video/source URLs so dashboard reflects this
     update_row(record_id, language, {
-        "source_video_url": None,
-        "video_url": None,
-        "thumbnail_url": None,
-        "gcs_deleted": True,
+        "source_video_url": None, "video_url": None,
+        "thumbnail_url": None, "gcs_deleted": True,
     })
-
-    print(f"\n✅ GCS cleanup complete — YouTube video is unaffected.", flush=True)
+    print(f"\n✅ GCS cleanup done — YouTube video unaffected.", flush=True)
     return True
 
 
@@ -299,34 +293,31 @@ def delete_gcs_files(record_id, language):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--record_id", required=True)
-    ap.add_argument("--language", required=True)
+    ap.add_argument("--language",  required=True)
     ap.add_argument("--step", default="upload", choices=["upload", "delete_gcs"])
     args = ap.parse_args()
+    language = args.language
 
-    language = args.language  # pass 'ta' or 'en' directly
-
-    # ── GCS delete step ───────────────────────────────────────
     if args.step == "delete_gcs":
         if not GCP_CREDS_JSON:
             print("❌ GOOGLE_APPLICATION_CREDENTIALS_JSON not set"); sys.exit(1)
         ok = delete_gcs_files(args.record_id, language)
         sys.exit(0 if ok else 1)
 
-    # ── Upload step ───────────────────────────────────────────
+    # Upload step
     row = get_row(args.record_id, language)
     if not row:
         print("❌ Record not found"); sys.exit(1)
     if not row.get("video_url"):
         print("❌ No rendered video_url — run Render first"); sys.exit(1)
 
-    youtube       = get_youtube()
-    publish_time  = calculate_publish_time(language)
+    youtube      = get_youtube()
+    publish_time = calculate_publish_time(language)
     print(f"📅 Scheduled: {publish_time.isoformat()}", flush=True)
 
     with tempfile.TemporaryDirectory() as tmp:
         vp  = download(row["video_url"], os.path.join(tmp, "final.mp4"))
         vid = upload_video(youtube, vp, row, language, publish_time)
-        set_thumbnail(youtube, vid, row.get("thumbnail_url"), tmp)
 
     module_name = row.get("module") or "Commentary"
     pid = get_or_create_playlist(youtube, module_name, language)
@@ -336,12 +327,13 @@ def main():
     yt_url = f"https://www.youtube.com/watch?v={vid}"
     update_row(args.record_id, language, {
         "youtube_video_id": vid,
-        "youtube_url": yt_url,
-        "playlist_id": pid,
-        "scheduled_at": publish_time.isoformat(),
-        "status": "published",
+        "youtube_url":      yt_url,
+        "playlist_id":      pid,
+        "scheduled_at":     publish_time.isoformat(),
+        "status":           "published",
     })
     print(f"\n🎉 Done: {yt_url}")
+    print(f"   👉 Add thumbnail: https://studio.youtube.com/video/{vid}/edit")
 
 
 if __name__ == "__main__":
