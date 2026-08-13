@@ -9,7 +9,6 @@
   --bg:#06070a;--surface:#0e1018;--surface2:#13151f;--surface3:#1a1d2a;
   --border:#23263a;--border2:#2e3248;--text:#e8eaf0;--muted:#7a7f9a;
   --accent:#5adca8;--accent2:#3bb88a;--red:#c83c3c;--yellow:#e0b840;
-  --pip-highlight:#5adca8;
 }
 *{box-sizing:border-box;margin:0;padding:0}
 body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:14px;min-height:100vh}
@@ -34,7 +33,6 @@ a{color:var(--accent);text-decoration:none}
 .btn:disabled{opacity:.45;cursor:not-allowed}
 .card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:20px;margin-bottom:16px}
 .card-title{font-size:15px;font-weight:700;margin-bottom:4px}
-.card-sub{font-size:12px;color:var(--muted);margin-bottom:14px}
 .badge{display:inline-block;padding:2px 10px;border-radius:12px;font-size:11px;font-weight:600}
 .badge-pending{background:#1a1d2a;color:var(--muted)}
 .badge-rendering{background:#1a2a1a;color:#5adca8}
@@ -42,6 +40,8 @@ a{color:var(--accent);text-decoration:none}
 .badge-publishing{background:#2a1a00;color:var(--yellow)}
 .badge-published{background:#1a2a1a;color:#5adca8}
 .badge-error{background:#2a1010;color:var(--red)}
+.badge-series{background:#1a1a2a;color:#8888ff}
+.badge-standalone{background:#1a2a2a;color:var(--accent)}
 .field{margin-bottom:14px}
 .field label{display:block;font-size:12px;color:var(--muted);margin-bottom:5px;font-weight:500}
 .field input[type=text],.field input[type=number],.field textarea,.field select{
@@ -49,7 +49,17 @@ a{color:var(--accent);text-decoration:none}
   padding:8px 12px;color:var(--text);font-size:13px;outline:none;transition:.15s;font-family:inherit
 }
 .field input:focus,.field textarea:focus,.field select:focus{border-color:var(--accent)}
-.field textarea{resize:vertical;min-height:80px;line-height:1.5}
+.field-error{font-size:11px;color:var(--red);margin-top:4px}
+/* video type toggle */
+.type-toggle{display:flex;gap:0;border:1px solid var(--border2);border-radius:10px;overflow:hidden;margin-bottom:18px}
+.type-btn{flex:1;padding:9px;text-align:center;cursor:pointer;font-size:13px;font-weight:600;color:var(--muted);background:var(--surface2);border:none;transition:.15s}
+.type-btn.active{background:var(--accent);color:#06070a}
+/* episode lookup */
+.ep-lookup{display:flex;gap:8px;align-items:flex-end}
+.ep-lookup input{flex:1}
+.ep-found{background:var(--surface3);border:1px solid var(--border2);border-radius:8px;padding:10px 12px;margin-top:6px;font-size:13px}
+.ep-found .ep-title{color:var(--accent);font-weight:600}
+.ep-found .ep-meta{color:var(--muted);font-size:11px;margin-top:2px}
 .flow{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .overlay{position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:200;display:none;align-items:center;justify-content:center}
 .overlay.show{display:flex}
@@ -59,7 +69,6 @@ a{color:var(--accent);text-decoration:none}
 .empty{text-align:center;padding:60px 20px;color:var(--muted)}
 .empty .big{font-size:48px;margin-bottom:12px}
 .sep{height:1px;background:var(--border);margin:16px 0}
-/* image slots */
 .img-slots{display:flex;flex-direction:column;gap:10px;margin-top:10px}
 .img-slot{background:var(--surface2);border:1px solid var(--border2);border-radius:10px;padding:14px}
 .img-slot-header{display:flex;align-items:center;gap:8px;margin-bottom:10px}
@@ -69,7 +78,6 @@ a{color:var(--accent);text-decoration:none}
 .img-slot-timing input:focus{border-color:var(--accent)}
 .img-preview{width:60px;height:40px;object-fit:cover;border-radius:5px;border:1px solid var(--border2)}
 .pip-note{font-size:11px;color:var(--muted);margin-top:6px;line-height:1.4;padding:6px 10px;background:var(--surface3);border-radius:6px;border-left:2px solid var(--accent)}
-/* video preview */
 video{max-width:100%;border-radius:8px;border:1px solid var(--border2);display:block}
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--surface3);border:1px solid var(--border2);color:var(--text);padding:12px 18px;border-radius:10px;font-size:13px;z-index:500;display:none}
 .bar{height:4px;background:var(--surface3);border-radius:3px;overflow:hidden;margin-top:12px}
@@ -78,6 +86,7 @@ video{max-width:100%;border-radius:8px;border:1px solid var(--border2);display:b
 .note{font-size:11px;color:var(--muted);margin-top:6px}
 .confirm-delete{background:#1a0808;border:1px solid var(--red);border-radius:10px;padding:14px;margin-top:12px}
 .confirm-delete p{color:var(--red);font-size:13px;margin-bottom:10px}
+.thumb-note{background:var(--surface3);border:1px solid var(--border2);border-radius:8px;padding:10px 12px;font-size:12px;color:var(--muted);margin-top:8px}
 </style>
 </head>
 <body>
@@ -95,7 +104,7 @@ video{max-width:100%;border-radius:8px;border:1px solid var(--border2);display:b
   <div class="row-top">
     <div style="flex:1">
       <div class="h1">Your recordings</div>
-      <div class="sub">Upload your recording + images → enter timestamps → render → publish to YouTube.</div>
+      <div class="sub">Upload your recording → add images with timestamps → render → publish to YouTube.</div>
     </div>
     <button class="btn btn-primary" onclick="openUpload()">⬆ Upload Recording</button>
   </div>
@@ -106,20 +115,55 @@ video{max-width:100%;border-radius:8px;border:1px solid var(--border2);display:b
 <div class="overlay" id="upOverlay">
   <div class="modal">
     <h2>Upload a recording</h2>
-    <div class="muted" style="margin-bottom:16px">Record yourself talking, then upload here. Add your images after uploading.</div>
+    <div class="muted" style="margin-bottom:16px">Choose the video type first, then fill in the details.</div>
 
+    <!-- Series / Standalone toggle -->
+    <div class="type-toggle">
+      <button class="type-btn active" id="type-series" onclick="setType('series')">📺 Series Episode</button>
+      <button class="type-btn" id="type-standalone" onclick="setType('standalone')">🎤 Standalone</button>
+    </div>
+
+    <!-- Series fields -->
+    <div id="series-fields">
+      <div class="field">
+        <label>Episode number <span style="color:var(--red)">*</span></label>
+        <div class="ep-lookup">
+          <input type="number" id="upEpisode" placeholder="e.g. 19" min="1" oninput="lookupEpisode()">
+        </div>
+        <div id="epFound" style="display:none" class="ep-found">
+          <div class="ep-title" id="epTitle">—</div>
+          <div class="ep-meta" id="epMeta">—</div>
+        </div>
+        <div id="epError" class="field-error" style="display:none"></div>
+      </div>
+      <div class="field">
+        <label>Module / playlist <span style="color:var(--red)">*</span></label>
+        <input type="text" id="upModuleSeries" placeholder="e.g. Politics">
+      </div>
+    </div>
+
+    <!-- Standalone fields -->
+    <div id="standalone-fields" style="display:none">
+      <div class="field">
+        <label>Video title <span style="color:var(--red)">*</span></label>
+        <input type="text" id="upTitle" placeholder="e.g. Why freebies fail — my take">
+        <div id="titleError" class="field-error" style="display:none">Title is required</div>
+      </div>
+      <div class="field">
+        <label>Module / playlist <span style="color:var(--red)">*</span></label>
+        <input type="text" id="upModuleStandalone" placeholder="e.g. Commentary">
+      </div>
+    </div>
+
+    <!-- Video file (both types) -->
     <div class="field">
-      <label>Recording (mp4 / mov)</label>
+      <label>Recording (mp4 / mov) <span style="color:var(--red)">*</span></label>
       <input type="file" id="upFile" accept="video/*">
       <div class="note" id="upFileNote"></div>
     </div>
-    <div class="field">
-      <label>Title</label>
-      <input type="text" id="upTitle" placeholder="e.g. Why freebies fail — my take">
-    </div>
-    <div class="field">
-      <label>Module / playlist (optional)</label>
-      <input type="text" id="upModule" placeholder="e.g. Politics">
+
+    <div class="thumb-note">
+      💡 No thumbnail will be generated — you can add your own custom thumbnail in YouTube Studio after publishing.
     </div>
 
     <div class="bar" id="upBar" style="display:none"><i></i></div>
@@ -133,37 +177,46 @@ video{max-width:100%;border-radius:8px;border:1px solid var(--border2);display:b
 <div class="toast" id="toast"></div>
 
 <script>
-// ── Config ────────────────────────────────────────────────────
-const SB_URL  = 'https://YOUR_SUPABASE_URL.supabase.co';
-const SB_KEY  = 'YOUR_SUPABASE_ANON_KEY';
+// ── Config ─────────────────────────────────────────────────
+const SB_URL = 'https://YOUR_SUPABASE_URL.supabase.co';
+const SB_KEY = 'YOUR_SUPABASE_ANON_KEY';
 const H = {
   'apikey': SB_KEY,
   'Authorization': 'Bearer ' + SB_KEY,
   'Content-Type': 'application/json',
 };
-// Supabase JS client (for auth + realtime helpers)
-const SB = window.Supabase ? window.Supabase.createClient(SB_URL, SB_KEY) : null;
 
-let LANG = 'en';
+let LANG     = 'en';
+let VID_TYPE = 'series';   // 'series' | 'standalone'
+let _epLookupTimer = null;
+
 function TABLE(){ return LANG === 'ta' ? 'tamil_anchor' : 'english_anchor'; }
+function EP_TABLE(){ return LANG === 'ta' ? 'tamil_episodes' : 'english_episodes'; }
 
 function setLang(l){
   LANG = l;
   document.getElementById('lang-en').className = 'lang-btn' + (l==='en'?' en':'');
-  document.getElementById('lang-ta').className = 'lang-btn' + (l==='ta'?' ta':'');
+  document.getElementById('lang-ta').className  = 'lang-btn' + (l==='ta'?' ta':'');
   load();
 }
 
-// ── Toast ─────────────────────────────────────────────────────
+function setType(t){
+  VID_TYPE = t;
+  document.getElementById('type-series').classList.toggle('active', t==='series');
+  document.getElementById('type-standalone').classList.toggle('active', t==='standalone');
+  document.getElementById('series-fields').style.display     = t==='series'     ? '' : 'none';
+  document.getElementById('standalone-fields').style.display = t==='standalone' ? '' : 'none';
+}
+
+// ── Toast ──────────────────────────────────────────────────
 let _toastT;
 function toast(msg, dur=3200){
   const el = document.getElementById('toast');
   el.textContent = msg; el.style.display = 'block';
   clearTimeout(_toastT);
-  _toastT = setTimeout(() => el.style.display='none', dur);
+  _toastT = setTimeout(()=>el.style.display='none', dur);
 }
 
-// ── Progress bar ──────────────────────────────────────────────
 function setBar(pct){
   const bar = document.getElementById('upBar');
   bar.style.display = 'block';
@@ -172,7 +225,7 @@ function setBar(pct){
   else { i.style.animation=''; i.style.width='30%'; }
 }
 
-// ── Supabase helpers ──────────────────────────────────────────
+// ── Supabase helpers ───────────────────────────────────────
 async function sbGet(table, params={}){
   const q = new URLSearchParams({select:'*', order:'created_at.desc', ...params});
   const r = await fetch(`${SB_URL}/rest/v1/${table}?${q}`, {headers:H});
@@ -185,15 +238,53 @@ async function sbPatch(table, id, data){
 }
 async function sbInsert(table, data){
   const r = await fetch(`${SB_URL}/rest/v1/${table}`, {
-    method:'POST', headers:{...H, 'Prefer':'return=representation'}, body:JSON.stringify(data)
+    method:'POST', headers:{...H,'Prefer':'return=representation'}, body:JSON.stringify(data)
   });
   return r.ok ? r.json() : null;
 }
 
-// ── Load list ─────────────────────────────────────────────────
+// ── Episode lookup ─────────────────────────────────────────
+function lookupEpisode(){
+  clearTimeout(_epLookupTimer);
+  const val = document.getElementById('upEpisode').value.trim();
+  document.getElementById('epFound').style.display  = 'none';
+  document.getElementById('epError').style.display  = 'none';
+  if(!val || isNaN(val)) return;
+  _epLookupTimer = setTimeout(()=> _doLookup(parseInt(val)), 500);
+}
+
+async function _doLookup(num){
+  const rows = await sbGet(EP_TABLE(), {
+    episode_number: `eq.${num}`,
+    select: 'episode_number,title_tamil,title_english,status,module'
+  });
+  const epErrorEl = document.getElementById('epError');
+  const epFoundEl = document.getElementById('epFound');
+  if(!rows.length){
+    epErrorEl.textContent = `Episode ${num} not found in ${EP_TABLE()}`;
+    epErrorEl.style.display = 'block';
+    epFoundEl.style.display = 'none';
+    return;
+  }
+  const ep = rows[0];
+  const title = LANG === 'ta'
+    ? (ep.title_tamil || ep.title_english || `Episode ${num}`)
+    : (ep.title_english || ep.title_tamil || `Episode ${num}`);
+  document.getElementById('epTitle').textContent = title;
+  document.getElementById('epMeta').textContent  =
+    `EP${num} · Status: ${ep.status || 'pending'}${ep.module ? ' · Module: '+ep.module : ''}`;
+  epFoundEl.style.display = 'block';
+  epErrorEl.style.display = 'none';
+  // Auto-fill module if episode has one
+  if(ep.module){
+    document.getElementById('upModuleSeries').value = ep.module;
+  }
+}
+
+// ── Load list ──────────────────────────────────────────────
 async function load(){
   const rows = await sbGet(TABLE());
-  const el = document.getElementById('list');
+  const el   = document.getElementById('list');
   if(!rows.length){
     el.innerHTML = `<div class="empty"><div class="big">🎬</div>No recordings yet — upload one above.</div>`;
     return;
@@ -204,42 +295,39 @@ async function load(){
 function esc(s){ return (s==null?'':String(s)).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
 function statusBadge(s){
-  const map = {
-    pending:'badge-pending', rendering:'badge-rendering', rendered:'badge-rendered',
-    publishing:'badge-publishing', published:'badge-published', error:'badge-error'
-  };
+  const map = {pending:'badge-pending',rendering:'badge-rendering',rendered:'badge-rendered',
+    publishing:'badge-publishing',published:'badge-published',error:'badge-error'};
   return `<span class="badge ${map[s]||'badge-pending'}">${esc(s||'pending')}</span>`;
 }
 
 function renderCard(row){
-  const id = row.id;
-  const images = row.image_overlays || [];
-  const status = row.status || 'pending';
-  const canRender = status === 'pending' || status === 'error';
-  const canPublish = status === 'rendered';
+  const id       = row.id;
+  const images   = row.image_overlays || [];
+  const status   = row.status || 'pending';
   const isPublished = status === 'published';
+  const canRender   = status === 'pending' || status === 'error';
+  const canPublish  = status === 'rendered';
+  const isSeries    = !!row.episode_number;
 
-  // Image slots display
   let imgSlotsHtml = '';
   if(images.length){
     imgSlotsHtml = `<div style="margin-top:10px">
       <div style="font-size:12px;color:var(--muted);margin-bottom:6px">📸 ${images.length} image(s) queued</div>
-      ${images.map((img,i) => `
+      ${images.map((img,i)=>`
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;font-size:12px;color:var(--muted)">
           <span style="background:var(--accent);color:#06070a;border-radius:50%;width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:700">${i+1}</span>
           Start: <b style="color:var(--text)">${img.start}s</b> · Duration: <b style="color:var(--text)">${img.duration}s</b>
-          ${img.url ? `<img src="${esc(img.url)}" class="img-preview">` : ''}
+          ${img.url?`<img src="${esc(img.url)}" class="img-preview">`:''}
         </div>`).join('')}
     </div>`;
   }
 
-  // GCS delete confirmation section (only after published)
-  const deleteSection = isPublished ? `
+  const deleteSection = isPublished && !row.gcs_deleted ? `
     <div class="confirm-delete">
       <p>✅ Published to YouTube. Delete all GCS files to save storage?</p>
       <div class="flow">
         <button class="btn btn-danger btn-sm" onclick="deleteGCS('${id}')">🗑 Delete GCS Files</button>
-        <span class="muted" style="font-size:11px">Recording + images + render will be removed from GCS</span>
+        <span class="muted" style="font-size:11px">Recording + images + render removed from GCS</span>
       </div>
     </div>` : '';
 
@@ -247,23 +335,23 @@ function renderCard(row){
     <div class="flow" style="margin-bottom:10px">
       <div class="card-title" style="flex:1">${esc(row.title || row.working_title || 'Untitled')}</div>
       ${statusBadge(status)}
+      ${isSeries ? `<span class="badge badge-series">EP${row.episode_number}</span>` : `<span class="badge badge-standalone">Standalone</span>`}
       ${row.module ? `<span class="badge badge-pending">${esc(row.module)}</span>` : ''}
     </div>
-    <div class="muted" style="margin-bottom:12px">Created ${new Date(row.created_at).toLocaleDateString('en-IN',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}</div>
-
-    ${row.source_video_url ? `<video src="${esc(row.source_video_url)}" controls style="max-height:180px;margin-bottom:12px"></video>` : ''}
-
-    ${imgSlotsHtml}
-
-    <div class="sep"></div>
-
-    <!-- Title field -->
-    <div class="field" style="margin-bottom:10px">
-      <label>Video title (for YouTube)</label>
-      <input type="text" id="title_${id}" value="${esc(row.title||row.working_title||'')}" placeholder="Enter the YouTube title">
+    <div class="muted" style="margin-bottom:12px">
+      ${new Date(row.created_at).toLocaleDateString('en-IN',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}
     </div>
 
-    <!-- Image upload section -->
+    ${row.source_video_url && !row.gcs_deleted ? `<video src="${esc(row.source_video_url)}" controls style="max-height:180px;margin-bottom:12px"></video>` : ''}
+
+    ${imgSlotsHtml}
+    <div class="sep"></div>
+
+    <div class="field" style="margin-bottom:10px">
+      <label>Video title (for YouTube)</label>
+      <input type="text" id="title_${id}" value="${esc(row.title||row.working_title||'')}" placeholder="Enter YouTube title">
+    </div>
+
     <details style="margin-bottom:12px">
       <summary style="cursor:pointer;font-size:13px;color:var(--accent);font-weight:600;padding:4px 0">📸 Add / manage images</summary>
       <div style="margin-top:10px">
@@ -275,239 +363,258 @@ function renderCard(row){
       </div>
     </details>
 
-    <!-- Action buttons -->
     <div class="flow">
       <button class="btn btn-ghost btn-sm" onclick="saveTitle('${id}')">💾 Save title</button>
       <button class="btn btn-ghost btn-sm" onclick="saveImages('${id}')">💾 Save images</button>
-      ${canRender ? `<button class="btn btn-primary btn-sm" onclick="triggerRender('${id}')">🎬 Render video</button>` : ''}
+      ${canRender  ? `<button class="btn btn-primary btn-sm" onclick="triggerRender('${id}')">🎬 Render video</button>` : ''}
       ${canPublish ? `<button class="btn btn-primary btn-sm" onclick="triggerPublish('${id}')">🚀 Publish to YouTube</button>` : ''}
-      ${row.video_url ? `<a class="btn btn-ghost btn-sm" href="${esc(row.video_url)}" target="_blank">▶ Preview render</a>` : ''}
+      ${row.video_url && !row.gcs_deleted ? `<a class="btn btn-ghost btn-sm" href="${esc(row.video_url)}" target="_blank">▶ Preview render</a>` : ''}
       ${row.youtube_url ? `<a class="btn btn-ghost btn-sm" href="${esc(row.youtube_url)}" target="_blank">▶ YouTube</a>` : ''}
     </div>
-
     ${deleteSection}
   </div>`;
 }
 
-// ── Image slots ───────────────────────────────────────────────
+// ── Image slots ────────────────────────────────────────────
 function renderImageSlots(cardId, images){
-  if(!images.length) return '<div class="muted" style="font-size:12px;padding:8px 0">No images added yet. Click "+ Add image" below.</div>';
-  return images.map((img, i) => `
+  if(!images.length) return '<div class="muted" style="font-size:12px;padding:8px 0">No images added yet.</div>';
+  return images.map((img,i)=>`
     <div class="img-slot" id="slot-${cardId}-${i}">
       <div class="img-slot-header">
         <div class="img-slot-num">${i+1}</div>
-        <span style="font-size:13px;color:var(--text);flex:1">${img.filename || 'Image ' + (i+1)}</span>
-        ${img.url ? `<img src="${esc(img.url)}" class="img-preview">` : ''}
+        <span style="font-size:13px;color:var(--text);flex:1">${img.filename||'Image '+(i+1)}</span>
+        ${img.url?`<img src="${esc(img.url)}" class="img-preview">`:''}
         <button class="btn btn-ghost btn-sm" onclick="removeSlot('${cardId}',${i})" style="padding:3px 8px;color:var(--red)">✕</button>
       </div>
       <div class="img-slot-timing">
-        <label style="font-size:11px;color:var(--muted)">Start (seconds):</label>
-        <input type="number" id="start-${cardId}-${i}" value="${img.start||0}" min="0" step="0.5" placeholder="e.g. 45">
-        <label style="font-size:11px;color:var(--muted)">Duration (seconds):</label>
-        <input type="number" id="dur-${cardId}-${i}" value="${img.duration||5}" min="1" step="0.5" placeholder="e.g. 8">
+        <label style="font-size:11px;color:var(--muted)">Start (s):</label>
+        <input type="number" id="start-${cardId}-${i}" value="${img.start||0}" min="0" step="0.5">
+        <label style="font-size:11px;color:var(--muted)">Duration (s):</label>
+        <input type="number" id="dur-${cardId}-${i}" value="${img.duration||5}" min="1" step="0.5">
       </div>
     </div>`).join('');
 }
 
-// Pending new slots (before upload) stored per card
-const _pendingSlots = {};
-
 function addSlot(cardId){
-  if(!_pendingSlots[cardId]) _pendingSlots[cardId] = [];
-  // Show a file picker inline
   const input = document.createElement('input');
   input.type = 'file'; input.accept = 'image/*';
-  input.onchange = async (e) => {
+  input.onchange = async (e)=>{
     const file = e.target.files[0];
     if(!file) return;
     toast('Uploading image…');
     try{
       const sres = await fetch(`${SB_URL}/functions/v1/anchor-upload-url`,{
-        method:'POST', headers:H,
-        body:JSON.stringify({filename:file.name, content_type:file.type||'image/jpeg'})
+        method:'POST',headers:H,
+        body:JSON.stringify({filename:file.name,content_type:file.type||'image/jpeg'})
       });
-      if(!sres.ok) throw new Error('upload-url ' + sres.status);
-      const {session_uri, object_url} = await sres.json();
-      await gcsPut(session_uri, file, ()=>{});
-      // read existing images from Supabase
-      const rows = await sbGet(TABLE(), {id:`eq.${cardId}`, select:'image_overlays'});
-      const imgs = (rows[0]?.image_overlays) || [];
-      imgs.push({url: object_url, filename: file.name, start: 0, duration: 5});
-      await sbPatch(TABLE(), cardId, {image_overlays: imgs});
+      if(!sres.ok) throw new Error('upload-url '+sres.status);
+      const {session_uri,object_url} = await sres.json();
+      await gcsPut(session_uri,file,()=>{});
+      const rows = await sbGet(TABLE(),{id:`eq.${cardId}`,select:'image_overlays'});
+      const imgs = (rows[0]?.image_overlays)||[];
+      imgs.push({url:object_url,filename:file.name,start:0,duration:5});
+      await sbPatch(TABLE(),cardId,{image_overlays:imgs});
       toast('Image added — set timing then save');
       load();
-    }catch(err){ toast('Image upload failed: ' + (err.message||err)); }
+    }catch(err){ toast('Image upload failed: '+(err.message||err)); }
   };
   input.click();
 }
 
-function removeSlot(cardId, index){
+function removeSlot(cardId,index){
   if(!confirm('Remove this image?')) return;
-  sbGet(TABLE(), {id:`eq.${cardId}`, select:'image_overlays'}).then(rows => {
-    const imgs = (rows[0]?.image_overlays) || [];
-    imgs.splice(index, 1);
-    sbPatch(TABLE(), cardId, {image_overlays: imgs}).then(() => { toast('Image removed'); load(); });
+  sbGet(TABLE(),{id:`eq.${cardId}`,select:'image_overlays'}).then(rows=>{
+    const imgs = (rows[0]?.image_overlays)||[];
+    imgs.splice(index,1);
+    sbPatch(TABLE(),cardId,{image_overlays:imgs}).then(()=>{ toast('Image removed'); load(); });
   });
 }
 
 async function saveImages(cardId){
-  // Read timing inputs for all slots and save back
-  const rows = await sbGet(TABLE(), {id:`eq.${cardId}`, select:'image_overlays'});
-  const imgs = [...((rows[0]?.image_overlays) || [])];
-  imgs.forEach((img, i) => {
-    const startEl = document.getElementById(`start-${cardId}-${i}`);
-    const durEl = document.getElementById(`dur-${cardId}-${i}`);
-    if(startEl) img.start = parseFloat(startEl.value) || 0;
-    if(durEl) img.duration = parseFloat(durEl.value) || 5;
+  const rows = await sbGet(TABLE(),{id:`eq.${cardId}`,select:'image_overlays'});
+  const imgs = [...((rows[0]?.image_overlays)||[])];
+  imgs.forEach((img,i)=>{
+    const s = document.getElementById(`start-${cardId}-${i}`);
+    const d = document.getElementById(`dur-${cardId}-${i}`);
+    if(s) img.start    = parseFloat(s.value)||0;
+    if(d) img.duration = parseFloat(d.value)||5;
   });
-  await sbPatch(TABLE(), cardId, {image_overlays: imgs});
+  await sbPatch(TABLE(),cardId,{image_overlays:imgs});
   toast('Image timings saved ✓');
 }
 
 async function saveTitle(cardId){
-  const titleEl = document.getElementById('title_' + cardId);
-  if(!titleEl?.value.trim()){ toast('Enter a title first'); return; }
-  await sbPatch(TABLE(), cardId, {title: titleEl.value.trim()});
+  const el = document.getElementById('title_'+cardId);
+  if(!el?.value.trim()){ toast('Enter a title first'); return; }
+  await sbPatch(TABLE(),cardId,{title:el.value.trim()});
   toast('Title saved ✓');
 }
 
-// ── GCS upload helper ──────────────────────────────────────────
-function gcsPut(sessionUri, file, onProgress){
-  return new Promise((res, rej) => {
+// ── GCS upload ─────────────────────────────────────────────
+function gcsPut(sessionUri,file,onProgress){
+  return new Promise((res,rej)=>{
     const x = new XMLHttpRequest();
-    x.open('PUT', sessionUri, true);
-    x.setRequestHeader('Content-Type', file.type || 'video/mp4');
-    x.upload.onprogress = e => { if(e.lengthComputable) onProgress(e.loaded/e.total); };
-    x.onload = () => (x.status >= 200 && x.status < 300) ? res(x) : rej(new Error('GCS PUT ' + x.status));
-    x.onerror = () => rej(new Error('Network error during upload'));
+    x.open('PUT',sessionUri,true);
+    x.setRequestHeader('Content-Type',file.type||'video/mp4');
+    x.upload.onprogress = e=>{ if(e.lengthComputable) onProgress(e.loaded/e.total); };
+    x.onload = ()=>(x.status>=200&&x.status<300)?res(x):rej(new Error('GCS PUT '+x.status));
+    x.onerror = ()=>rej(new Error('Network error'));
     x.send(file);
   });
 }
 
-// ── Trigger render via Supabase edge function ─────────────────
+// ── Trigger render ─────────────────────────────────────────
 async function triggerRender(id){
-  // First save any unsaved title
-  const titleEl = document.getElementById('title_' + id);
-  if(titleEl?.value.trim()){
-    await sbPatch(TABLE(), id, {title: titleEl.value.trim()});
-  }
-  // Save timings too
+  const titleEl = document.getElementById('title_'+id);
+  if(titleEl?.value.trim()) await sbPatch(TABLE(),id,{title:titleEl.value.trim()});
   await saveImages(id);
-
   toast('Starting render…');
-  await sbPatch(TABLE(), id, {status:'rendering'});
+  await sbPatch(TABLE(),id,{status:'rendering'});
   try{
-    const r = await fetch(`${SB_URL}/functions/v1/trigger-anchor`, {
-      method:'POST', headers:H,
-      body: JSON.stringify({record_id: id, language: LANG, step:'render'})
+    const r = await fetch(`${SB_URL}/functions/v1/trigger-anchor`,{
+      method:'POST',headers:H,
+      body:JSON.stringify({record_id:id,language:LANG,step:'render'})
     });
-    if(!r.ok) throw new Error('trigger ' + r.status + ': ' + await r.text());
+    if(!r.ok) throw new Error('trigger '+r.status+': '+await r.text());
     toast('Render started — check back in ~2 min');
-    setTimeout(load, 2000);
+    setTimeout(load,2000);
   }catch(err){
-    await sbPatch(TABLE(), id, {status:'error'});
-    toast('Render trigger failed: ' + err.message);
+    await sbPatch(TABLE(),id,{status:'error'});
+    toast('Render trigger failed: '+err.message);
   }
 }
 
-// ── Trigger publish ───────────────────────────────────────────
+// ── Trigger publish ────────────────────────────────────────
 async function triggerPublish(id){
   if(!confirm('Publish this video to YouTube?')) return;
   toast('Starting upload to YouTube…');
-  await sbPatch(TABLE(), id, {status:'publishing'});
+  await sbPatch(TABLE(),id,{status:'publishing'});
   try{
-    const r = await fetch(`${SB_URL}/functions/v1/trigger-anchor`, {
-      method:'POST', headers:H,
-      body: JSON.stringify({record_id: id, language: LANG, step:'upload'})
+    const r = await fetch(`${SB_URL}/functions/v1/trigger-anchor`,{
+      method:'POST',headers:H,
+      body:JSON.stringify({record_id:id,language:LANG,step:'upload'})
     });
-    if(!r.ok) throw new Error('trigger ' + r.status + ': ' + await r.text());
+    if(!r.ok) throw new Error('trigger '+r.status+': '+await r.text());
     toast('YouTube upload started — refresh in a few minutes');
-    setTimeout(load, 3000);
+    setTimeout(load,3000);
   }catch(err){
-    await sbPatch(TABLE(), id, {status:'rendered'});
-    toast('Publish trigger failed: ' + err.message);
+    await sbPatch(TABLE(),id,{status:'rendered'});
+    toast('Publish trigger failed: '+err.message);
   }
 }
 
-// ── GCS delete (post your confirmation, after published) ──────
+// ── GCS delete ─────────────────────────────────────────────
 async function deleteGCS(id){
-  if(!confirm('This will permanently delete all GCS files (recording, images, render) for this video. The YouTube video stays. Continue?')) return;
+  if(!confirm('Permanently delete all GCS files? YouTube video stays. Continue?')) return;
   toast('Deleting GCS files…');
   try{
-    const r = await fetch(`${SB_URL}/functions/v1/trigger-anchor`, {
-      method:'POST', headers:H,
-      body: JSON.stringify({record_id: id, language: LANG, step:'delete_gcs'})
+    const r = await fetch(`${SB_URL}/functions/v1/trigger-anchor`,{
+      method:'POST',headers:H,
+      body:JSON.stringify({record_id:id,language:LANG,step:'delete_gcs'})
     });
-    if(!r.ok) throw new Error('delete ' + r.status + ': ' + await r.text());
-    toast('GCS files deleted — storage freed ✓');
-    await sbPatch(TABLE(), id, {source_video_url: null, video_url: null, gcs_deleted: true});
-    setTimeout(load, 1500);
-  }catch(err){
-    toast('GCS delete failed: ' + err.message);
-  }
+    if(!r.ok) throw new Error('delete '+r.status+': '+await r.text());
+    toast('GCS files deleted ✓');
+    await sbPatch(TABLE(),id,{source_video_url:null,video_url:null,gcs_deleted:true});
+    setTimeout(load,1500);
+  }catch(err){ toast('GCS delete failed: '+err.message); }
 }
 
-// ── Upload recording modal ────────────────────────────────────
-function openUpload(){ document.getElementById('upOverlay').classList.add('show'); }
-function closeUpload(){ document.getElementById('upOverlay').classList.remove('show'); }
+// ── Upload modal ───────────────────────────────────────────
+function openUpload(){
+  setType('series');
+  document.getElementById('upOverlay').classList.add('show');
+}
+function closeUpload(){
+  document.getElementById('upOverlay').classList.remove('show');
+  document.getElementById('epFound').style.display = 'none';
+  document.getElementById('epError').style.display = 'none';
+}
 
-document.getElementById('upFile').addEventListener('change', e => {
+document.getElementById('upFile').addEventListener('change',e=>{
   const f = e.target.files[0];
-  document.getElementById('upFileNote').textContent = f ? `${(f.size/1048576).toFixed(1)} MB — ${f.name}` : '';
+  document.getElementById('upFileNote').textContent = f?`${(f.size/1048576).toFixed(1)} MB — ${f.name}`:'';
 });
 
 async function submitUpload(){
   const file = document.getElementById('upFile').files[0];
-  const wtitle = document.getElementById('upTitle').value.trim();
-  const module = document.getElementById('upModule').value.trim();
   if(!file){ toast('Choose a video file'); return; }
-  if(!wtitle){ toast('Add a title'); return; }
 
-  const btn = document.getElementById('upSubmit'); btn.disabled = true; setBar(0);
+  let title='', module='', episodeNumber=null;
+
+  if(VID_TYPE === 'series'){
+    const epNum = parseInt(document.getElementById('upEpisode').value);
+    if(!epNum){ toast('Enter an episode number'); return; }
+    // verify episode exists and get title
+    const rows = await sbGet(EP_TABLE(),{episode_number:`eq.${epNum}`,select:'title_tamil,title_english,module'});
+    if(!rows.length){ toast(`Episode ${epNum} not found`); return; }
+    const ep = rows[0];
+    title = LANG==='ta'
+      ? (ep.title_tamil||ep.title_english||`Episode ${epNum}`)
+      : (ep.title_english||ep.title_tamil||`Episode ${epNum}`);
+    module = document.getElementById('upModuleSeries').value.trim();
+    if(!module){ toast('Module is required'); return; }
+    episodeNumber = epNum;
+  } else {
+    title  = document.getElementById('upTitle').value.trim();
+    module = document.getElementById('upModuleStandalone').value.trim();
+    if(!title){
+      document.getElementById('titleError').style.display='block';
+      toast('Title is required for standalone videos');
+      return;
+    }
+    document.getElementById('titleError').style.display='none';
+    if(!module){ toast('Module is required'); return; }
+  }
+
+  const btn = document.getElementById('upSubmit'); btn.disabled=true; setBar(0);
   try{
-    // 1) mint GCS resumable upload session
     const sres = await fetch(`${SB_URL}/functions/v1/anchor-upload-url`,{
-      method:'POST', headers:H,
-      body: JSON.stringify({filename:file.name, content_type:file.type||'video/mp4'})
+      method:'POST',headers:H,
+      body:JSON.stringify({filename:file.name,content_type:file.type||'video/mp4'})
     });
-    if(!sres.ok) throw new Error('upload-url ' + sres.status + ': ' + await sres.text());
-    const {session_uri, object_url, gcs_path} = await sres.json();
+    if(!sres.ok) throw new Error('upload-url '+sres.status+': '+await sres.text());
+    const {session_uri,object_url,gcs_path} = await sres.json();
 
-    // 2) upload bytes to GCS
     try{
-      await gcsPut(session_uri, file, setBar);
+      await gcsPut(session_uri,file,setBar);
     }catch(putErr){
-      toast('Upload response blocked — verifying…');
+      toast('Verifying upload…');
       const vres = await fetch(`${SB_URL}/functions/v1/anchor-upload-url`,{
-        method:'POST', headers:H,
-        body:JSON.stringify({action:'verify', gcs_path})
+        method:'POST',headers:H,
+        body:JSON.stringify({action:'verify',gcs_path})
       });
       const v = vres.ok ? await vres.json() : {exists:false};
-      if(!(v.exists && Number(v.size) === file.size)) throw putErr;
+      if(!(v.exists && Number(v.size)===file.size)) throw putErr;
     }
 
-    // 3) create the Supabase record
-    await sbInsert(TABLE(), {
-      working_title: wtitle,
-      title: wtitle,
+    const record = {
+      working_title:    title,
+      title:            title,
       source_video_url: object_url,
-      module: module || null,
-      image_overlays: [],
-      status: 'pending'
-    });
+      module:           module,
+      image_overlays:   [],
+      video_type:       VID_TYPE,
+      status:           'pending',
+    };
+    if(episodeNumber) record.episode_number = episodeNumber;
 
-    toast('Uploaded — now add your images and set timestamps');
+    await sbInsert(TABLE(), record);
+
+    toast('Uploaded — add your images and timestamps, then render');
     closeUpload();
-    document.getElementById('upFile').value = '';
-    document.getElementById('upTitle').value = '';
-    document.getElementById('upModule').value = '';
+    // Reset fields
+    document.getElementById('upFile').value='';
+    document.getElementById('upEpisode').value='';
+    document.getElementById('upModuleSeries').value='';
+    document.getElementById('upTitle').value='';
+    document.getElementById('upModuleStandalone').value='';
     load();
-  }catch(err){ toast('Upload failed: ' + (err.message||err)); }
+  }catch(err){ toast('Upload failed: '+(err.message||err)); }
   finally{
-    btn.disabled = false;
-    const bar = document.getElementById('upBar');
-    bar.style.display = 'none';
-    bar.querySelector('i').style.width = '30%';
+    btn.disabled=false;
+    const bar=document.getElementById('upBar');
+    bar.style.display='none';
+    bar.querySelector('i').style.width='30%';
   }
 }
 
