@@ -1,4 +1,4 @@
-name: Anchor Render (On Camera)
+name: Anchor Render (On Camera YouTube Long)
 on:
   workflow_dispatch:
     inputs:
@@ -12,12 +12,6 @@ on:
         default: 'en'
         type: choice
         options: [ta, en]
-      studio_mode:
-        description: 'Override studio mode (blank = use record setting)'
-        required: false
-        default: ''
-        type: choice
-        options: ['', real_room, green]
 jobs:
   render:
     runs-on: ubuntu-latest
@@ -31,7 +25,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-anchor-render-v1
+          key: ${{ runner.os }}-pip-anchor-render-v2
       - name: Install system deps
         run: |
           sudo apt-get update -qq
@@ -39,13 +33,12 @@ jobs:
           ffmpeg -version | head -1
       - name: Install Python deps
         run: pip install requests Pillow google-auth cryptography
-      - name: Render studio video
+      - name: Render video
         env:
           SUPABASE_URL:                        ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY:                        ${{ secrets.SUPABASE_KEY }}
           GOOGLE_APPLICATION_CREDENTIALS_JSON: ${{ secrets.GOOGLE_APPLICATION_CREDENTIALS_JSON }}
           RECORD_ID:                           ${{ inputs.record_id }}
           LANGUAGE:                            ${{ inputs.language }}
-          STUDIO_MODE:                         ${{ inputs.studio_mode }}
           PYTHONUNBUFFERED:                    '1'
         run: python new_youtube/scripts/anchor_render.py
