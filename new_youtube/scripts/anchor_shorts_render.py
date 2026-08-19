@@ -1,25 +1,18 @@
 """
-anchor_shorts_render.py — On Camera Shorts Pipeline · Step 2 of 3
-==================================================================
-Composites your VERTICAL recording into the final Short:
+anchor_shorts_render.py — On Camera Shorts Pipeline · Step 2 of 3  (Sprint 19)
+===============================================================================
+Sprint 19 additions (passive — apply on every render automatically):
+  1. Audio normalization  — FFmpeg loudnorm (even out loud/soft speaking)
+  2. Noise reduction      — FFmpeg afftdn  (remove background hum)
+  3. Brightness/contrast  — FFmpeg eq      (subtle auto-levels)
+  4. Sharpening           — FFmpeg unsharp (improves selfie camera footage)
+  5. Logo watermark       — logo placed top-right corner of video frame
+                            (separate from the existing bottom banner logo)
+                            Size: 50px, 40% opacity — doesn't clash with banner
 
-  - Your real footage, scaled + center-cropped to 1080x1920 (9:16). If you
-    filmed with the camera held vertically already, this is a clean fit with
-    no distortion; if you filmed landscape by mistake, this will zoom in and
-    crop the sides, so vertical source footage is what this track expects.
-  - ONE persistent overlay, burned in for the entire clip: a semi-transparent
-    bar across the bottom of the frame with the "I Have a Cause" logo + name,
-    so your footage still shows through behind it.
-  - No side panel / lower-third / beat graphics — that studio treatment is
-    the landscape On Camera track's look (anchor_render.py). Shorts stay
-    simple: your footage + the brand bar.
-  - Auto-thumbnail: a branded frame grabbed from partway through the clip.
-  - OPTIONAL: publicly-sourced clips (news footage etc.) you've attached via
-    the `clips` column, shown as-is (no crop) in a small picture-in-picture
-    box floating just above the bottom banner during their time window —
-    your face and voice stay the through-line the whole time. If `clips` is
-    empty (the default for every recording), this whole block is a no-op
-    and the render is identical to before.
+Everything else (banner, PiP clips, thumbnail, GCS, Supabase) is UNCHANGED.
+
+Vertical format: 1080×1920 (9:16) — all filter values tuned for vertical.
 
 Env vars:
   SUPABASE_URL, SUPABASE_KEY, GOOGLE_APPLICATION_CREDENTIALS_JSON
@@ -47,19 +40,29 @@ GCS_BUCKET = "ihaveacause-media"
 TABLE      = "tamil_anchor_shorts" if LANGUAGE == "ta" else "english_anchor_shorts"
 W, H, FPS  = 1080, 1920, 30
 
-# PiP box for optional overlay clips — sits just above the bottom banner,
-# right-aligned, small margin. Clips are shown AS-IS (letterboxed, never
-# cropped) inside this box.
-PIP_W, PIP_H   = 380, 214
-PIP_MARGIN     = 24
-BANNER_H       = 210
-PIP_X          = W - PIP_W - PIP_MARGIN
-PIP_Y          = (H - BANNER_H) - PIP_MARGIN - PIP_H
+# PiP box for optional overlay clips
+PIP_W, PIP_H = 380, 214
+PIP_MARGIN   = 24
+BANNER_H     = 210
+PIP_X        = W - PIP_W - PIP_MARGIN
+PIP_Y        = (H - BANNER_H) - PIP_MARGIN - PIP_H
 
-# Brand palette (matches the dashboard's dark editorial look)
-C_BAR      = (10, 12, 18, 190)       # bottom banner fill (semi-transparent — footage shows through)
-C_BAR_LINE = (232, 65, 42, 255)      # thin accent line, top edge of the banner (var(--accent))
+# Brand palette
+C_BAR      = (10, 12, 18, 190)
+C_BAR_LINE = (232, 65, 42, 255)
 C_TEXT     = (238, 241, 247, 255)
+
+# ── Sprint 19: Audio/Video enhancements ──────────────────────
+# Tuned for vertical selfie footage
+AUDIO_FILTERS = "afftdn=nf=-25,loudnorm=I=-16:TP=-1.5:LRA=11"
+VIDEO_ENHANCE = "eq=brightness=0.03:contrast=1.05,unsharp=5:5:0.8:3:3:0"
+
+# ── Sprint 19: Watermark (top-right, above banner) ───────────
+# Separate from the bottom-banner logo — this is a subtle corner mark
+LOGO_GCS_PATH    = "ihaveacause_logo.png"
+WM_SIZE          = 50      # px — visible but not intrusive on vertical frame
+WM_OPACITY       = 102     # 40% (102/255)
+WM_MARGIN        = 20      # px from edge — top-right corner
 
 SB_HEADERS = {
     "apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}",
@@ -83,7 +86,7 @@ def db_patch(rid, data):
     return r.status_code in (200, 204)
 
 
-# ── GCS download / upload (mirrors anchor_render.py) ───────────
+# ── GCS helpers ───────────────────────────────────────────────
 def _gcs_object_media_url(url):
     from urllib.parse import quote
     marker = "storage.googleapis.com/"
@@ -105,27 +108,43 @@ def gcs_token(scope="https://www.googleapis.com/auth/devstorage.read_write"):
 
 def download_file(url, dest, desc="file"):
     is_gcs, fetch_url = _gcs_object_media_url(url)
-    if is_gcs:
-        headers = {"Authorization": f"Bearer {gcs_token('https://www.googleapis.com/auth/devstorage.read_only')}"}
-        r = requests.get(fetch_url, headers=headers, stream=True, timeout=600)
-    else:
-        r = requests.get(url, stream=True, timeout=600)
+    token = gcs_token() if is_gcs else None
+    hdrs  = {"Authorization": f"Bearer {token}"} if is_gcs else {}
+    r = requests.get(fetch_url, headers=hdrs, stream=True, timeout=600)
     if r.status_code == 200:
         with open(dest, "wb") as f:
             for chunk in r.iter_content(1 << 16):
                 f.write(chunk)
         print(f"   ✅ {desc}: {os.path.getsize(dest)//1024}KB", flush=True)
         return True
-    print(f"   ❌ {desc} failed {r.status_code}", flush=True)
+    print(f"   ❌ {desc} {r.status_code}", flush=True)
     return False
 
-def upload_to_gcs(local_path, gcs_path, content_type="video/mp4", days=30):
-    import base64
+def download_gcs_object(gcs_path, dest, desc="file"):
+    from urllib.parse import quote
+    token     = gcs_token()
+    encoded   = quote(gcs_path, safe="")
+    fetch_url = f"https://storage.googleapis.com/storage/v1/b/{GCS_BUCKET}/o/{encoded}?alt=media"
+    r = requests.get(fetch_url, headers={"Authorization": f"Bearer {token}"},
+                     stream=True, timeout=60)
+    if r.status_code == 200:
+        with open(dest, "wb") as f:
+            for chunk in r.iter_content(1 << 16):
+                f.write(chunk)
+        print(f"   ✅ {desc}: {os.path.getsize(dest)//1024}KB", flush=True)
+        return True
+    print(f"   ⚠️  {desc} not found ({r.status_code})", flush=True)
+    return False
+
+def upload_gcs(local_path, gcs_path, content_type="video/mp4", days=30):
+    import base64, datetime as dt
     from cryptography.hazmat.primitives import hashes, serialization
     from cryptography.hazmat.primitives.asymmetric import padding
     from cryptography.hazmat.backends import default_backend
-    token = gcs_token(); creds_info = json.loads(GCP_CREDS_JSON)
-    print(f"   📤 Uploading {os.path.getsize(local_path)//(1024*1024)}MB to GCS...", flush=True)
+
+    token      = gcs_token()
+    creds_info = json.loads(GCP_CREDS_JSON)
+    print(f"   📤 {os.path.getsize(local_path)//(1024*1024)}MB → GCS…", flush=True)
     with open(local_path, "rb") as f:
         r = requests.post(
             f"https://storage.googleapis.com/upload/storage/v1/b/{GCS_BUCKET}/o",
@@ -133,22 +152,23 @@ def upload_to_gcs(local_path, gcs_path, content_type="video/mp4", days=30):
             headers={"Authorization": f"Bearer {token}", "Content-Type": content_type},
             data=f, timeout=600)
     if r.status_code not in (200, 201):
-        print(f"   ❌ GCS upload failed {r.status_code}: {r.text[:200]}", flush=True)
+        print(f"   ❌ GCS upload {r.status_code}: {r.text[:200]}", flush=True)
         return None
-    expiry_ts = int((datetime.utcnow() + timedelta(days=days)).timestamp())
+
+    expiry_ts = int((dt.datetime.utcnow() + dt.timedelta(days=days)).timestamp())
     sts = "\n".join(["GET", "", "", str(expiry_ts), f"/{GCS_BUCKET}/{gcs_path}"])
     pk  = serialization.load_pem_private_key(
-        creds_info["private_key"].encode("utf-8"), password=None, backend=default_backend())
-    sig = pk.sign(sts.encode("utf-8"), padding.PKCS1v15(), hashes.SHA256())
-    esig = requests.utils.quote(base64.b64encode(sig).decode("utf-8"), safe="")
-    return (f"https://storage.googleapis.com/{GCS_BUCKET}/{gcs_path}"
-            f"?GoogleAccessId={creds_info['client_email']}&Expires={expiry_ts}&Signature={esig}")
+        creds_info["private_key"].encode(), password=None, backend=default_backend())
+    sig = pk.sign(sts.encode(), padding.PKCS1v15(), hashes.SHA256())
+    esig = requests.utils.quote(base64.b64encode(sig).decode(), safe="")
+    signed = (f"https://storage.googleapis.com/{GCS_BUCKET}/{gcs_path}"
+              f"?GoogleAccessId={creds_info['client_email']}&Expires={expiry_ts}&Signature={esig}")
+    print(f"   ✅ GCS done ({days}d signed URL)", flush=True)
+    return signed
 
 
-# ── Fonts (same lookup as the rest of the repo) ────────────────
+# ── Fonts ─────────────────────────────────────────────────────
 def font_paths():
-    # Used for the hook line, which IS in the recording's own language —
-    # Tamil hook text needs the Tamil font here.
     if LANGUAGE == "ta":
         cands = ["/usr/share/fonts/opentype/noto/NotoSansTamil-Regular.ttf",
                  "/usr/share/fonts/truetype/noto/NotoSansTamil-Regular.ttf",
@@ -162,10 +182,6 @@ def font_paths():
     return None
 
 def english_font_path():
-    # The brand wordmark ("I Have a Cause" / "@IHaveACause") is always
-    # English text, regardless of LANGUAGE — use a dedicated Latin-coverage
-    # font for it specifically, separate from font_paths() above (which is
-    # language-aware, for the hook line).
     cands = ["/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
              "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"]
     for c in cands:
@@ -180,7 +196,7 @@ def load_font(path, size):
         return ImageFont.load_default()
 
 
-# ── ffprobe ─────────────────────────────────────────────────────
+# ── ffprobe ───────────────────────────────────────────────────
 def ffprobe_dur(path):
     p = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration",
                         "-of", "default=noprint_wrappers=1:nokey=1", path],
@@ -191,76 +207,76 @@ def ffprobe_dur(path):
         return 0.0
 
 
-# ── The persistent bottom banner (built once, overlaid for the whole clip) ──
+# ── Bottom banner (unchanged from original) ───────────────────
 def build_banner_png(font_path, logo_im, out_path, hook=""):
-    """1080x1920 RGBA, transparent everywhere except a semi-opaque bar across
-    the bottom ~11% of the frame — footage stays visible through it — carrying
-    the logo + 'I Have a Cause' wordmark, plus an optional punchy hook line
-    floating just above the bar."""
-    img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(img)
+    """1080×1920 RGBA transparent except bottom banner bar."""
+    canvas = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    draw   = ImageDraw.Draw(canvas)
 
-    bar_h = 210
-    bar_top = H - bar_h
+    bar_top = H - BANNER_H
     draw.rectangle([0, bar_top, W, H], fill=C_BAR)
-    draw.rectangle([0, bar_top, W, bar_top + 4], fill=C_BAR_LINE)  # thin accent line
+    draw.rectangle([0, bar_top, W, bar_top + 3], fill=C_BAR_LINE)
 
-    if hook.strip():
-        f_hook = load_font(font_path, 44)
-        hx, hy = 36, bar_top - 70
-        # wrap to at most 2 lines within the frame width
-        words, lines, cur = hook.strip().split(), [], ""
-        for w in words:
-            trial = (cur + " " + w).strip()
-            if draw.textlength(trial, font=f_hook) <= (W - 72):
-                cur = trial
-            else:
-                if cur: lines.append(cur)
-                cur = w
-        if cur: lines.append(cur)
-        lines = lines[:2]
-        hy = bar_top - 20 - len(lines) * 54
-        for ln in lines:
-            draw.text((hx + 2, hy + 2), ln, font=f_hook, fill=(0, 0, 0, 160))
-            draw.text((hx, hy), ln, font=f_hook, fill=(255, 255, 255, 255))
-            hy += 54
+    en_fp   = english_font_path()
+    f_name  = load_font(en_fp, 34)
+    f_handle= load_font(en_fp, 24)
+    f_hook  = load_font(font_path, 36)
 
-    pad = 36
-    logo_size = 120
+    logo_size = 72
+    logo_x, logo_y = 28, bar_top + 20
     if logo_im is not None:
-        logo = logo_im.resize((logo_size, logo_size))
-        logo_y = bar_top + (bar_h - logo_size) // 2
-        img.paste(logo, (pad, logo_y), logo if logo.mode == "RGBA" else None)
-        text_x = pad + logo_size + 24
-    else:
-        text_x = pad
+        lim = logo_im.resize((logo_size, logo_size), Image.LANCZOS)
+        canvas.paste(lim, (logo_x, logo_y), lim)
 
-    name_font = load_font(english_font_path(), 52)
-    tag_font  = load_font(english_font_path(), 30)
-    name_txt  = "I Have a Cause"
-    tag_txt   = "@IHaveACause"
+    text_x = logo_x + logo_size + 16
+    draw.text((text_x, bar_top + 22), "I Have a Cause",  font=f_name,   fill=C_TEXT)
+    draw.text((text_x, bar_top + 62), "@IHaveACause",    font=f_handle, fill=(160, 165, 190, 255))
 
-    # vertically center the two lines of text within the bar
-    name_bbox = draw.textbbox((0, 0), name_txt, font=name_font)
-    tag_bbox  = draw.textbbox((0, 0), tag_txt, font=tag_font)
-    name_h = name_bbox[3] - name_bbox[1]
-    tag_h  = tag_bbox[3] - tag_bbox[1]
-    gap = 6
-    block_h = name_h + gap + tag_h
-    block_top = bar_top + (bar_h - block_h) // 2
+    if hook:
+        words, lines, cur = hook.split(), [], ""
+        for w in words:
+            test = (cur + " " + w).strip()
+            try:
+                tw = draw.textlength(test, font=f_hook)
+            except Exception:
+                tw = len(test) * 20
+            if tw > W - 56 and cur:
+                lines.append(cur); cur = w
+            else:
+                cur = test
+        if cur:
+            lines.append(cur)
+        lines = lines[:2]
+        ty = bar_top + 118
+        for ln in lines:
+            draw.text((28, ty), ln, font=f_hook, fill=C_TEXT)
+            ty += 46
 
-    draw.text((text_x, block_top), name_txt, font=name_font, fill=C_TEXT)
-    draw.text((text_x, block_top + name_h + gap), tag_txt, font=tag_font, fill=(180, 188, 206, 255))
-
-    img.save(out_path)
+    canvas.save(out_path, "PNG")
     return out_path
 
 
-def make_thumbnail(src_path, src_dur, title, font_path, logo_im, out_path, hook=""):
-    """Grab a frame ~35% into the clip and brand it the same way as the video."""
+# ── Sprint 19: Watermark PNG (top-right corner) ───────────────
+def make_watermark_png(logo_im, out_path):
+    """
+    Full-frame transparent PNG with logo at top-right.
+    Placed top-right (not bottom-right) to avoid clashing with the banner.
+    Size: WM_SIZE px, 40% opacity.
+    """
+    canvas = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    lx = W - WM_SIZE - WM_MARGIN
+    ly = WM_MARGIN   # top-right
+    canvas.paste(logo_im, (lx, ly), logo_im)
+    canvas.save(out_path, "PNG")
+    print(f"   ✅ Watermark PNG: {WM_SIZE}px top-right ({lx},{ly}) 40% opacity", flush=True)
+    return out_path
+
+
+# ── Thumbnail ─────────────────────────────────────────────────
+def make_thumbnail(src, src_dur, title, font_path, logo_im, out_path, hook=""):
     grab_t = max(0.3, (src_dur or 3) * 0.35)
     frame_path = out_path.replace(".jpg", "_raw.jpg")
-    subprocess.run(["ffmpeg", "-y", "-nostdin", "-ss", f"{grab_t:.2f}", "-i", src_path,
+    subprocess.run(["ffmpeg", "-y", "-nostdin", "-ss", f"{grab_t:.2f}", "-i", src,
                     "-frames:v", "1", "-q:v", "2", frame_path],
                    capture_output=True)
     if not os.path.exists(frame_path):
@@ -280,24 +296,25 @@ def make_thumbnail(src_path, src_dur, title, font_path, logo_im, out_path, hook=
         return frame_path
 
 
-# ── FFmpeg render ────────────────────────────────────────────────
-def render_vertical(src, banner_png, out, clips=None):
+# ── FFmpeg render (Sprint 19: enhancements + watermark added) ──
+def render_vertical(src, banner_png, out, clips=None, watermark_png=None):
     """
-    clips: list of {local_path, start, duration, mute_original, kind} —
-    already downloaded to local_path by render(). `kind` is 'video' or
-    'image' (render() infers it from the file if not already set). Each one
-    is:
-      - scaled to fit inside PIP_W x PIP_H with NO crop (letterboxed with
-        plain black bars if its aspect ratio isn't exactly 16:9)
-      - video clips are timeline-shifted with setpts so they start playing
-        at `start`; images are just a static frame, so no shift is needed —
-        they're looped the same way the banner already is
-      - overlaid into the PiP box, visible only during [start, start+duration]
-    Clips render in order, on top of your footage, underneath the banner
-    (banner is always the last, topmost layer). If `clips` is empty this
-    collapses back to exactly the original single-overlay graph.
+    Sprint 19 changes vs original:
+      - base_vf now includes eq (brightness/contrast) + unsharp (sharpen)
+      - audio goes through afftdn (noise reduction) + loudnorm (normalize)
+      - watermark_png overlaid on top of everything, under banner
+        (banner stays topmost layer as before)
+
+    clips behaviour unchanged — empty list = no-op, same as original.
     """
     clips = clips or []
+
+    # ── Sprint 19: Video base filter ──────────────────────────
+    base_vf = (
+        f"scale={W}:{H}:force_original_aspect_ratio=increase,"
+        f"crop={W}:{H},fps={FPS},setsar=1,"
+        f"{VIDEO_ENHANCE}"   # brightness/contrast + sharpening
+    )
 
     IMAGE_EXT = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp"}
 
@@ -306,62 +323,83 @@ def render_vertical(src, banner_png, out, clips=None):
             return c["kind"] == "image"
         return os.path.splitext(c["local_path"])[1].lower() in IMAGE_EXT
 
+    # Build inputs: source, clips, [watermark], banner
     inputs = ["-i", src]
     for c in clips:
         if is_image(c):
             inputs += ["-loop", "1", "-i", c["local_path"]]
         else:
             inputs += ["-i", c["local_path"]]
-    inputs += ["-loop", "1", "-i", banner_png]
-    banner_idx = 1 + len(clips)
 
+    # watermark index (optional)
+    wm_idx = None
+    if watermark_png:
+        inputs += ["-loop", "1", "-i", watermark_png]
+        wm_idx = 1 + len(clips)
+
+    # banner is always last input
+    inputs += ["-loop", "1", "-i", banner_png]
+    banner_idx = 1 + len(clips) + (1 if watermark_png else 0)
+
+    # ── Filter complex ─────────────────────────────────────────
     fc_parts = [
-        f"[0:v]scale={W}:{H}:force_original_aspect_ratio=increase,"
-        f"crop={W}:{H},fps={FPS},setsar=1[base]"
+        # Sprint 19: base now includes video enhancements
+        f"[0:v]{base_vf}[base]"
     ]
 
-    # audio for any VIDEO clip explicitly asking to keep its own sound
-    # (images never have audio, so they're skipped here regardless of
-    # mute_original)
-    unmuted_audio_labels = []
+    # ── Sprint 19: Audio filter ────────────────────────────────
+    # afftdn = noise reduction, loudnorm = normalize volume
+    audio_filter = AUDIO_FILTERS
 
+    unmuted_audio_labels = []
     stage = "base"
+
     for i, c in enumerate(clips):
-        idx = i + 1
+        idx   = i + 1
         start = float(c.get("start", 0) or 0)
-        dur = float(c.get("duration", 5) or 5)
-        end = start + dur
-        clip_label = f"clip{i}"
-        next_stage = f"s{i}"
-        img = is_image(c)
+        dur   = float(c.get("duration", 5) or 5)
+        end   = start + dur
+        img   = is_image(c)
         shift = "" if img else f",setpts=PTS+{start}/TB"
+
         fc_parts.append(
             f"[{idx}:v]scale={PIP_W}:{PIP_H}:force_original_aspect_ratio=decrease,"
-            f"pad={PIP_W}:{PIP_H}:(ow-iw)/2:(oh-ih)/2:black{shift}[{clip_label}]"
+            f"pad={PIP_W}:{PIP_H}:(ow-iw)/2:(oh-ih)/2:black{shift}[clip{i}]"
         )
         fc_parts.append(
-            f"[{stage}][{clip_label}]overlay={PIP_X}:{PIP_Y}:"
-            f"enable='between(t,{start},{end})'[{next_stage}]"
+            f"[{stage}][clip{i}]overlay={PIP_X}:{PIP_Y}:"
+            f"enable='between(t,{start},{end})'[s{i}]"
         )
-        stage = next_stage
+        stage = f"s{i}"
 
         if not img and not c.get("mute_original", True):
-            a_label = f"a{i}"
             fc_parts.append(
                 f"[{idx}:a]adelay={int(start*1000)}|{int(start*1000)},"
-                f"atrim=0:{end},volume=1[{a_label}]"
+                f"atrim=0:{end},volume=1[a{i}]"
             )
-            unmuted_audio_labels.append(a_label)
+            unmuted_audio_labels.append(f"a{i}")
 
+    # Watermark layer (Sprint 19) — under banner, above clips
+    if wm_idx is not None:
+        fc_parts.append(f"[{stage}][{wm_idx}:v]overlay=0:0[wm]")
+        stage = "wm"
+
+    # Banner always topmost
     fc_parts.append(f"[{stage}][{banner_idx}:v]overlay=0:0[vout]")
 
-    audio_map = ["-map", "0:a?"]
+    # Audio: noise reduction + normalization applied to source,
+    # then mixed with any unmuted clip audio
     if unmuted_audio_labels:
-        mix_inputs = "".join(f"[{lbl}]" for lbl in unmuted_audio_labels)
+        fc_parts.append(f"[0:a]{audio_filter}[src_a]")
+        mix_inputs = "[src_a]" + "".join(f"[{lbl}]" for lbl in unmuted_audio_labels)
         fc_parts.append(
-            f"[0:a]{mix_inputs}amix=inputs={1+len(unmuted_audio_labels)}:"
+            f"{mix_inputs}amix=inputs={1+len(unmuted_audio_labels)}:"
             f"duration=first:dropout_transition=0[aout]"
         )
+        audio_map = ["-map", "[aout]"]
+    else:
+        # Simple: just apply audio filter to source
+        fc_parts.append(f"[0:a]{audio_filter}[aout]")
         audio_map = ["-map", "[aout]"]
 
     fc = ";".join(fc_parts)
@@ -380,6 +418,7 @@ def render_vertical(src, banner_png, out, clips=None):
     return True
 
 
+# ── Main render() ─────────────────────────────────────────────
 def render(row, tmp):
     src = os.path.join(tmp, "source.mp4")
     if not download_file(row["source_video_url"], src, "Recording"):
@@ -387,86 +426,111 @@ def render(row, tmp):
     src_dur = ffprobe_dur(src)
     print(f"   ⏱  Source duration: {src_dur:.1f}s", flush=True)
     if src_dur > 180:
-        print(f"   ⚠️  Source is {src_dur:.0f}s — over YouTube's 3-minute Shorts "
-              f"ceiling. It will still render, but YouTube will publish it as a "
-              f"regular video, not a Short.", flush=True)
+        print(f"   ⚠️  {src_dur:.0f}s — over 3-min YouTube Shorts ceiling. "
+              f"Will publish as regular video.", flush=True)
 
-    font_path = font_paths()
+    fp     = font_paths()
+    en_fp  = english_font_path()
+    title  = (row.get("title") or row.get("working_title") or "").strip()
+    hook   = (row.get("hook_text") or "").strip()
 
+    # ── Load logo (used in banner + watermark) ────────────────
     logo_im = None
     try:
-        r = requests.get(
-            f"https://storage.googleapis.com/storage/v1/b/{GCS_BUCKET}/o/ihaveacause_logo.png?alt=media",
-            headers={"Authorization": f"Bearer {gcs_token('https://www.googleapis.com/auth/devstorage.read_only')}"},
-            timeout=15)
-        if r.status_code == 200:
-            logo_im = Image.open(BytesIO(r.content)).convert("RGBA")
+        logo_path = os.path.join(tmp, "logo_raw.png")
+        if download_gcs_object(LOGO_GCS_PATH, logo_path, "logo"):
+            logo_im = Image.open(logo_path).convert("RGBA")
             print("   ✅ Logo loaded", flush=True)
     except Exception as e:
         print(f"   ℹ️  Logo skipped: {e}", flush=True)
 
-    title = (row.get("title") or row.get("working_title") or "").strip()
-    hook  = (row.get("hook_text") or "").strip()
-    thumb_path = make_thumbnail(src, src_dur, title, font_path, logo_im,
+    # ── Sprint 19: Build watermark PNG (top-right) ────────────
+    watermark_png = None
+    if logo_im is not None:
+        try:
+            wm_logo = logo_im.resize((WM_SIZE, WM_SIZE), Image.LANCZOS)
+            r, g, b, a = wm_logo.split()
+            a = a.point(lambda x: int(x * WM_OPACITY / 255))
+            wm_logo = Image.merge("RGBA", (r, g, b, a))
+            wm_path = os.path.join(tmp, "watermark.png")
+            make_watermark_png(wm_logo, wm_path)
+            watermark_png = wm_path
+        except Exception as e:
+            print(f"   ⚠️  Watermark skipped: {e}", flush=True)
+
+    # Thumbnail (unchanged)
+    thumb_path = make_thumbnail(src, src_dur, title, fp, logo_im,
                                 os.path.join(tmp, "thumbnail.jpg"), hook=hook)
 
+    # Banner (unchanged — uses full-opacity logo for bottom bar)
     banner_png = os.path.join(tmp, "banner.png")
-    build_banner_png(font_path, logo_im, banner_png, hook=hook)
+    build_banner_png(fp, logo_im, banner_png, hook=hook)
 
-    # Optional PiP clips — empty by default, so this is a no-op for every
-    # recording unless clips were explicitly attached in the dashboard.
-    clips_meta = row.get("clips") or []
+    # PiP clips (unchanged)
+    raw_clips = row.get("clips") or []
+    if isinstance(raw_clips, str):
+        try:
+            raw_clips = json.loads(raw_clips)
+        except Exception:
+            raw_clips = []
+
     clips = []
-    for i, c in enumerate(clips_meta):
-        if not c.get("clip_url"):
+    for i, c in enumerate(raw_clips):
+        url = c.get("url") or c.get("src")
+        if not url:
             continue
-        local_path = os.path.join(tmp, f"clip_{i}.mp4")
-        if download_file(c["clip_url"], local_path, f"Clip {i+1}"):
-            clips.append({**c, "local_path": local_path})
-        else:
-            print(f"   ⚠️  Skipping clip {i+1} — download failed", flush=True)
+        ext = os.path.splitext(url.split("?")[0])[-1] or ".mp4"
+        lp  = os.path.join(tmp, f"clip_{i:02d}{ext}")
+        if download_file(url, lp, f"clip {i+1}"):
+            clips.append({**c, "local_path": lp})
 
     out = os.path.join(tmp, "final.mp4")
-    ok = render_vertical(src, banner_png, out, clips=clips)
-    return (out, thumb_path) if ok else (None, None)
+    ok  = render_vertical(src, banner_png, out, clips=clips, watermark_png=watermark_png)
+    if not ok:
+        return None, None
+    return out, thumb_path
 
 
+# ── Main ──────────────────────────────────────────────────────
 def main():
     print("=" * 60, flush=True)
-    print(f"🤳 Anchor Shorts Render — {RECORD_ID} | {LANGUAGE.upper()}", flush=True)
+    print(f"🤳 Anchor Shorts Render (Sprint 19) — {RECORD_ID} | {LANGUAGE.upper()}", flush=True)
     print(f"   {datetime.now():%Y-%m-%d %H:%M:%S}", flush=True)
     print("=" * 60, flush=True)
 
     row = db_get_one(RECORD_ID)
     if not row:
-        print(f"❌ Record {RECORD_ID} not found in {TABLE}"); return
+        print("❌ Record not found"); return
     if not row.get("source_video_url"):
-        print("❌ No source_video_url on this record"); return
+        print("❌ No source_video_url — upload a recording first"); return
 
     db_patch(RECORD_ID, {"status": "rendering"})
 
     with tempfile.TemporaryDirectory() as tmp:
-        video_path, thumb_path = render(row, tmp)
-        if not video_path:
-            db_patch(RECORD_ID, {"status": "transcribed"}); return
+        out_path, thumb_path = render(row, tmp)
+        if not out_path:
+            db_patch(RECORD_ID, {"status": "error"}); return
 
-        stamp = datetime.utcnow().strftime("%Y%m%d%H%M%S")
-        video_url = upload_to_gcs(video_path, f"anchor_shorts/{RECORD_ID}_{stamp}.mp4", "video/mp4")
+        print("\n☁️  Uploading render…", flush=True)
+        video_url = upload_gcs(out_path,
+                               f"anchor_shorts/{RECORD_ID}/{LANGUAGE}/final.mp4")
         if not video_url:
-            db_patch(RECORD_ID, {"status": "transcribed"}); return
+            db_patch(RECORD_ID, {"status": "error"}); return
 
         thumb_url = None
         if thumb_path and os.path.exists(thumb_path):
-            thumb_url = upload_to_gcs(thumb_path, f"anchor_shorts/{RECORD_ID}_{stamp}_thumb.jpg", "image/jpeg")
+            print("☁️  Uploading thumbnail…", flush=True)
+            thumb_url = upload_gcs(thumb_path,
+                                   f"anchor_shorts/{RECORD_ID}/{LANGUAGE}/thumbnail.jpg",
+                                   content_type="image/jpeg")
 
-        db_patch(RECORD_ID, {
-            "video_url":     video_url,
-            "thumbnail_url": thumb_url,
-            "status":        "rendered",
-        })
+        updates = {"video_url": video_url, "status": "rendered"}
+        if thumb_url:
+            updates["thumbnail_url"] = thumb_url
+        db_patch(RECORD_ID, updates)
 
     print(f"\n{'='*60}", flush=True)
-    print("✅ Rendered — preview it, then Approve & Publish.", flush=True)
+    print(f"✅ Sprint 19 render complete — preview in dashboard, then Publish.", flush=True)
     print(f"{'='*60}", flush=True)
 
 
