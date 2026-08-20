@@ -47,8 +47,8 @@ LOGO_OPACITY_VIDEO = 102      # 40% opacity (102/255)
 LOGO_MARGIN        = 20
 
 # Audio/Video enhancements (Sprint 18)
-AUDIO_FILTERS = "afftdn=nf=-25,loudnorm=I=-16:TP=-1.5:LRA=11"
-VIDEO_ENHANCE = "eq=brightness=0.03:contrast=1.05,unsharp=5:5:0.8:3:3:0"
+AUDIO_FILTERS = "afftdn=nf=-25,dynaudnorm=f=150:g=15"
+VIDEO_ENHANCE = "eq=brightness=0.03:contrast=1.05,unsharp=3:3:0.5:3:3:0"
 
 # ── Supabase ──────────────────────────────────────────────────
 SB_HDR = {
