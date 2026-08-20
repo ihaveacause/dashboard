@@ -54,8 +54,8 @@ C_TEXT     = (238, 241, 247, 255)
 
 # ── Sprint 19: Audio/Video enhancements ──────────────────────
 # Tuned for vertical selfie footage
-AUDIO_FILTERS = "afftdn=nf=-25,dynaudnorm=f=150:g=15"
-VIDEO_ENHANCE = "eq=brightness=0.03:contrast=1.05,unsharp=3:3:0.5:3:3:0"
+AUDIO_FILTERS = "dynaudnorm=f=150:g=15"
+VIDEO_ENHANCE = "eq=brightness=0.03:contrast=1.05"
 
 # ── Sprint 19: Watermark (top-right, above banner) ───────────
 # Separate from the bottom-banner logo — this is a subtle corner mark
@@ -252,6 +252,20 @@ def build_banner_png(font_path, logo_im, out_path, hook=""):
             draw.text((28, ty), ln, font=f_hook, fill=C_TEXT)
             ty += 46
 
+    # Sprint 19: bake watermark logo into banner (top-right corner of full frame)
+    # This avoids a separate FFmpeg overlay input which can cause hangs
+    if logo_im is not None:
+        try:
+            wm = logo_im.resize((WM_SIZE, WM_SIZE), Image.LANCZOS)
+            r2, g2, b2, a2 = wm.split()
+            a2 = a2.point(lambda x: int(x * WM_OPACITY / 255))
+            wm = Image.merge("RGBA", (r2, g2, b2, a2))
+            lx = W - WM_SIZE - WM_MARGIN
+            ly = WM_MARGIN
+            canvas.paste(wm, (lx, ly), wm)
+        except Exception as e:
+            print(f"   ⚠️  Watermark bake skipped: {e}", flush=True)
+
     canvas.save(out_path, "PNG")
     return out_path
 
@@ -297,7 +311,7 @@ def make_thumbnail(src, src_dur, title, font_path, logo_im, out_path, hook=""):
 
 
 # ── FFmpeg render (Sprint 19: enhancements + watermark added) ──
-def render_vertical(src, banner_png, out, clips=None, watermark_png=None):
+def render_vertical(src, banner_png, out, clips=None):
     """
     Sprint 19 changes vs original:
       - base_vf now includes eq (brightness/contrast) + unsharp (sharpen)
@@ -332,14 +346,9 @@ def render_vertical(src, banner_png, out, clips=None, watermark_png=None):
             inputs += ["-i", c["local_path"]]
 
     # watermark index (optional)
-    wm_idx = None
-    if watermark_png:
-        inputs += ["-loop", "1", "-i", watermark_png]
-        wm_idx = 1 + len(clips)
-
-    # banner is always last input
+    # banner is always last input (watermark baked into banner PNG — not a separate FFmpeg input)
     inputs += ["-loop", "1", "-i", banner_png]
-    banner_idx = 1 + len(clips) + (1 if watermark_png else 0)
+    banner_idx = 1 + len(clips)
 
     # ── Filter complex ─────────────────────────────────────────
     fc_parts = [
@@ -379,12 +388,7 @@ def render_vertical(src, banner_png, out, clips=None, watermark_png=None):
             )
             unmuted_audio_labels.append(f"a{i}")
 
-    # Watermark layer (Sprint 19) — under banner, above clips
-    if wm_idx is not None:
-        fc_parts.append(f"[{stage}][{wm_idx}:v]overlay=0:0[wm]")
-        stage = "wm"
-
-    # Banner always topmost
+    # Banner always topmost (watermark baked into banner PNG via Pillow — no FFmpeg overlay needed)
     fc_parts.append(f"[{stage}][{banner_idx}:v]overlay=0:0[vout]")
 
     # Audio: noise reduction + normalization applied to source,
@@ -409,9 +413,11 @@ def render_vertical(src, banner_png, out, clips=None, watermark_png=None):
            "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
            "-c:a", "aac", "-b:a", "192k", "-shortest",
            "-movflags", "+faststart", "-pix_fmt", "yuv420p", out]
-    r = subprocess.run(cmd, capture_output=True, text=True)
+    print("   🎬 FFmpeg starting…", flush=True)
+    print("   🎬 FFmpeg starting…", flush=True)
+    r = subprocess.run(cmd, stderr=subprocess.PIPE, text=True)
     if r.returncode != 0:
-        print("FFmpeg stderr:", r.stderr[-2000:], flush=True)
+        print("FFmpeg stderr:", r.stderr[-3000:], flush=True)
         return False
     print(f"   ✅ Rendered: {out} ({os.path.getsize(out)//1024}KB, "
           f"{len(clips)} PiP clip(s))", flush=True)
@@ -445,19 +451,6 @@ def render(row, tmp):
         print(f"   ℹ️  Logo skipped: {e}", flush=True)
 
     # ── Sprint 19: Build watermark PNG (top-right) ────────────
-    watermark_png = None
-    if logo_im is not None:
-        try:
-            wm_logo = logo_im.resize((WM_SIZE, WM_SIZE), Image.LANCZOS)
-            r, g, b, a = wm_logo.split()
-            a = a.point(lambda x: int(x * WM_OPACITY / 255))
-            wm_logo = Image.merge("RGBA", (r, g, b, a))
-            wm_path = os.path.join(tmp, "watermark.png")
-            make_watermark_png(wm_logo, wm_path)
-            watermark_png = wm_path
-        except Exception as e:
-            print(f"   ⚠️  Watermark skipped: {e}", flush=True)
-
     # Thumbnail (unchanged)
     thumb_path = make_thumbnail(src, src_dur, title, fp, logo_im,
                                 os.path.join(tmp, "thumbnail.jpg"), hook=hook)
@@ -485,7 +478,7 @@ def render(row, tmp):
             clips.append({**c, "local_path": lp})
 
     out = os.path.join(tmp, "final.mp4")
-    ok  = render_vertical(src, banner_png, out, clips=clips, watermark_png=watermark_png)
+    ok  = render_vertical(src, banner_png, out, clips=clips)
     if not ok:
         return None, None
     return out, thumb_path
