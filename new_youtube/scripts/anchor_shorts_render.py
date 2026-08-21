@@ -54,7 +54,6 @@ C_TEXT     = (238, 241, 247, 255)
 
 # ── Sprint 19: Audio/Video enhancements ──────────────────────
 # Tuned for vertical selfie footage
-AUDIO_FILTERS = "dynaudnorm=f=150:g=15"
 VIDEO_ENHANCE = "eq=brightness=0.03:contrast=1.05"
 
 # ── Sprint 19: Watermark (top-right, above banner) ───────────
@@ -356,10 +355,6 @@ def render_vertical(src, banner_png, out, clips=None):
         f"[0:v]{base_vf}[base]"
     ]
 
-    # ── Sprint 19: Audio filter ────────────────────────────────
-    # afftdn = noise reduction, loudnorm = normalize volume
-    audio_filter = AUDIO_FILTERS
-
     unmuted_audio_labels = []
     stage = "base"
 
@@ -394,17 +389,15 @@ def render_vertical(src, banner_png, out, clips=None):
     # Audio: noise reduction + normalization applied to source,
     # then mixed with any unmuted clip audio
     if unmuted_audio_labels:
-        fc_parts.append(f"[0:a]{audio_filter}[src_a]")
-        mix_inputs = "[src_a]" + "".join(f"[{lbl}]" for lbl in unmuted_audio_labels)
+        mix_inputs = "[0:a]" + "".join(f"[{lbl}]" for lbl in unmuted_audio_labels)
         fc_parts.append(
             f"{mix_inputs}amix=inputs={1+len(unmuted_audio_labels)}:"
             f"duration=first:dropout_transition=0[aout]"
         )
         audio_map = ["-map", "[aout]"]
     else:
-        # Simple: just apply audio filter to source
-        fc_parts.append(f"[0:a]{audio_filter}[aout]")
-        audio_map = ["-map", "[aout]"]
+        # Simple passthrough — same as original working script
+        audio_map = ["-map", "0:a?"]
 
     fc = ";".join(fc_parts)
     cmd = ["ffmpeg", "-y", "-nostdin", *inputs,
@@ -414,8 +407,7 @@ def render_vertical(src, banner_png, out, clips=None):
            "-c:a", "aac", "-b:a", "192k", "-shortest",
            "-movflags", "+faststart", "-pix_fmt", "yuv420p", out]
     print("   🎬 FFmpeg starting…", flush=True)
-    print("   🎬 FFmpeg starting…", flush=True)
-    r = subprocess.run(cmd, stderr=subprocess.PIPE, text=True)
+    r = subprocess.run(cmd, capture_output=True, text=True)
     if r.returncode != 0:
         print("FFmpeg stderr:", r.stderr[-3000:], flush=True)
         return False
@@ -457,7 +449,9 @@ def render(row, tmp):
 
     # Banner (unchanged — uses full-opacity logo for bottom bar)
     banner_png = os.path.join(tmp, "banner.png")
+    print("   🎨 Building banner PNG…", flush=True)
     build_banner_png(fp, logo_im, banner_png, hook=hook)
+    print("   ✅ Banner PNG built", flush=True)
 
     # PiP clips (unchanged)
     raw_clips = row.get("clips") or []
@@ -467,6 +461,7 @@ def render(row, tmp):
         except Exception:
             raw_clips = []
 
+    print(f"   📥 {len(raw_clips)} PiP clip(s) to download…", flush=True)
     clips = []
     for i, c in enumerate(raw_clips):
         url = c.get("url") or c.get("src")
@@ -477,10 +472,13 @@ def render(row, tmp):
         if download_file(url, lp, f"clip {i+1}"):
             clips.append({**c, "local_path": lp})
 
+    print(f"   🎬 Starting FFmpeg render — {len(clips)} clip(s), 720×1280…", flush=True)
     out = os.path.join(tmp, "final.mp4")
     ok  = render_vertical(src, banner_png, out, clips=clips)
     if not ok:
+        print("   ❌ FFmpeg render failed", flush=True)
         return None, None
+    print(f"   ✅ FFmpeg render complete — {os.path.getsize(out)//1024}KB", flush=True)
     return out, thumb_path
 
 
@@ -500,6 +498,7 @@ def main():
     db_patch(RECORD_ID, {"status": "rendering"})
 
     with tempfile.TemporaryDirectory() as tmp:
+        print("   ⬇️  Downloading source + building render…", flush=True)
         out_path, thumb_path = render(row, tmp)
         if not out_path:
             db_patch(RECORD_ID, {"status": "error"}); return
@@ -517,6 +516,7 @@ def main():
                                    f"anchor_shorts/{RECORD_ID}/{LANGUAGE}/thumbnail.jpg",
                                    content_type="image/jpeg")
 
+        print("   💾 Updating Supabase → rendered…", flush=True)
         updates = {"video_url": video_url, "status": "rendered"}
         if thumb_url:
             updates["thumbnail_url"] = thumb_url
