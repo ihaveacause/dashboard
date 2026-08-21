@@ -38,12 +38,12 @@ LANGUAGE       = os.environ.get("LANGUAGE", "en")
 
 GCS_BUCKET = "ihaveacause-media"
 TABLE      = "tamil_anchor_shorts" if LANGUAGE == "ta" else "english_anchor_shorts"
-W, H, FPS  = 1080, 1920, 30
+W, H, FPS  = 720, 1280, 30
 
 # PiP box for optional overlay clips
-PIP_W, PIP_H = 380, 214
-PIP_MARGIN   = 24
-BANNER_H     = 210
+PIP_W, PIP_H = 253, 142
+PIP_MARGIN   = 16
+BANNER_H     = 140
 PIP_X        = W - PIP_W - PIP_MARGIN
 PIP_Y        = (H - BANNER_H) - PIP_MARGIN - PIP_H
 
@@ -60,9 +60,9 @@ VIDEO_ENHANCE = "eq=brightness=0.03:contrast=1.05"
 # ── Sprint 19: Watermark (top-right, above banner) ───────────
 # Separate from the bottom-banner logo — this is a subtle corner mark
 LOGO_GCS_PATH    = "ihaveacause_logo.png"
-WM_SIZE          = 50      # px — visible but not intrusive on vertical frame
+WM_SIZE          = 34      # px — visible but not intrusive on vertical frame
 WM_OPACITY       = 102     # 40% (102/255)
-WM_MARGIN        = 20      # px from edge — top-right corner
+WM_MARGIN        = 14      # px from edge — top-right corner
 
 SB_HEADERS = {
     "apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}",
