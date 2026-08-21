@@ -54,7 +54,7 @@ C_TEXT     = (238, 241, 247, 255)
 
 # ── Sprint 19: Audio/Video enhancements ──────────────────────
 # Tuned for vertical selfie footage
-VIDEO_ENHANCE = "eq=brightness=0.03:contrast=1.05"
+VIDEO_ENHANCE = "deflicker=size=5:mode=am,eq=brightness=0.05:contrast=1.1"
 
 # ── Sprint 19: Watermark (top-right, above banner) ───────────
 # Separate from the bottom-banner logo — this is a subtle corner mark

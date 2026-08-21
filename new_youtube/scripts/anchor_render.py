@@ -48,7 +48,7 @@ LOGO_MARGIN        = 20
 
 # Audio/Video enhancements (Sprint 18)
 AUDIO_FILTERS = "afftdn=nf=-25,dynaudnorm=f=150:g=15"
-VIDEO_ENHANCE = "eq=brightness=0.03:contrast=1.05,unsharp=3:3:0.5:3:3:0"
+VIDEO_ENHANCE = "deflicker=size=5:mode=am,eq=brightness=0.05:contrast=1.1"
 
 # ── Supabase ──────────────────────────────────────────────────
 SB_HDR = {
