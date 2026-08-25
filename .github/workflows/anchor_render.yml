@@ -26,10 +26,15 @@ jobs:
         with:
           path: ~/.cache/pip
           key: ${{ runner.os }}-pip-anchor-render-v2
+      - name: Cache apt packages
+        uses: actions/cache@v4
+        with:
+          path: /var/cache/apt/archives
+          key: ${{ runner.os }}-apt-anchor-render-v1
       - name: Install system deps
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y ffmpeg fonts-noto fonts-noto-cjk || true
+          sudo apt-get install -y ffmpeg fonts-noto-core fonts-noto || true
           ffmpeg -version | head -1
       - name: Install Python deps
         run: pip install requests Pillow google-auth cryptography
