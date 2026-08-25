@@ -1,29 +1,21 @@
 """
-anchor_shorts_upload_to_youtube.py — On Camera Shorts · Step 3 of 3
-====================================================================
-Publishes ONE rendered On Camera Short to YouTube:
-- Vertical (1080x1920) + title tagged #Shorts -> YouTube auto-classifies it
-  as a Short (vertical + <=3min is all that's required; the tag just helps
-  early discovery).
-- containsSyntheticMedia is NOT set — this is your real recorded footage,
-  not AI-generated, unlike the Sprint 15 AI Shorts track.
-- Always scheduled (private -> publishAt), same pattern as the rest of the
-  channel, and routed into the same module playlist as your On Camera
-  long-form videos so a module's Shorts + long videos sit together.
+anchor_shorts_upload_to_youtube.py — On Camera Shorts · Publish + GCS Cleanup
+==============================================================================
+Sprint 20 addition:
+  --step upload     → upload video to YouTube (existing behaviour)
+  --step delete_gcs → delete all GCS files for this record AFTER you confirm
+                      the YouTube Short looks good
 
-Mirrors scripts/anchor_upload_to_youtube.py (the landscape On Camera
-uploader) and new_youtube/scripts/shorts_upload_to_youtube.py (the AI
-Shorts uploader) — this is the vertical + real-footage combination of the two.
-
-Usage (called by GitHub Actions):
-  python anchor_shorts_upload_to_youtube.py --record_id "<uuid>" --language "ta"
+Args: --record_id <uuid>  --language <ta|en>  --step <upload|delete_gcs>
 """
 
 import argparse
+import json
 import os
 import sys
 import tempfile
 from datetime import datetime, timedelta, timezone
+from urllib.parse import quote
 
 import requests
 import google.oauth2.credentials
@@ -38,116 +30,91 @@ SCOPES = [
     "https://www.googleapis.com/auth/youtube",
     "https://www.googleapis.com/auth/youtube.force-ssl",
 ]
-SUPABASE_URL = os.environ["SUPABASE_URL"]
-SUPABASE_KEY = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
 
-YOUTUBE_CHANNEL_URL = "https://www.youtube.com/@IHaveACause"
+SUPABASE_URL   = os.environ["SUPABASE_URL"]
+SUPABASE_KEY   = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
+GCP_CREDS_JSON = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS_JSON", "")
+GCS_BUCKET     = "ihaveacause-media"
 
 
-def table(language):
+# ── Supabase helpers ──────────────────────────────────────────
+def anchor_table(language):
     return "tamil_anchor_shorts" if language in ("ta", "tamil") else "english_anchor_shorts"
 
 def get_row(record_id, language):
     sb: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-    res = sb.table(table(language)).select("*").eq("id", record_id).single().execute()
+    res = sb.table(anchor_table(language)).select("*").eq("id", record_id).single().execute()
     return res.data
 
 def update_row(record_id, language, updates):
     sb: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-    sb.table(table(language)).update(updates).eq("id", record_id).execute()
-    print(f"✅ Supabase updated: {updates}")
+    sb.table(anchor_table(language)).update(updates).eq("id", record_id).execute()
+    print(f"✅ Supabase updated: {list(updates.keys())}")
 
+
+# ── YouTube helpers ───────────────────────────────────────────
 def get_youtube():
     tok = os.environ.get("YOUTUBE_TOKEN_JSON")
     if not tok:
         raise ValueError("YOUTUBE_TOKEN_JSON not set")
-    import json
     t = json.loads(tok)
     creds = google.oauth2.credentials.Credentials(
         token=t.get("token"), refresh_token=t.get("refresh_token"),
         token_uri=t.get("token_uri", "https://oauth2.googleapis.com/token"),
-        client_id=t.get("client_id"), client_secret=t.get("client_secret"), scopes=SCOPES)
-    if not creds.valid:
-        creds.refresh(Request()); print("✅ Token refreshed")
-    return build("youtube", "v3", credentials=creds)
+        client_id=t.get("client_id"), client_secret=t.get("client_secret"),
+        scopes=SCOPES)
+    if creds.expired and creds.refresh_token:
+        creds.refresh(Request())
+    return build("youtube", "v3", credentials=creds, cache_discovery=False)
 
-def calculate_publish_time() -> datetime:
-    # Shorts drop fast — 30 min after upload, same cadence as the AI Shorts track.
+def calculate_publish_time():
     return datetime.now(timezone.utc) + timedelta(minutes=30)
 
-def get_or_create_playlist(youtube, module_name, language):
-    if not module_name:
-        return None
-    sb: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-    lang_db = "tamil" if language in ("ta", "tamil") else "english"       # matches the actual
-    lang_display = "Tamil" if language in ("ta", "tamil") else "English"  # DB check-constraint:
-    # CHECK (language = ANY (ARRAY['tamil','english'])) — lowercase, confirmed via
-    # pg_get_constraintdef. lang_display is only for the playlist title text.
-    res = (sb.table("module_playlists").select("playlist_id")
-             .eq("module_name", module_name).eq("language", lang_db).execute())
-    if res.data:
-        return res.data[0]["playlist_id"]
-    resp = youtube.playlists().insert(part="snippet,status", body={
-        "snippet": {"title": f"{module_name} | I Have a Cause ({lang_display})",
-                    "description": f"On-camera commentary — module '{module_name}', I Have a Cause.",
-                    "defaultLanguage": "ta" if language in ("ta", "tamil") else "en"},
-        "status": {"privacyStatus": "public"}}).execute()
-    pid = resp["id"]
-    sb.table("module_playlists").insert(
-        {"module_name": module_name, "language": lang_db, "playlist_id": pid}).execute()
-    print(f"✅ Created playlist {pid}")
-    return pid
-
-def add_to_playlist(youtube, video_id, playlist_id):
-    youtube.playlistItems().insert(part="snippet", body={
-        "snippet": {"playlistId": playlist_id,
-                    "resourceId": {"kind": "youtube#video", "videoId": video_id}}}).execute()
-    print(f"✅ Added {video_id} to playlist {playlist_id}")
-
 def download(url, dest):
-    r = requests.get(url, stream=True, timeout=600)
+    r = requests.get(url, stream=True, timeout=300)
     r.raise_for_status()
     with open(dest, "wb") as f:
-        for c in r.iter_content(1 << 16):
-            f.write(c)
+        for chunk in r.iter_content(chunk_size=8192):
+            f.write(chunk)
     return dest
 
+def build_description(row, language):
+    lang    = "ta" if language in ("ta", "tamil") else "en"
+    module  = row.get("module") or "Commentary"
+    opinion = "இது என் தனிப்பட்ட கருத்து." if lang == "ta" else "This is my personal opinion."
+    return (
+        f"{row.get('title', '')}\n\n"
+        f"{opinion}\n\n"
+        f"Module: {module}\n\n"
+        f"#Shorts #IHaveACause #{'Tamil' if lang == 'ta' else 'English'} "
+        f"#Opinion #{module.replace(' ', '')}"
+    )
+
 def upload_video(youtube, video_path, row, language, publish_time):
-    lang = "ta" if language in ("ta", "tamil") else "en"
-    title_text = (row.get("title") or row.get("working_title") or "Commentary").strip()
-    yt_title = f"{title_text} #Shorts"
-    if len(yt_title) > 100:
-        yt_title = yt_title[:90].rsplit(" ", 1)[0] + "… #Shorts"
+    lang     = "ta" if language in ("ta", "tamil") else "en"
+    title    = (row.get("title") or row.get("working_title") or "On Camera Short").strip()
+    suffix   = "#Shorts | ஒரு காரணம்" if lang == "ta" else "#Shorts | I Have a Cause"
+    yt_title = f"{title} {suffix}"[:100]
 
-    transcript_excerpt = (row.get("transcript") or "")[:300]
-    description = f"""{transcript_excerpt}
-
-━━━━━━━━━━━━━━━━━━━━━━
-🌟 I Have a Cause
-📺 {YOUTUBE_CHANNEL_URL}
-━━━━━━━━━━━━━━━━━━━━━━
-
-This video expresses the host's personal views and opinions.
-
-#IHaveACause #Shorts
-"""
     body = {
         "snippet": {
-            "title": yt_title, "description": description,
-            "tags": ["Shorts", "I Have a Cause", "commentary", "opinion", row.get("module") or "Commentary"],
-            "categoryId": "25",                    # News & Politics — matches the long-form track
-            "defaultLanguage": lang, "defaultAudioLanguage": lang,
+            "title": yt_title,
+            "description": build_description(row, language),
+            "tags": ["Shorts", "IHaveACause", "Opinion", row.get("module") or "Commentary"],
+            "categoryId": "25",
+            "defaultLanguage": lang,
+            "defaultAudioLanguage": lang,
         },
         "status": {
-            "privacyStatus": "private",            # scheduled -> private until publishAt
+            "privacyStatus": "private",
             "publishAt": publish_time.strftime("%Y-%m-%dT%H:%M:%S.000Z"),
             "selfDeclaredMadeForKids": False,
-            # NOT containsSyntheticMedia — this is your real camera footage.
         },
     }
+
     media = MediaFileUpload(video_path, chunksize=-1, resumable=True, mimetype="video/mp4")
     print(f"⬆️  Uploading: {yt_title}", flush=True)
-    req = youtube.videos().insert(part="snippet,status", body=body, media_body=media)
+    req  = youtube.videos().insert(part="snippet,status", body=body, media_body=media)
     resp = None
     while resp is None:
         status, resp = req.next_chunk()
@@ -159,49 +126,161 @@ This video expresses the host's personal views and opinions.
 
 def set_thumbnail(youtube, video_id, thumbnail_url, tmp):
     if not thumbnail_url:
-        print("   ℹ️  No thumbnail_url on this record — YouTube will auto-pick a frame.")
+        print("   ℹ️  No thumbnail — YouTube will auto-pick a frame.")
         return
     try:
         tp = download(thumbnail_url, os.path.join(tmp, "thumb.jpg"))
         youtube.thumbnails().set(
-            videoId=video_id, media_body=MediaFileUpload(tp, mimetype="image/jpeg")).execute()
+            videoId=video_id,
+            media_body=MediaFileUpload(tp, mimetype="image/jpeg")
+        ).execute()
         print("✅ Thumbnail set")
-    except HttpError as e:
-        print(f"⚠️  Thumbnail skipped — verify your YouTube channel to enable custom thumbnails: {e}")
     except Exception as e:
-        print(f"⚠️  Thumbnail skipped — {e}")
+        print(f"⚠️  Thumbnail skipped: {e}")
 
+def get_or_create_playlist(youtube, module_name, language):
+    lang     = "ta" if language in ("ta", "tamil") else "en"
+    pl_title = f"{module_name} | I Have a Cause"
+    try:
+        res = youtube.playlists().list(part="snippet", mine=True, maxResults=50).execute()
+        for pl in res.get("items", []):
+            if pl["snippet"]["title"] == pl_title:
+                print(f"   📋 Playlist: {pl['id']}")
+                return pl["id"]
+        pl = youtube.playlists().insert(
+            part="snippet,status",
+            body={"snippet": {"title": pl_title, "defaultLanguage": lang},
+                  "status": {"privacyStatus": "public"}}
+        ).execute()
+        print(f"   📋 Created playlist: {pl['id']}")
+        return pl["id"]
+    except Exception as e:
+        print(f"   ⚠️  Playlist error: {e}")
+        return None
+
+def add_to_playlist(youtube, video_id, playlist_id):
+    if not playlist_id:
+        return
+    try:
+        youtube.playlistItems().insert(
+            part="snippet",
+            body={"snippet": {"playlistId": playlist_id,
+                              "resourceId": {"kind": "youtube#video",
+                                             "videoId": video_id}}}
+        ).execute()
+        print(f"✅ Added to playlist {playlist_id}")
+    except Exception as e:
+        print(f"⚠️  Playlist insert failed: {e}")
+
+
+# ── GCS delete ────────────────────────────────────────────────
+def _gcs_token():
+    from google.oauth2 import service_account
+    import google.auth.transport.requests as gr
+    creds = service_account.Credentials.from_service_account_info(
+        json.loads(GCP_CREDS_JSON),
+        scopes=["https://www.googleapis.com/auth/devstorage.read_write"])
+    creds.refresh(gr.Request())
+    return creds.token
+
+def _list_gcs_objects(prefix, token):
+    r = requests.get(
+        f"https://storage.googleapis.com/storage/v1/b/{GCS_BUCKET}/o",
+        headers={"Authorization": f"Bearer {token}"},
+        params={"prefix": prefix}, timeout=30)
+    return [item["name"] for item in r.json().get("items", [])] if r.status_code == 200 else []
+
+def _delete_gcs_object(name, token):
+    encoded = quote(name, safe="")
+    r = requests.delete(
+        f"https://storage.googleapis.com/storage/v1/b/{GCS_BUCKET}/o/{encoded}",
+        headers={"Authorization": f"Bearer {token}"}, timeout=30)
+    if r.status_code in (200, 204):
+        print(f"   🗑  {name}", flush=True); return True
+    print(f"   ⚠️  Failed {name}: {r.status_code}", flush=True); return False
+
+def delete_gcs_files(record_id, language):
+    print(f"\n🗑  Deleting GCS files for {record_id}…", flush=True)
+    row = get_row(record_id, language)
+    if not row:
+        print("❌ Record not found"); return False
+    if row.get("status") != "published":
+        print(f"❌ Status is '{row.get('status')}' — only deletes after published"); return False
+    if not row.get("youtube_video_id"):
+        print("❌ No youtube_video_id — won't delete before confirmed YouTube upload"); return False
+
+    token   = _gcs_token()
+    prefix  = f"anchor_shorts/{record_id}/"
+    objects = _list_gcs_objects(prefix, token)
+    print(f"   Found {len(objects)} object(s) under {prefix}", flush=True)
+    deleted = sum(1 for name in objects if _delete_gcs_object(name, token))
+
+    # Also delete image overlay files
+    img_overlays = row.get("image_overlays") or []
+    if isinstance(img_overlays, str):
+        try: img_overlays = json.loads(img_overlays)
+        except: img_overlays = []
+    for ov in img_overlays:
+        url = ov.get("url", "")
+        marker = f"storage.googleapis.com/{GCS_BUCKET}/"
+        if marker in url:
+            obj_name = url.split(marker, 1)[1].split("?")[0]
+            _delete_gcs_object(obj_name, token)
+
+    update_row(record_id, language, {
+        "source_video_url": None,
+        "video_url": None,
+        "thumbnail_url": None,
+        "gcs_deleted": True,
+    })
+    print(f"\n✅ GCS cleanup done — YouTube Short unaffected.", flush=True)
+    return True
+
+
+# ── Main ──────────────────────────────────────────────────────
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--record_id", required=True)
-    ap.add_argument("--language", required=True)
+    ap.add_argument("--language",  required=True)
+    ap.add_argument("--step", default="upload", choices=["upload", "delete_gcs"])
     args = ap.parse_args()
-    language = "tamil" if args.language in ("ta", "tamil") else "english"
+    language = args.language
 
-    row = get_row(args.record_id, args.language)
+    # GCS delete step
+    if args.step == "delete_gcs":
+        if not GCP_CREDS_JSON:
+            print("❌ GOOGLE_APPLICATION_CREDENTIALS_JSON not set"); sys.exit(1)
+        ok = delete_gcs_files(args.record_id, language)
+        sys.exit(0 if ok else 1)
+
+    # Upload step
+    row = get_row(args.record_id, language)
     if not row:
         print("❌ Record not found"); sys.exit(1)
     if not row.get("video_url"):
         print("❌ No rendered video_url — run Render first"); sys.exit(1)
 
-    youtube = get_youtube()
+    youtube      = get_youtube()
     publish_time = calculate_publish_time()
-    print(f"📅 Scheduled: {publish_time.isoformat()}")
+    print(f"📅 Scheduled: {publish_time.isoformat()}", flush=True)
 
     with tempfile.TemporaryDirectory() as tmp:
-        vp = download(row["video_url"], os.path.join(tmp, "final.mp4"))
-        vid = upload_video(youtube, vp, row, args.language, publish_time)
+        vp  = download(row["video_url"], os.path.join(tmp, "final.mp4"))
+        vid = upload_video(youtube, vp, row, language, publish_time)
         set_thumbnail(youtube, vid, row.get("thumbnail_url"), tmp)
 
     module_name = row.get("module") or "Commentary"
-    pid = get_or_create_playlist(youtube, module_name, args.language)
+    pid = get_or_create_playlist(youtube, module_name, language)
     if pid:
         add_to_playlist(youtube, vid, pid)
 
     yt_url = f"https://www.youtube.com/shorts/{vid}"
-    update_row(args.record_id, args.language, {
-        "youtube_video_id": vid, "youtube_url": yt_url, "playlist_id": pid,
-        "scheduled_at": publish_time.isoformat(), "status": "published",
+    update_row(args.record_id, language, {
+        "youtube_video_id": vid,
+        "youtube_url":      yt_url,
+        "playlist_id":      pid,
+        "scheduled_at":     publish_time.isoformat(),
+        "status":           "published",
     })
     print(f"\n🎉 Done: {yt_url}")
 
