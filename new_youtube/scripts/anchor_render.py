@@ -47,7 +47,7 @@ LOGO_OPACITY_VIDEO = 102      # 40% opacity (102/255)
 LOGO_MARGIN        = 20
 
 # Audio/Video enhancements (Sprint 18)
-AUDIO_FILTERS = "afftdn=nf=-25,dynaudnorm=f=150:g=15"
+AUDIO_FILTERS = "dynaudnorm=f=150:g=15"
 VIDEO_ENHANCE = "deflicker=size=5:mode=am,eq=brightness=0.05:contrast=1.1"
 
 # ── Supabase ──────────────────────────────────────────────────
@@ -197,18 +197,24 @@ def make_watermark_png(logo_im, out_path):
 
 # ── FFmpeg render ─────────────────────────────────────────────
 def render_video(src_path, image_overlays, out_path, watermark_png=None):
+    """
+    Fixed render:
+    - Audio filter moved to -af flag (outside filter_complex) to avoid stream conflicts
+    - PiP uses split=N to create separate copies per image (can't reuse stream labels)
+    """
     audio_filter = AUDIO_FILTERS
     base_vf = (
         f"scale={W}:{H}:force_original_aspect_ratio=increase,"
         f"crop={W}:{H},fps={FPS},setsar=1,{VIDEO_ENHANCE}"
     )
 
-    # No images, no watermark
+    # No images, no watermark — simple passthrough
     if not image_overlays and watermark_png is None:
         print("   ℹ️  No images — enhanced passthrough", flush=True)
         cmd = [
             "ffmpeg", "-y", "-i", src_path,
-            "-vf", base_vf, "-af", audio_filter,
+            "-vf", base_vf,
+            "-af", audio_filter,
             "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
             "-c:a", "aac", "-b:a", "192k",
             "-movflags", "+faststart", "-pix_fmt", "yuv420p",
@@ -228,8 +234,9 @@ def render_video(src_path, image_overlays, out_path, watermark_png=None):
             "ffmpeg", "-y",
             "-i", src_path, "-loop", "1", "-i", watermark_png,
             "-filter_complex",
-            f"[0:v]{base_vf}[base];[base][1:v]overlay=0:0[vout];[0:a]{audio_filter}[aout]",
-            "-map", "[vout]", "-map", "[aout]",
+            f"[0:v]{base_vf}[base];[base][1:v]overlay=0:0[vout]",
+            "-map", "[vout]", "-map", "0:a",
+            "-af", audio_filter,
             "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
             "-c:a", "aac", "-b:a", "192k",
             "-movflags", "+faststart", "-pix_fmt", "yuv420p", "-shortest",
@@ -242,47 +249,59 @@ def render_video(src_path, image_overlays, out_path, watermark_png=None):
         print(f"   ✅ {os.path.getsize(out_path)/1024/1024:.1f}MB", flush=True)
         return True
 
-    # Images + watermark + enhancements
-    print(f"   🎬 Rendering {len(image_overlays)} image(s) + watermark…", flush=True)
+    # Images + watermark
+    n = len(image_overlays)
+    print(f"   🎬 Rendering {n} image(s) + watermark…", flush=True)
+
     inputs = ["-i", src_path]
     for ov in image_overlays:
         inputs += ["-loop", "1", "-i", ov["local_path"]]
     wm_idx = None
     if watermark_png:
         inputs += ["-loop", "1", "-i", watermark_png]
-        wm_idx = 1 + len(image_overlays)
+        wm_idx = 1 + n
 
     fc_parts = []
-    fc_parts.append(f"[0:v]{base_vf},format=yuva420p[basev];")
-    fc_parts.append(
-        f"[0:v]{base_vf},"
-        f"scale={PIP_W}:{PIP_H}:force_original_aspect_ratio=increase,"
-        f"crop={PIP_W}:{PIP_H},pad={PIP_W}:{PIP_H}:(ow-iw)/2:(oh-ih)/2:black,"
-        f"format=yuva420p[pipv];"
-    )
 
-    cur = "[basev]"
+    # Split source video into: 1 base + N pip copies (one per image)
+    split_count = n + 1
+    split_labels = "[basev]" + "".join(f"[pipraw{i}]" for i in range(n))
+    fc_parts.append(f"[0:v]{base_vf},split={split_count}{split_labels};")
+
+    # Create PiP version for each image
+    for i in range(n):
+        fc_parts.append(
+            f"[pipraw{i}]scale={PIP_W}:{PIP_H}:force_original_aspect_ratio=increase,"
+            f"crop={PIP_W}:{PIP_H},pad={PIP_W}:{PIP_H}:(ow-iw)/2:(oh-ih)/2:black,"
+            f"format=yuva420p[pipv{i}];"
+        )
+
+    fc_parts.append(f"[basev]format=yuva420p[basev2];")
+    cur = "[basev2]"
+
     for i, ov in enumerate(image_overlays):
-        idx   = i + 1
-        s, e  = ov["start"], ov["start"] + ov["duration"]
+        idx  = i + 1
+        s, e = ov["start"], ov["start"] + ov["duration"]
         fc_parts.append(
             f"[{idx}:v]scale={W}:{H}:force_original_aspect_ratio=increase,"
             f"crop={W}:{H},setsar=1,format=yuva420p[img{i}];"
         )
         fc_parts.append(f"{cur}[img{i}]overlay=0:0:enable='between(t,{s:.3f},{e:.3f})'[mix{i}];")
-        fc_parts.append(f"[mix{i}][pipv]overlay={PIP_X}:{PIP_Y}:enable='between(t,{s:.3f},{e:.3f})'[out{i}];")
+        fc_parts.append(f"[mix{i}][pipv{i}]overlay={PIP_X}:{PIP_Y}:enable='between(t,{s:.3f},{e:.3f})'[out{i}];")
         cur = f"[out{i}]"
 
     if wm_idx is not None:
-        fc_parts.append(f"{cur}[{wm_idx}:v]overlay=0:0[vout];")
+        fc_parts.append(f"{cur}[{wm_idx}:v]overlay=0:0[vout]")
     else:
-        fc_parts.append(f"{cur}format=yuv420p[vout];")
-    fc_parts.append(f"[0:a]{audio_filter}[aout]")
+        fc_parts.append(f"{cur}format=yuv420p[vout]")
+
+    fc = ";".join(p.rstrip(";") for p in fc_parts)
 
     cmd = (
         ["ffmpeg", "-y"] + inputs +
-        ["-filter_complex", "".join(fc_parts),
-         "-map", "[vout]", "-map", "[aout]",
+        ["-filter_complex", fc,
+         "-map", "[vout]", "-map", "0:a",
+         "-af", audio_filter,
          "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
          "-c:a", "aac", "-b:a", "192k",
          "-movflags", "+faststart", "-pix_fmt", "yuv420p", "-shortest",
