@@ -367,10 +367,16 @@ function addSlot(cardId){
     const file=e.target.files[0]; if(!file) return;
     toast('Uploading image…');
     try{
-      const sres=await fetch(`${SB_URL}/functions/v1/anchor-upload-url`,{method:'POST',headers:H,body:JSON.stringify({filename:file.name,content_type:file.type||'image/jpeg'})});
-      if(!sres.ok) throw new Error('upload-url '+sres.status);
-      const {session_uri,object_url}=await sres.json();
-      await gcsPut(session_uri,file,()=>{});
+      // Upload directly to Supabase Storage (no CORS issues)
+      const ext=file.name.split('.').pop()||'jpg';
+      const path=`${cardId}/${Date.now()}.${ext}`;
+      const r=await fetch(`${SB_URL}/storage/v1/object/anchor-images/${path}`,{
+        method:'POST',
+        headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':file.type||'image/jpeg','x-upsert':'true'},
+        body:file
+      });
+      if(!r.ok) throw new Error('image upload '+r.status+': '+await r.text());
+      const object_url=`${SB_URL}/storage/v1/object/public/anchor-images/${path}`;
       const rows=await sbGet(TABLE(),{id:`eq.${cardId}`,select:'image_overlays'});
       const imgs=(rows[0]?.image_overlays)||[];
       imgs.push({url:object_url,filename:file.name,start:0,duration:5});
