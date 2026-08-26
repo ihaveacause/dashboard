@@ -42,11 +42,15 @@ PIP_Y  = (H - PIP_H) // 2
 
 # Logo (Sprint 18)
 LOGO_GCS_PATH      = "ihaveacause_logo.png"
-LOGO_SIZE_VIDEO    = 50       # 1.5× watermark on video frames
-LOGO_OPACITY_VIDEO = 102      # 40% opacity (102/255)
+LOGO_SIZE_VIDEO    = 60       # watermark on video frames
+LOGO_OPACITY_VIDEO = 179      # 70% opacity (179/255)
 LOGO_MARGIN        = 20
 
 # Audio/Video enhancements (Sprint 18)
+# 75/25 split layout
+IMG_W   = 960   # image panel width (75% of 1280)
+STRIP_W = 320   # your video strip width (25% of 1280)
+
 AUDIO_FILTERS = "dynaudnorm=f=150:g=15"
 VIDEO_ENHANCE = "eq=brightness=0.05:contrast=1.1"
 
@@ -198,23 +202,27 @@ def make_watermark_png(logo_im, out_path):
 # ── FFmpeg render ─────────────────────────────────────────────
 def render_video(src_path, image_overlays, out_path, watermark_png=None):
     """
-    Fixed render:
-    - Audio filter moved to -af flag (outside filter_complex) to avoid stream conflicts
-    - PiP uses split=N to create separate copies per image (can't reuse stream labels)
+    75/25 split layout:
+    - No images → your video full screen
+    - During image window → image fills left 75% (960x720),
+      your video fills right 25% (320x720) on black — no overlap
+    - Audio via -af flag to avoid stream conflicts
+    - Source split into N+1 copies (1 full + N strip copies per image)
     """
     audio_filter = AUDIO_FILTERS
     base_vf = (
         f"scale={W}:{H}:force_original_aspect_ratio=increase,"
         f"crop={W}:{H},fps={FPS},setsar=1,{VIDEO_ENHANCE}"
     )
+    IMG_W = int(W * 0.75)   # 960
+    STRIP_W = W - IMG_W      # 320
 
-    # No images, no watermark — simple passthrough
+    # ── No images — simple passthrough ────────────────────────
     if not image_overlays and watermark_png is None:
         print("   ℹ️  No images — passthrough render", flush=True)
         cmd = [
             "ffmpeg", "-y", "-i", src_path,
-            "-vf", base_vf,
-            "-af", audio_filter,
+            "-vf", base_vf, "-af", audio_filter,
             "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
             "-c:a", "aac", "-b:a", "192k",
             "-movflags", "+faststart", "-pix_fmt", "yuv420p",
@@ -227,9 +235,9 @@ def render_video(src_path, image_overlays, out_path, watermark_png=None):
         print(f"   ✅ {os.path.getsize(out_path)/1024/1024:.1f}MB", flush=True)
         return True
 
-    # No images, watermark only
+    # ── No images, watermark only ─────────────────────────────
     if not image_overlays and watermark_png is not None:
-        print("   ℹ️  No images — watermark + enhanced passthrough", flush=True)
+        print("   ℹ️  No images — watermark passthrough", flush=True)
         cmd = [
             "ffmpeg", "-y",
             "-i", src_path, "-loop", "1", "-i", watermark_png,
@@ -249,47 +257,66 @@ def render_video(src_path, image_overlays, out_path, watermark_png=None):
         print(f"   ✅ {os.path.getsize(out_path)/1024/1024:.1f}MB", flush=True)
         return True
 
-    # Images + watermark
+    # ── Images: 75/25 split layout ────────────────────────────
     n = len(image_overlays)
-    print(f"   🎬 Building filter graph for {n} image(s)…", flush=True)
+    print(f"   🎬 Building 75/25 split filter for {n} image(s)…", flush=True)
 
+    # Pre-scale images to 960x720 using Pillow (faster than FFmpeg scaling each frame)
+    print("   🖼  Pre-scaling images to 960×720…", flush=True)
+    from PIL import Image as PILImage
+    scaled_paths = []
+    for i, ov in enumerate(image_overlays):
+        try:
+            img = PILImage.open(ov["local_path"]).convert("RGB")
+            img_scaled = img.resize((IMG_W, H), PILImage.LANCZOS)
+            scaled_path = ov["local_path"].replace(
+                os.path.splitext(ov["local_path"])[1], f"_scaled{i}.jpg"
+            )
+            img_scaled.save(scaled_path, "JPEG", quality=92)
+            scaled_paths.append(scaled_path)
+            print(f"   ✅ Image {i+1} pre-scaled: {img.size} → {img_scaled.size}", flush=True)
+        except Exception as e:
+            print(f"   ⚠️  Image {i+1} scale failed: {e}, using original", flush=True)
+            scaled_paths.append(ov["local_path"])
+
+    # Build inputs
     inputs = ["-i", src_path]
-    for ov in image_overlays:
-        inputs += ["-loop", "1", "-i", ov["local_path"]]
+    for sp in scaled_paths:
+        inputs += ["-loop", "1", "-i", sp]
     wm_idx = None
     if watermark_png:
         inputs += ["-loop", "1", "-i", watermark_png]
         wm_idx = 1 + n
 
-    fc_parts = []
+    # Filter complex:
+    # Split source into: 1 full screen + N strip copies (one per image)
+    split_labels = "[fullv]" + "".join(f"[sraw{i}]" for i in range(n))
+    fc_parts = [f"[0:v]{base_vf},split={n+1}{split_labels};"]
 
-    # Split source video into: 1 base + N pip copies (one per image)
-    split_count = n + 1
-    split_labels = "[basev]" + "".join(f"[pipraw{i}]" for i in range(n))
-    fc_parts.append(f"[0:v]{base_vf},split={split_count}{split_labels};")
-
-    # Create PiP version for each image
+    # Each strip: crop center 320x720 from the scaled-down source
     for i in range(n):
         fc_parts.append(
-            f"[pipraw{i}]scale={PIP_W}:{PIP_H}:force_original_aspect_ratio=increase,"
-            f"crop={PIP_W}:{PIP_H},pad={PIP_W}:{PIP_H}:(ow-iw)/2:(oh-ih)/2:black,"
-            f"format=yuva420p[pipv{i}];"
+            f"[sraw{i}]crop={STRIP_W}:{H}:{(W-STRIP_W)//2}:0,setsar=1[strip{i}];"
         )
 
-    fc_parts.append(f"[basev]format=yuva420p[basev2];")
-    cur = "[basev2]"
+    # Build split frame for each image: hstack(image960 + strip320) = 1280x720
+    for i in range(n):
+        idx = i + 1
+        fc_parts.append(
+            f"[{idx}:v]scale={IMG_W}:{H},setsar=1[img{i}];"
+        )
+        fc_parts.append(f"[img{i}][strip{i}]hstack=inputs=2[sf{i}];")
 
+    # Chain: start with full video, switch to split frame during each image window
+    cur = "[fullv]"
     for i, ov in enumerate(image_overlays):
-        idx  = i + 1
         s, e = ov["start"], ov["start"] + ov["duration"]
         fc_parts.append(
-            f"[{idx}:v]scale={W}:{H}:force_original_aspect_ratio=increase,"
-            f"crop={W}:{H},setsar=1,format=yuva420p[img{i}];"
+            f"{cur}[sf{i}]overlay=0:0:enable='between(t,{s:.3f},{e:.3f})'[sw{i}];"
         )
-        fc_parts.append(f"{cur}[img{i}]overlay=0:0:enable='between(t,{s:.3f},{e:.3f})'[mix{i}];")
-        fc_parts.append(f"[mix{i}][pipv{i}]overlay={PIP_X}:{PIP_Y}:enable='between(t,{s:.3f},{e:.3f})'[out{i}];")
-        cur = f"[out{i}]"
+        cur = f"[sw{i}]"
 
+    # Watermark on top
     if wm_idx is not None:
         fc_parts.append(f"{cur}[{wm_idx}:v]overlay=0:0[vout]")
     else:
@@ -314,6 +341,7 @@ def render_video(src_path, image_overlays, out_path, watermark_png=None):
         return False
     print(f"   ✅ FFmpeg complete: {os.path.getsize(out_path)/1024/1024:.1f}MB", flush=True)
     return True
+
 
 # ── Main ──────────────────────────────────────────────────────
 def main():
@@ -375,22 +403,54 @@ def main():
                 image_overlays.append({"local_path": lp, "start": start, "duration": duration})
                 print(f"   📸 Image {i+1}: {start}s for {duration}s", flush=True)
 
-        # 4) Render
-        print(f"   🎬 Starting FFmpeg render — {len(image_overlays)} image(s), {src_dur:.0f}s video…", flush=True)
-        out = os.path.join(tmp, "final.mp4")
-        ok  = render_video(src, image_overlays, out, watermark_png=watermark_png)
+        # 4) Create branded intro + outro cards (2s each)
+        print('   🎬 Creating intro/outro branded cards…', flush=True)
+        logo_full = load_logo(tmp, 200, opacity=255)
+        intro_path = os.path.join(tmp, 'intro.mp4')
+        outro_path = os.path.join(tmp, 'outro.mp4')
+        intro_ok = make_branded_card(logo_full, intro_path, duration=2)
+        outro_ok = make_branded_card(logo_full, outro_path, duration=2)
+
+        # 5) Render main video with watermark + PiP images
+        print(f'   🎬 Starting FFmpeg render — {len(image_overlays)} image(s), {src_dur:.0f}s video…', flush=True)
+        main_out = os.path.join(tmp, 'main.mp4')
+        ok = render_video(src, image_overlays, main_out, watermark_png=watermark_png)
         if not ok:
-            db_patch(RECORD_ID, {"status": "error"}); return
-        print(f"   ✅ FFmpeg done: {os.path.getsize(out)/1024/1024:.1f}MB", flush=True)
+            db_patch(RECORD_ID, {'status': 'error'}); return
+        print(f'   ✅ FFmpeg done: {os.path.getsize(main_out)/1024/1024:.1f}MB', flush=True)
 
-        # 5) Upload render (no thumbnail — set manually in YouTube Studio)
-        print(f"\n☁️  Uploading render to GCS…", flush=True)
-        video_url = upload_to_gcs(out, f"anchor/{RECORD_ID}/{LANGUAGE}/studio_final.mp4")
+        # 6) Concat: intro + main + outro
+        print('   🔗 Concatenating intro + main + outro…', flush=True)
+        concat_list = []
+        if intro_ok: concat_list.append(f"file '{intro_path}'")
+        concat_list.append(f"file '{main_out}'")
+        if outro_ok: concat_list.append(f"file '{outro_path}'")
+        out = os.path.join(tmp, 'final.mp4')
+        concat_file = os.path.join(tmp, 'concat.txt')
+        with open(concat_file, 'w') as f:
+            f.write('\n'.join(concat_list))
+        rc = subprocess.run([
+            'ffmpeg', '-y', '-f', 'concat', '-safe', '0',
+            '-i', concat_file,
+            '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20',
+            '-c:a', 'aac', '-b:a', '192k',
+            '-movflags', '+faststart', '-pix_fmt', 'yuv420p',
+            out
+        ], capture_output=True, text=True)
+        if rc.returncode != 0:
+            print(f'   ⚠️  Concat failed, using main only: {rc.stderr[-300:]}', flush=True)
+            out = main_out
+        else:
+            print(f'   ✅ Final with intro+outro: {os.path.getsize(out)/1024/1024:.1f}MB', flush=True)
+
+        # 7) Upload render
+        print(f'\n☁️  Uploading render to GCS…', flush=True)
+        video_url = upload_to_gcs(out, f'anchor/{RECORD_ID}/{LANGUAGE}/studio_final.mp4')
         if not video_url:
-            db_patch(RECORD_ID, {"status": "error"}); return
+            db_patch(RECORD_ID, {'status': 'error'}); return
 
-        print("   💾 Updating Supabase → rendered…", flush=True)
-        db_patch(RECORD_ID, {"video_url": video_url, "status": "rendered"})
+        print('   💾 Updating Supabase → rendered…', flush=True)
+        db_patch(RECORD_ID, {'video_url': video_url, 'status': 'rendered'})
 
     print(f"\n{'='*60}", flush=True)
     print(f"✅ Done — preview in dashboard, then Publish.", flush=True)
