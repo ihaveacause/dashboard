@@ -48,7 +48,7 @@ LOGO_MARGIN        = 20
 
 # Audio/Video enhancements (Sprint 18)
 AUDIO_FILTERS = "dynaudnorm=f=150:g=15"
-VIDEO_ENHANCE = "deflicker=size=5:mode=am,eq=brightness=0.05:contrast=1.1"
+VIDEO_ENHANCE = "eq=brightness=0.05:contrast=1.1"
 
 # ── Supabase ──────────────────────────────────────────────────
 SB_HDR = {
@@ -210,7 +210,7 @@ def render_video(src_path, image_overlays, out_path, watermark_png=None):
 
     # No images, no watermark — simple passthrough
     if not image_overlays and watermark_png is None:
-        print("   ℹ️  No images — enhanced passthrough", flush=True)
+        print("   ℹ️  No images — passthrough render", flush=True)
         cmd = [
             "ffmpeg", "-y", "-i", src_path,
             "-vf", base_vf,
@@ -251,7 +251,7 @@ def render_video(src_path, image_overlays, out_path, watermark_png=None):
 
     # Images + watermark
     n = len(image_overlays)
-    print(f"   🎬 Rendering {n} image(s) + watermark…", flush=True)
+    print(f"   🎬 Building filter graph for {n} image(s)…", flush=True)
 
     inputs = ["-i", src_path]
     for ov in image_overlays:
@@ -307,11 +307,12 @@ def render_video(src_path, image_overlays, out_path, watermark_png=None):
          "-movflags", "+faststart", "-pix_fmt", "yuv420p", "-shortest",
          out_path]
     )
+    print("   ⚙️  FFmpeg processing… (this takes time, please wait)", flush=True)
     r = subprocess.run(cmd, capture_output=True, text=True)
     if r.returncode != 0:
         print(f"   ❌ FFmpeg failed:\n{r.stderr[-3000:]}", flush=True)
         return False
-    print(f"   ✅ {os.path.getsize(out_path)/1024/1024:.1f}MB", flush=True)
+    print(f"   ✅ FFmpeg complete: {os.path.getsize(out_path)/1024/1024:.1f}MB", flush=True)
     return True
 
 # ── Main ──────────────────────────────────────────────────────
@@ -328,6 +329,7 @@ def main():
         print("❌ No source video URL"); return
 
     db_patch(RECORD_ID, {"status": "rendering"})
+    print("   📋 Status set to rendering", flush=True)
 
     with tempfile.TemporaryDirectory() as tmp:
         # 1) Download source video
@@ -337,6 +339,7 @@ def main():
 
         src_dur = get_duration(src)
         print(f"   ⏱  Duration: {src_dur:.1f}s", flush=True)
+        print(f"   📐 Estimated render time: {src_dur/60*3:.0f}-{src_dur/60*4:.0f} mins on GitHub Actions", flush=True)
 
         # 2) Logo watermark (Sprint 18)
         print("\n🎨 Loading logo…", flush=True)
@@ -355,6 +358,7 @@ def main():
             except Exception:
                 raw_overlays = []
 
+        print(f"   📥 Downloading {len(raw_overlays)} image(s)…", flush=True)
         image_overlays = []
         for i, ov in enumerate(raw_overlays):
             url      = ov.get("url")
@@ -372,17 +376,20 @@ def main():
                 print(f"   📸 Image {i+1}: {start}s for {duration}s", flush=True)
 
         # 4) Render
+        print(f"   🎬 Starting FFmpeg render — {len(image_overlays)} image(s), {src_dur:.0f}s video…", flush=True)
         out = os.path.join(tmp, "final.mp4")
         ok  = render_video(src, image_overlays, out, watermark_png=watermark_png)
         if not ok:
             db_patch(RECORD_ID, {"status": "error"}); return
+        print(f"   ✅ FFmpeg done: {os.path.getsize(out)/1024/1024:.1f}MB", flush=True)
 
         # 5) Upload render (no thumbnail — set manually in YouTube Studio)
-        print("\n☁️  Uploading render…", flush=True)
+        print(f"\n☁️  Uploading render to GCS…", flush=True)
         video_url = upload_to_gcs(out, f"anchor/{RECORD_ID}/{LANGUAGE}/studio_final.mp4")
         if not video_url:
             db_patch(RECORD_ID, {"status": "error"}); return
 
+        print("   💾 Updating Supabase → rendered…", flush=True)
         db_patch(RECORD_ID, {"video_url": video_url, "status": "rendered"})
 
     print(f"\n{'='*60}", flush=True)
