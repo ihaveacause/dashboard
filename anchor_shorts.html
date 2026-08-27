@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>On Camera Shorts</title>
+<title>On Camera · YouTube Long</title>
 <style>
 :root{
   --bg:#06070a;--surface:#0e1018;--surface2:#13151f;--surface3:#1a1d2a;
@@ -48,11 +48,15 @@ a{color:var(--accent);text-decoration:none}
   width:100%;background:var(--surface2);border:1px solid var(--border2);border-radius:8px;
   padding:8px 12px;color:var(--text);font-size:13px;outline:none;transition:.15s;font-family:inherit
 }
-.field input:focus,.field textarea:focus{border-color:var(--accent)}
+.field input:focus,.field textarea:focus,.field select:focus{border-color:var(--accent)}
 .field-error{font-size:11px;color:var(--red);margin-top:4px}
+/* video type toggle */
 .type-toggle{display:flex;gap:0;border:1px solid var(--border2);border-radius:10px;overflow:hidden;margin-bottom:18px}
 .type-btn{flex:1;padding:9px;text-align:center;cursor:pointer;font-size:13px;font-weight:600;color:var(--muted);background:var(--surface2);border:none;transition:.15s}
 .type-btn.active{background:var(--accent);color:#06070a}
+/* episode lookup */
+.ep-lookup{display:flex;gap:8px;align-items:flex-end}
+.ep-lookup input{flex:1}
 .ep-found{background:var(--surface3);border:1px solid var(--border2);border-radius:8px;padding:10px 12px;margin-top:6px;font-size:13px}
 .ep-found .ep-title{color:var(--accent);font-weight:600}
 .ep-found .ep-meta{color:var(--muted);font-size:11px;margin-top:2px}
@@ -65,23 +69,29 @@ a{color:var(--accent);text-decoration:none}
 .empty{text-align:center;padding:60px 20px;color:var(--muted)}
 .empty .big{font-size:48px;margin-bottom:12px}
 .sep{height:1px;background:var(--border);margin:16px 0}
-.img-slot{background:var(--surface2);border:1px solid var(--border2);border-radius:10px;padding:14px;margin-bottom:8px}
+.img-slots{display:flex;flex-direction:column;gap:10px;margin-top:10px}
+.img-slot{background:var(--surface2);border:1px solid var(--border2);border-radius:10px;padding:14px}
 .img-slot-header{display:flex;align-items:center;gap:8px;margin-bottom:10px}
 .img-slot-num{background:var(--accent);color:#06070a;border-radius:50%;width:22px;height:22px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0}
-.img-slot-timing{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.img-slot-timing{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px}
 .img-slot-timing input{width:100px;background:var(--surface3);border:1px solid var(--border2);border-radius:7px;padding:5px 8px;color:var(--text);font-size:12px;outline:none}
 .img-slot-timing input:focus{border-color:var(--accent)}
-.img-preview{width:40px;height:60px;object-fit:cover;border-radius:5px;border:1px solid var(--border2)}
+.img-preview{width:60px;height:40px;object-fit:cover;border-radius:5px;border:1px solid var(--border2)}
 .pip-note{font-size:11px;color:var(--muted);margin-top:6px;line-height:1.4;padding:6px 10px;background:var(--surface3);border-radius:6px;border-left:2px solid var(--accent)}
-video{max-width:100%;border-radius:8px;border:1px solid var(--border2);display:block;max-height:300px}
+video{max-width:100%;border-radius:8px;border:1px solid var(--border2);display:block}
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--surface3);border:1px solid var(--border2);color:var(--text);padding:12px 18px;border-radius:10px;font-size:13px;z-index:500;display:none}
 .bar{height:4px;background:var(--surface3);border-radius:3px;overflow:hidden;margin-top:12px}
 .bar > i{display:block;height:100%;background:var(--accent);width:30%;animation:slide 1.4s infinite}
 @keyframes slide{0%{margin-left:-30%}100%{margin-left:100%}}
 .note{font-size:11px;color:var(--muted);margin-top:6px}
+
+.view-tabs{display:flex;gap:0;border:1px solid var(--border2);border-radius:10px;overflow:hidden;margin-bottom:20px}
+.view-tab{flex:1;padding:8px;text-align:center;cursor:pointer;font-size:13px;font-weight:600;color:var(--muted);background:var(--surface2);border:none;transition:.15s}
+.view-tab.active{background:var(--accent);color:#06070a}
+.shorts-note{background:var(--surface3);border:1px solid var(--border2);border-radius:8px;padding:8px 12px;font-size:11px;color:var(--muted);margin-top:6px}
 .confirm-delete{background:#1a0808;border:1px solid var(--red);border-radius:10px;padding:14px;margin-top:12px}
 .confirm-delete p{color:var(--red);font-size:13px;margin-bottom:10px}
-.shorts-note{background:var(--surface3);border:1px solid var(--border2);border-radius:8px;padding:8px 12px;font-size:11px;color:var(--muted);margin-top:6px}
+.thumb-note{background:var(--surface3);border:1px solid var(--border2);border-radius:8px;padding:10px 12px;font-size:12px;color:var(--muted);margin-top:8px}
 </style>
 </head>
 <body>
@@ -103,6 +113,10 @@ video{max-width:100%;border-radius:8px;border:1px solid var(--border2);display:b
     </div>
     <button class="btn btn-primary" onclick="openUpload()">⬆ Upload Recording</button>
   </div>
+  <div class="view-tabs">
+    <button class="view-tab active" id="tab-active" onclick="setView('active')">🤳 Active</button>
+    <button class="view-tab" id="tab-published" onclick="setView('published')">✅ Published</button>
+  </div>
   <div id="list"><div class="empty"><div class="big">🤳</div>Loading…</div></div>
 </div>
 
@@ -112,6 +126,7 @@ video{max-width:100%;border-radius:8px;border:1px solid var(--border2);display:b
     <h2>Upload a vertical recording</h2>
     <div class="muted" style="margin-bottom:16px">Film vertically (portrait). Under 3 minutes for YouTube Shorts.</div>
 
+    <!-- Series / Standalone toggle -->
     <div class="type-toggle">
       <button class="type-btn active" id="type-series" onclick="setType('series')">📺 Series Episode</button>
       <button class="type-btn" id="type-standalone" onclick="setType('standalone')">🎤 Standalone</button>
@@ -121,7 +136,9 @@ video{max-width:100%;border-radius:8px;border:1px solid var(--border2);display:b
     <div id="series-fields">
       <div class="field">
         <label>Episode number <span style="color:var(--red)">*</span></label>
-        <input type="number" id="upEpisode" placeholder="e.g. 19" min="1" oninput="lookupEpisode()">
+        <div class="ep-lookup">
+          <input type="number" id="upEpisode" placeholder="e.g. 19" min="1" oninput="lookupEpisode()">
+        </div>
         <div id="epFound" style="display:none" class="ep-found">
           <div class="ep-title" id="epTitle">—</div>
           <div class="ep-meta" id="epMeta">—</div>
@@ -138,7 +155,7 @@ video{max-width:100%;border-radius:8px;border:1px solid var(--border2);display:b
     <div id="standalone-fields" style="display:none">
       <div class="field">
         <label>Video title <span style="color:var(--red)">*</span></label>
-        <input type="text" id="upTitle" placeholder="e.g. One reason freebies fail">
+        <input type="text" id="upTitle" placeholder="e.g. Why freebies fail — my take">
         <div id="titleError" class="field-error" style="display:none">Title is required</div>
       </div>
       <div class="field">
@@ -147,11 +164,13 @@ video{max-width:100%;border-radius:8px;border:1px solid var(--border2);display:b
       </div>
     </div>
 
+    <!-- Video file (both types) -->
     <div class="field">
       <label>Vertical recording (mp4 / mov) <span style="color:var(--red)">*</span></label>
       <input type="file" id="upFile" accept="video/*">
       <div class="note" id="upFileNote"></div>
     </div>
+
     <div class="shorts-note">📐 Film vertically (portrait 9:16). YouTube Shorts max = 3 minutes. Longer videos still upload but publish as regular videos.</div>
 
     <div class="bar" id="upBar" style="display:none"><i></i></div>
@@ -165,6 +184,7 @@ video{max-width:100%;border-radius:8px;border:1px solid var(--border2);display:b
 <div class="toast" id="toast"></div>
 
 <script>
+// ── Config ─────────────────────────────────────────────────
 const SB_URL = 'https://alfuvzlmatfkgdrkeqgk.supabase.co';
 const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFsZnV2emxtYXRma2dkcmtlcWdrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc5OTkzOTQsImV4cCI6MjA5MzU3NTM5NH0.JtxVTVdjR3vPWooM41xM1MCvJNH7WDnFjzfowjuDiRg';
 const H = {
@@ -175,15 +195,23 @@ const H = {
 
 let LANG     = 'en';
 let VID_TYPE = 'series';
-let _epTimer = null;
+let VIEW     = 'active';   // 'active' | 'published'
+let _epLookupTimer = null;
 
-function TABLE(){ return LANG==='ta' ? 'tamil_anchor_shorts' : 'english_anchor_shorts'; }
-function EP_TABLE(){ return LANG==='ta' ? 'tamil_episodes' : 'english_episodes'; }
+function setView(v){
+  VIEW = v;
+  document.getElementById('tab-active').classList.toggle('active', v==='active');
+  document.getElementById('tab-published').classList.toggle('active', v==='published');
+  load();
+}
+
+function TABLE(){ return LANG === 'ta' ? 'tamil_anchor_shorts' : 'english_anchor_shorts'; }
+function EP_TABLE(){ return LANG === 'ta' ? 'tamil_episodes' : 'english_episodes'; }
 
 function setLang(l){
   LANG = l;
-  document.getElementById('lang-en').className = 'lang-btn'+(l==='en'?' en':'');
-  document.getElementById('lang-ta').className  = 'lang-btn'+(l==='ta'?' ta':'');
+  document.getElementById('lang-en').className = 'lang-btn' + (l==='en'?' en':'');
+  document.getElementById('lang-ta').className  = 'lang-btn' + (l==='ta'?' ta':'');
   load();
 }
 
@@ -195,89 +223,116 @@ function setType(t){
   document.getElementById('standalone-fields').style.display = t==='standalone' ? '' : 'none';
 }
 
+// ── Toast ──────────────────────────────────────────────────
 let _toastT;
-function toast(msg,dur=3200){
-  const el=document.getElementById('toast');
-  el.textContent=msg; el.style.display='block';
+function toast(msg, dur=3200){
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.style.display = 'block';
   clearTimeout(_toastT);
-  _toastT=setTimeout(()=>el.style.display='none',dur);
+  _toastT = setTimeout(()=>el.style.display='none', dur);
 }
 
 function setBar(pct){
-  const bar=document.getElementById('upBar'); bar.style.display='block';
-  const i=bar.querySelector('i');
-  if(pct>=1){i.style.animation='none';i.style.width='100%';}
-  else{i.style.animation='';i.style.width='30%';}
+  const bar = document.getElementById('upBar');
+  bar.style.display = 'block';
+  const i = bar.querySelector('i');
+  if(pct >= 1){ i.style.animation='none'; i.style.width='100%'; }
+  else { i.style.animation=''; i.style.width='30%'; }
 }
 
-async function sbGet(table,params={}){
-  const q=new URLSearchParams({select:'*',order:'created_at.desc',...params});
-  const r=await fetch(`${SB_URL}/rest/v1/${table}?${q}`,{headers:H});
-  return r.ok?r.json():[];
+// ── Supabase helpers ───────────────────────────────────────
+async function sbGet(table, params={}){
+  const q = new URLSearchParams({select:'*', order:'created_at.desc', ...params});
+  const r = await fetch(`${SB_URL}/rest/v1/${table}?${q}`, {headers:H});
+  return r.ok ? r.json() : [];
 }
-async function sbPatch(table,id,data){
-  await fetch(`${SB_URL}/rest/v1/${table}?id=eq.${id}`,{method:'PATCH',headers:H,body:JSON.stringify(data)});
+async function sbPatch(table, id, data){
+  await fetch(`${SB_URL}/rest/v1/${table}?id=eq.${id}`, {
+    method:'PATCH', headers:H, body:JSON.stringify(data)
+  });
 }
-async function sbInsert(table,data){
-  const r=await fetch(`${SB_URL}/rest/v1/${table}`,{method:'POST',headers:{...H,'Prefer':'return=representation'},body:JSON.stringify(data)});
-  return r.ok?r.json():null;
+async function sbInsert(table, data){
+  const r = await fetch(`${SB_URL}/rest/v1/${table}`, {
+    method:'POST', headers:{...H,'Prefer':'return=representation'}, body:JSON.stringify(data)
+  });
+  return r.ok ? r.json() : null;
 }
 
+// ── Episode lookup ─────────────────────────────────────────
 function lookupEpisode(){
-  clearTimeout(_epTimer);
-  const val=document.getElementById('upEpisode').value.trim();
-  document.getElementById('epFound').style.display='none';
-  document.getElementById('epError').style.display='none';
-  if(!val||isNaN(val)) return;
-  _epTimer=setTimeout(()=>_doLookup(parseInt(val)),500);
+  clearTimeout(_epLookupTimer);
+  const val = document.getElementById('upEpisode').value.trim();
+  document.getElementById('epFound').style.display  = 'none';
+  document.getElementById('epError').style.display  = 'none';
+  if(!val || isNaN(val)) return;
+  _epLookupTimer = setTimeout(()=> _doLookup(parseInt(val)), 500);
 }
 
 async function _doLookup(num){
-  const rows=await sbGet(EP_TABLE(),{episode_number:`eq.${num}`,select:'episode_number,title_tamil,title_english,status,module'});
-  const errEl=document.getElementById('epError');
-  const foundEl=document.getElementById('epFound');
+  const rows = await sbGet(EP_TABLE(), {
+    episode_number: `eq.${num}`,
+    select: 'episode_number,title_tamil,title_english,status,module'
+  });
+  const epErrorEl = document.getElementById('epError');
+  const epFoundEl = document.getElementById('epFound');
   if(!rows.length){
-    errEl.textContent=`Episode ${num} not found in ${EP_TABLE()}`;
-    errEl.style.display='block'; foundEl.style.display='none'; return;
-  }
-  const ep=rows[0];
-  const title=LANG==='ta'?(ep.title_tamil||ep.title_english||`Episode ${num}`):(ep.title_english||ep.title_tamil||`Episode ${num}`);
-  document.getElementById('epTitle').textContent=title;
-  document.getElementById('epMeta').textContent=`EP${num} · ${ep.status||'pending'}${ep.module?' · '+ep.module:''}`;
-  foundEl.style.display='block'; errEl.style.display='none';
-  if(ep.module) document.getElementById('upModuleSeries').value=ep.module;
-}
-
-async function load(){
-  const rows=await sbGet(TABLE());
-  const el=document.getElementById('list');
-  if(!rows.length){
-    el.innerHTML=`<div class="empty"><div class="big">🤳</div>No recordings yet — upload one above.</div>`;
+    epErrorEl.textContent = `Episode ${num} not found in ${EP_TABLE()}`;
+    epErrorEl.style.display = 'block';
+    epFoundEl.style.display = 'none';
     return;
   }
-  el.innerHTML=rows.map(r=>renderCard(r)).join('');
+  const ep = rows[0];
+  const title = LANG === 'ta'
+    ? (ep.title_tamil || ep.title_english || `Episode ${num}`)
+    : (ep.title_english || ep.title_tamil || `Episode ${num}`);
+  document.getElementById('epTitle').textContent = title;
+  document.getElementById('epMeta').textContent  =
+    `EP${num} · Status: ${ep.status || 'pending'}${ep.module ? ' · Module: '+ep.module : ''}`;
+  epFoundEl.style.display = 'block';
+  epErrorEl.style.display = 'none';
+  // Auto-fill module if episode has one
+  if(ep.module){
+    document.getElementById('upModuleSeries').value = ep.module;
+  }
 }
 
-function esc(s){return (s==null?'':String(s)).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+// ── Load list ──────────────────────────────────────────────
+async function load(){
+  const rows = await sbGet(TABLE());
+  const el   = document.getElementById('list');
+  const filtered = VIEW === 'published'
+    ? rows.filter(r => r.status === 'published')
+    : rows.filter(r => r.status !== 'published');
+  if(!filtered.length){
+    const msg = VIEW === 'published'
+      ? 'No published Shorts yet.'
+      : 'No active recordings — upload one above.';
+    el.innerHTML = `<div class="empty"><div class="big">🎬</div>${msg}</div>`;
+    return;
+  }
+  el.innerHTML = filtered.map(r => renderCard(r)).join('');
+}
+
+function esc(s){ return (s==null?'':String(s)).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
 function statusBadge(s){
-  const map={pending:'badge-pending',rendering:'badge-rendering',rendered:'badge-rendered',
+  const map = {pending:'badge-pending',rendering:'badge-rendering',rendered:'badge-rendered',
     publishing:'badge-publishing',published:'badge-published',error:'badge-error'};
   return `<span class="badge ${map[s]||'badge-pending'}">${esc(s||'pending')}</span>`;
 }
 
 function renderCard(row){
-  const id=row.id;
-  const images=row.image_overlays||[];
-  const status=row.status||'pending';
-  const isPublished=status==='published';
-  const canRender=status==='pending'||status==='error';
-  const canPublish=status==='rendered';
-  const isSeries=!!row.episode_number;
+  const id       = row.id;
+  const images   = row.image_overlays || [];
+  const status   = row.status || 'pending';
+  const isPublished = status === 'published';
+  const canRender   = status === 'pending' || status === 'error';
+  const canPublish  = status === 'rendered';
+  const isSeries    = !!row.episode_number;
 
-  let imgHtml='';
+  let imgSlotsHtml = '';
   if(images.length){
-    imgHtml=`<div style="margin-top:10px">
+    imgSlotsHtml = `<div style="margin-top:10px">
       <div style="font-size:12px;color:var(--muted);margin-bottom:6px">📸 ${images.length} image(s) queued</div>
       ${images.map((img,i)=>`
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;font-size:12px;color:var(--muted)">
@@ -290,7 +345,7 @@ function renderCard(row){
 
   const deleteSection = isPublished && !row.gcs_deleted ? `
     <div class="confirm-delete">
-      <p>✅ Published to YouTube. Delete GCS files to save storage?</p>
+      <p>✅ Published to YouTube. Delete all GCS files to save storage?</p>
       <div class="flow">
         <button class="btn btn-danger btn-sm" onclick="deleteGCS('${id}')">🗑 Delete GCS Files</button>
         <span class="muted" style="font-size:11px">Recording + images + render removed from GCS</span>
@@ -299,30 +354,30 @@ function renderCard(row){
 
   return `<div class="card" id="card-${id}">
     <div class="flow" style="margin-bottom:10px">
-      <div class="card-title" style="flex:1">${esc(row.title||row.working_title||'Untitled')}</div>
+      <div class="card-title" style="flex:1">${esc(row.title || row.working_title || 'Untitled')}</div>
       ${statusBadge(status)}
-      ${isSeries?`<span class="badge badge-series">EP${row.episode_number}</span>`:`<span class="badge badge-standalone">Standalone</span>`}
-      ${row.module?`<span class="badge badge-pending">${esc(row.module)}</span>`:''}
+      ${isSeries ? `<span class="badge badge-series">EP${row.episode_number}</span>` : `<span class="badge badge-standalone">Standalone</span>`}
+      ${row.module ? `<span class="badge badge-pending">${esc(row.module)}</span>` : ''}
     </div>
     <div class="muted" style="margin-bottom:12px">
       ${new Date(row.created_at).toLocaleDateString('en-IN',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}
     </div>
 
-    ${row.source_video_url&&!row.gcs_deleted?`<video src="${esc(row.source_video_url)}" controls style="margin-bottom:12px"></video>`:''}
+    ${row.source_video_url && !row.gcs_deleted ? `<video src="${esc(row.source_video_url)}" controls style="max-height:180px;margin-bottom:12px"></video>` : ''}
 
-    ${imgHtml}
+    ${imgSlotsHtml}
     <div class="sep"></div>
 
     <div class="field" style="margin-bottom:10px">
       <label>Video title (for YouTube)</label>
-      <input type="text" id="title_${id}" value="${esc(row.title||row.working_title||'')}" placeholder="YouTube title">
+      <input type="text" id="title_${id}" value="${esc(row.title||row.working_title||'')}" placeholder="Enter YouTube title">
     </div>
 
     <details style="margin-bottom:12px">
       <summary style="cursor:pointer;font-size:13px;color:var(--accent);font-weight:600;padding:4px 0">📸 Add / manage images</summary>
       <div style="margin-top:10px">
-        <div class="pip-note">Images appear full screen during the Short. Your video shrinks to a small PiP corner while the image is shown.</div>
-        <div id="slots-${id}">
+        <div class="pip-note">Your video plays full screen. When an image appears, your video shrinks to PiP (right-middle). Image fades out, your video returns full screen.</div>
+        <div class="img-slots" id="slots-${id}">
           ${renderImageSlots(id, images)}
         </div>
         <button class="btn btn-ghost btn-sm" style="margin-top:10px" onclick="addSlot('${id}')">+ Add image</button>
@@ -332,19 +387,20 @@ function renderCard(row){
     <div class="flow">
       <button class="btn btn-ghost btn-sm" onclick="saveTitle('${id}')">💾 Save title</button>
       <button class="btn btn-ghost btn-sm" onclick="saveImages('${id}')">💾 Save images</button>
-      ${canRender?`<button class="btn btn-primary btn-sm" onclick="triggerRender('${id}')">🎬 Render Short</button>`:''}
-      ${canPublish?`<button class="btn btn-primary btn-sm" onclick="triggerPublish('${id}')">🚀 Publish to YouTube</button>`:''}
-      ${row.video_url&&!row.gcs_deleted?`<a class="btn btn-ghost btn-sm" href="${esc(row.video_url)}" target="_blank">▶ Preview</a>`:''}
-      ${row.youtube_url?`<a class="btn btn-ghost btn-sm" href="${esc(row.youtube_url)}" target="_blank">▶ YouTube</a>`:''}
+      ${canRender  ? `<button class="btn btn-primary btn-sm" onclick="triggerRender('${id}')">🎬 Render video</button>` : ''}
+      ${canPublish ? `<button class="btn btn-primary btn-sm" onclick="triggerPublish('${id}')">🚀 Publish to YouTube</button>` : ''}
+      ${row.video_url && !row.gcs_deleted ? `<a class="btn btn-ghost btn-sm" href="${esc(row.video_url)}" target="_blank">▶ Preview render</a>` : ''}
+      ${row.youtube_url ? `<a class="btn btn-ghost btn-sm" href="${esc(row.youtube_url)}" target="_blank">▶ YouTube</a>` : ''}
     </div>
     ${deleteSection}
   </div>`;
 }
 
+// ── Image slots ────────────────────────────────────────────
 function renderImageSlots(cardId, images){
   if(!images.length) return '<div class="muted" style="font-size:12px;padding:8px 0">No images added yet.</div>';
   return images.map((img,i)=>`
-    <div class="img-slot">
+    <div class="img-slot" id="slot-${cardId}-${i}">
       <div class="img-slot-header">
         <div class="img-slot-num">${i+1}</div>
         <span style="font-size:13px;color:var(--text);flex:1">${img.filename||'Image '+(i+1)}</span>
@@ -361,28 +417,35 @@ function renderImageSlots(cardId, images){
 }
 
 function addSlot(cardId){
-  const input=document.createElement('input');
-  input.type='file'; input.accept='image/*';
-  input.onchange=async(e)=>{
-    const file=e.target.files[0]; if(!file) return;
+  const input = document.createElement('input');
+  input.type = 'file'; input.accept = 'image/*';
+  input.onchange = async (e)=>{
+    const file = e.target.files[0];
+    if(!file) return;
     toast('Uploading image…');
     try{
-      // Upload directly to Supabase Storage (no CORS issues)
-      const ext=file.name.split('.').pop()||'jpg';
-      const path=`${cardId}/${Date.now()}.${ext}`;
-      const r=await fetch(`${SB_URL}/storage/v1/object/anchor-images/${path}`,{
-        method:'POST',
-        headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Content-Type':file.type||'image/jpeg','x-upsert':'true'},
-        body:file
+      // Upload to Supabase Storage (no CORS issues)
+      const ext = file.name.split('.').pop() || 'jpg';
+      const path = `${cardId}/${Date.now()}.${ext}`;
+      const r = await fetch(`${SB_URL}/storage/v1/object/anchor-images/${path}`, {
+        method: 'POST',
+        headers: {
+          'apikey': SB_KEY,
+          'Authorization': 'Bearer ' + SB_KEY,
+          'Content-Type': file.type || 'image/jpeg',
+          'x-upsert': 'true'
+        },
+        body: file
       });
-      if(!r.ok) throw new Error('image upload '+r.status+': '+await r.text());
-      const object_url=`${SB_URL}/storage/v1/object/public/anchor-images/${path}`;
-      const rows=await sbGet(TABLE(),{id:`eq.${cardId}`,select:'image_overlays'});
-      const imgs=(rows[0]?.image_overlays)||[];
+      if(!r.ok) throw new Error('image upload ' + r.status + ': ' + await r.text());
+      const object_url = `${SB_URL}/storage/v1/object/public/anchor-images/${path}`;
+      const rows = await sbGet(TABLE(),{id:`eq.${cardId}`,select:'image_overlays'});
+      const imgs = (rows[0]?.image_overlays)||[];
       imgs.push({url:object_url,filename:file.name,start:0,duration:5});
       await sbPatch(TABLE(),cardId,{image_overlays:imgs});
-      toast('Image added — set timing then save'); load();
-    }catch(err){toast('Upload failed: '+(err.message||err));}
+      toast('Image added — set timing then save');
+      load();
+    }catch(err){ toast('Image upload failed: '+(err.message||err)); }
   };
   input.click();
 }
@@ -390,52 +453,57 @@ function addSlot(cardId){
 function removeSlot(cardId,index){
   if(!confirm('Remove this image?')) return;
   sbGet(TABLE(),{id:`eq.${cardId}`,select:'image_overlays'}).then(rows=>{
-    const imgs=(rows[0]?.image_overlays)||[];
+    const imgs = (rows[0]?.image_overlays)||[];
     imgs.splice(index,1);
-    sbPatch(TABLE(),cardId,{image_overlays:imgs}).then(()=>{toast('Image removed');load();});
+    sbPatch(TABLE(),cardId,{image_overlays:imgs}).then(()=>{ toast('Image removed'); load(); });
   });
 }
 
 async function saveImages(cardId){
-  const rows=await sbGet(TABLE(),{id:`eq.${cardId}`,select:'image_overlays'});
-  const imgs=[...((rows[0]?.image_overlays)||[])];
+  const rows = await sbGet(TABLE(),{id:`eq.${cardId}`,select:'image_overlays'});
+  const imgs = [...((rows[0]?.image_overlays)||[])];
   imgs.forEach((img,i)=>{
-    const s=document.getElementById(`start-${cardId}-${i}`);
-    const d=document.getElementById(`dur-${cardId}-${i}`);
-    if(s) img.start=parseFloat(s.value)||0;
-    if(d) img.duration=parseFloat(d.value)||5;
+    const s = document.getElementById(`start-${cardId}-${i}`);
+    const d = document.getElementById(`dur-${cardId}-${i}`);
+    if(s) img.start    = parseFloat(s.value)||0;
+    if(d) img.duration = parseFloat(d.value)||5;
   });
   await sbPatch(TABLE(),cardId,{image_overlays:imgs});
   toast('Image timings saved ✓');
 }
 
 async function saveTitle(cardId){
-  const el=document.getElementById('title_'+cardId);
-  if(!el?.value.trim()){toast('Enter a title first');return;}
+  const el = document.getElementById('title_'+cardId);
+  if(!el?.value.trim()){ toast('Enter a title first'); return; }
   await sbPatch(TABLE(),cardId,{title:el.value.trim()});
   toast('Title saved ✓');
 }
 
+// ── GCS upload ─────────────────────────────────────────────
 function gcsPut(sessionUri,file,onProgress){
   return new Promise((res,rej)=>{
-    const x=new XMLHttpRequest();
+    const x = new XMLHttpRequest();
     x.open('PUT',sessionUri,true);
     x.setRequestHeader('Content-Type',file.type||'video/mp4');
-    x.upload.onprogress=e=>{if(e.lengthComputable) onProgress(e.loaded/e.total);};
-    x.onload=()=>(x.status>=200&&x.status<300)?res(x):rej(new Error('GCS PUT '+x.status));
-    x.onerror=()=>rej(new Error('Network error'));
+    x.upload.onprogress = e=>{ if(e.lengthComputable) onProgress(e.loaded/e.total); };
+    x.onload = ()=>(x.status>=200&&x.status<300)?res(x):rej(new Error('GCS PUT '+x.status));
+    x.onerror = ()=>rej(new Error('Network error'));
     x.send(file);
   });
 }
 
+// ── Trigger render ─────────────────────────────────────────
 async function triggerRender(id){
-  const titleEl=document.getElementById('title_'+id);
+  const titleEl = document.getElementById('title_'+id);
   if(titleEl?.value.trim()) await sbPatch(TABLE(),id,{title:titleEl.value.trim()});
   await saveImages(id);
   toast('Starting render…');
   await sbPatch(TABLE(),id,{status:'rendering'});
   try{
-    const r=await fetch(`${SB_URL}/functions/v1/trigger-anchor-shorts`,{method:'POST',headers:H,body:JSON.stringify({record_id:id,language:LANG,step:'render'})});
+    const r = await fetch(`${SB_URL}/functions/v1/trigger-anchor-shorts`,{
+      method:'POST',headers:H,
+      body:JSON.stringify({record_id:id,language:LANG,step:'render'})
+    });
     if(!r.ok) throw new Error('trigger '+r.status+': '+await r.text());
     toast('Render started — check back in ~2 min');
     setTimeout(load,2000);
@@ -445,12 +513,16 @@ async function triggerRender(id){
   }
 }
 
+// ── Trigger publish ────────────────────────────────────────
 async function triggerPublish(id){
   if(!confirm('Publish this Short to YouTube?')) return;
-  toast('Starting YouTube upload…');
+  toast('Starting upload to YouTube…');
   await sbPatch(TABLE(),id,{status:'publishing'});
   try{
-    const r=await fetch(`${SB_URL}/functions/v1/trigger-anchor-shorts`,{method:'POST',headers:H,body:JSON.stringify({record_id:id,language:LANG,step:'upload'})});
+    const r = await fetch(`${SB_URL}/functions/v1/trigger-anchor-shorts`,{
+      method:'POST',headers:H,
+      body:JSON.stringify({record_id:id,language:LANG,step:'upload'})
+    });
     if(!r.ok) throw new Error('trigger '+r.status+': '+await r.text());
     toast('YouTube upload started — refresh in a few minutes');
     setTimeout(load,3000);
@@ -460,85 +532,113 @@ async function triggerPublish(id){
   }
 }
 
+// ── GCS delete ─────────────────────────────────────────────
 async function deleteGCS(id){
-  if(!confirm('Permanently delete all GCS files? YouTube Short stays. Continue?')) return;
+  if(!confirm('Permanently delete all GCS files? YouTube video stays. Continue?')) return;
   toast('Deleting GCS files…');
   try{
-    const r=await fetch(`${SB_URL}/functions/v1/trigger-anchor-shorts`,{method:'POST',headers:H,body:JSON.stringify({record_id:id,language:LANG,step:'delete_gcs'})});
+    const r = await fetch(`${SB_URL}/functions/v1/trigger-anchor-shorts`,{
+      method:'POST',headers:H,
+      body:JSON.stringify({record_id:id,language:LANG,step:'delete_gcs'})
+    });
     if(!r.ok) throw new Error('delete '+r.status+': '+await r.text());
     toast('GCS files deleted ✓');
     await sbPatch(TABLE(),id,{source_video_url:null,video_url:null,gcs_deleted:true});
     setTimeout(load,1500);
-  }catch(err){toast('GCS delete failed: '+err.message);}
+  }catch(err){ toast('GCS delete failed: '+err.message); }
 }
 
-function openUpload(){ setType('series'); document.getElementById('upOverlay').classList.add('show'); }
+// ── Upload modal ───────────────────────────────────────────
+function openUpload(){
+  setType('series');
+  document.getElementById('upOverlay').classList.add('show');
+}
 function closeUpload(){
   document.getElementById('upOverlay').classList.remove('show');
-  document.getElementById('epFound').style.display='none';
-  document.getElementById('epError').style.display='none';
+  document.getElementById('epFound').style.display = 'none';
+  document.getElementById('epError').style.display = 'none';
 }
 
 document.getElementById('upFile').addEventListener('change',e=>{
-  const f=e.target.files[0];
-  document.getElementById('upFileNote').textContent=f?`${(f.size/1048576).toFixed(1)} MB — ${f.name}`:'';
+  const f = e.target.files[0];
+  document.getElementById('upFileNote').textContent = f?`${(f.size/1048576).toFixed(1)} MB — ${f.name}`:'';
 });
 
 async function submitUpload(){
-  const file=document.getElementById('upFile').files[0];
-  if(!file){toast('Choose a video file');return;}
+  const file = document.getElementById('upFile').files[0];
+  if(!file){ toast('Choose a video file'); return; }
 
   let title='', module='', episodeNumber=null;
 
-  if(VID_TYPE==='series'){
-    const epNum=parseInt(document.getElementById('upEpisode').value);
-    if(!epNum){toast('Enter an episode number');return;}
-    const rows=await sbGet(EP_TABLE(),{episode_number:`eq.${epNum}`,select:'title_tamil,title_english,module'});
-    if(!rows.length){toast(`Episode ${epNum} not found`);return;}
-    const ep=rows[0];
-    title=LANG==='ta'?(ep.title_tamil||ep.title_english||`Episode ${epNum}`):(ep.title_english||ep.title_tamil||`Episode ${epNum}`);
-    module=document.getElementById('upModuleSeries').value.trim();
-    if(!module){toast('Module is required');return;}
-    episodeNumber=epNum;
-  }else{
-    title=document.getElementById('upTitle').value.trim();
-    module=document.getElementById('upModuleStandalone').value.trim();
-    if(!title){document.getElementById('titleError').style.display='block';toast('Title is required');return;}
+  if(VID_TYPE === 'series'){
+    const epNum = parseInt(document.getElementById('upEpisode').value);
+    if(!epNum){ toast('Enter an episode number'); return; }
+    // verify episode exists and get title
+    const rows = await sbGet(EP_TABLE(),{episode_number:`eq.${epNum}`,select:'title_tamil,title_english,module'});
+    if(!rows.length){ toast(`Episode ${epNum} not found`); return; }
+    const ep = rows[0];
+    title = LANG==='ta'
+      ? (ep.title_tamil||ep.title_english||`Episode ${epNum}`)
+      : (ep.title_english||ep.title_tamil||`Episode ${epNum}`);
+    module = document.getElementById('upModuleSeries').value.trim();
+    if(!module){ toast('Module is required'); return; }
+    episodeNumber = epNum;
+  } else {
+    title  = document.getElementById('upTitle').value.trim();
+    module = document.getElementById('upModuleStandalone').value.trim();
+    if(!title){
+      document.getElementById('titleError').style.display='block';
+      toast('Title is required for standalone videos');
+      return;
+    }
     document.getElementById('titleError').style.display='none';
-    if(!module){toast('Module is required');return;}
+    if(!module){ toast('Module is required'); return; }
   }
 
-  const btn=document.getElementById('upSubmit'); btn.disabled=true; setBar(0);
+  const btn = document.getElementById('upSubmit'); btn.disabled=true; setBar(0);
   try{
-    const sres=await fetch(`${SB_URL}/functions/v1/anchor-upload-url`,{method:'POST',headers:H,body:JSON.stringify({filename:file.name,content_type:file.type||'video/mp4'})});
+    const sres = await fetch(`${SB_URL}/functions/v1/anchor-upload-url`,{
+      method:'POST',headers:H,
+      body:JSON.stringify({filename:file.name,content_type:file.type||'video/mp4'})
+    });
     if(!sres.ok) throw new Error('upload-url '+sres.status+': '+await sres.text());
-    const {session_uri,object_url,gcs_path}=await sres.json();
+    const {session_uri,object_url,gcs_path} = await sres.json();
+
     try{
       await gcsPut(session_uri,file,setBar);
     }catch(putErr){
       toast('Verifying upload…');
-      const vres=await fetch(`${SB_URL}/functions/v1/anchor-upload-url`,{method:'POST',headers:H,body:JSON.stringify({action:'verify',gcs_path})});
-      const v=vres.ok?await vres.json():{exists:false};
-      if(!(v.exists&&Number(v.size)===file.size)) throw putErr;
+      const vres = await fetch(`${SB_URL}/functions/v1/anchor-upload-url`,{
+        method:'POST',headers:H,
+        body:JSON.stringify({action:'verify',gcs_path})
+      });
+      const v = vres.ok ? await vres.json() : {exists:false};
+      if(!(v.exists && Number(v.size)===file.size)) throw putErr;
     }
 
-    const record={
-      working_title:title, title,
-      source_video_url:object_url,
-      module, image_overlays:[], video_type:VID_TYPE, status:'pending'
+    const record = {
+      working_title:    title,
+      title:            title,
+      source_video_url: object_url,
+      module:           module,
+      image_overlays:   [],
+      video_type:       VID_TYPE,
+      status:           'pending',
     };
-    if(episodeNumber) record.episode_number=episodeNumber;
-    await sbInsert(TABLE(),record);
+    if(episodeNumber) record.episode_number = episodeNumber;
 
-    toast('Uploaded — add images if needed, then render');
+    await sbInsert(TABLE(), record);
+
+    toast('Uploaded — add your images and timestamps, then render');
     closeUpload();
+    // Reset fields
     document.getElementById('upFile').value='';
     document.getElementById('upEpisode').value='';
     document.getElementById('upModuleSeries').value='';
     document.getElementById('upTitle').value='';
     document.getElementById('upModuleStandalone').value='';
     load();
-  }catch(err){toast('Upload failed: '+(err.message||err));}
+  }catch(err){ toast('Upload failed: '+(err.message||err)); }
   finally{
     btn.disabled=false;
     const bar=document.getElementById('upBar');
