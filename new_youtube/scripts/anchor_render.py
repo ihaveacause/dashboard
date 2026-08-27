@@ -200,6 +200,73 @@ def make_watermark_png(logo_im, out_path):
     return out_path
 
 # ── FFmpeg render ─────────────────────────────────────────────
+
+def make_branded_card(logo_im, out_path, duration=2):
+    """
+    Create a 2-second branded intro/outro card.
+    Dark background + centered logo + I Have a Cause text.
+    """
+    from PIL import ImageDraw, ImageFont
+    C_BG     = (6, 7, 10)
+    C_ACCENT = (90, 220, 168)
+    C_TEXT   = (238, 241, 247)
+
+    img  = Image.new('RGB', (W, H), C_BG)
+    draw = ImageDraw.Draw(img)
+
+    # Accent lines top + bottom
+    draw.rectangle([0, 0, W, 4], fill=C_ACCENT)
+    draw.rectangle([0, H-4, W, H], fill=C_ACCENT)
+
+    # Logo centered
+    if logo_im is not None:
+        logo_size = 160
+        logo = logo_im.resize((logo_size, logo_size), Image.LANCZOS)
+        lx = (W - logo_size) // 2
+        ly = (H - logo_size) // 2 - 50
+        img.paste(logo, (lx, ly), logo)
+
+    # Fonts
+    try:
+        f_lg = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 52)
+        f_ta = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 28)
+    except Exception:
+        f_lg = f_ta = ImageFont.load_default()
+
+    # "I Have a Cause"
+    text = "I Have a Cause"
+    try:
+        tw = draw.textlength(text, font=f_lg)
+    except Exception:
+        tw = len(text) * 30
+    draw.text(((W - tw) // 2, H // 2 + 50), text, font=f_lg, fill=C_ACCENT)
+
+    # Tamil tagline
+    tag = "\u0b92\u0bb0\u0bc1 \u0b95\u0bbe\u0bb0\u0ba3\u0bae\u0bcd \u0b87\u0bb0\u0bc1\u0b95\u0bcd\u0b95\u0bbf\u0bb1\u0ba4\u0bc1"
+    try:
+        tw2 = draw.textlength(tag, font=f_ta)
+        draw.text(((W - tw2) // 2, H // 2 + 118), tag, font=f_ta, fill=C_TEXT)
+    except Exception:
+        pass
+
+    card_jpg = out_path.replace('.mp4', '_card.jpg')
+    img.save(card_jpg, 'JPEG', quality=95)
+
+    r = subprocess.run([
+        "ffmpeg", "-y", "-loop", "1", "-i", card_jpg,
+        "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=48000",
+        "-t", str(duration),
+        "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
+        "-c:a", "aac", "-b:a", "192k", "-pix_fmt", "yuv420p",
+        out_path
+    ], capture_output=True, text=True)
+    if r.returncode != 0:
+        print(f"   ⚠️  Branded card failed: {r.stderr[-300:]}", flush=True)
+        return None
+    print(f"   ✅ Branded card: {duration}s clip created", flush=True)
+    return out_path
+
+
 def render_video(src_path, image_overlays, out_path, watermark_png=None):
     """
     75/25 split layout:
