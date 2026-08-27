@@ -84,6 +84,10 @@ video{max-width:100%;border-radius:8px;border:1px solid var(--border2);display:b
 .bar > i{display:block;height:100%;background:var(--accent);width:30%;animation:slide 1.4s infinite}
 @keyframes slide{0%{margin-left:-30%}100%{margin-left:100%}}
 .note{font-size:11px;color:var(--muted);margin-top:6px}
+
+.view-tabs{display:flex;gap:0;border:1px solid var(--border2);border-radius:10px;overflow:hidden;margin-bottom:20px}
+.view-tab{flex:1;padding:8px;text-align:center;cursor:pointer;font-size:13px;font-weight:600;color:var(--muted);background:var(--surface2);border:none;transition:.15s}
+.view-tab.active{background:var(--accent);color:#06070a}
 .confirm-delete{background:#1a0808;border:1px solid var(--red);border-radius:10px;padding:14px;margin-top:12px}
 .confirm-delete p{color:var(--red);font-size:13px;margin-bottom:10px}
 .thumb-note{background:var(--surface3);border:1px solid var(--border2);border-radius:8px;padding:10px 12px;font-size:12px;color:var(--muted);margin-top:8px}
@@ -107,6 +111,10 @@ video{max-width:100%;border-radius:8px;border:1px solid var(--border2);display:b
       <div class="sub">Upload your recording → add images with timestamps → render → publish to YouTube.</div>
     </div>
     <button class="btn btn-primary" onclick="openUpload()">⬆ Upload Recording</button>
+  </div>
+  <div class="view-tabs">
+    <button class="view-tab active" id="tab-active" onclick="setView('active')">🎬 Active</button>
+    <button class="view-tab" id="tab-published" onclick="setView('published')">✅ Published</button>
   </div>
   <div id="list"><div class="empty"><div class="big">🎬</div>Loading…</div></div>
 </div>
@@ -187,8 +195,16 @@ const H = {
 };
 
 let LANG     = 'en';
-let VID_TYPE = 'series';   // 'series' | 'standalone'
+let VID_TYPE = 'series';
+let VIEW     = 'active';   // 'active' | 'published'
 let _epLookupTimer = null;
+
+function setView(v){
+  VIEW = v;
+  document.getElementById('tab-active').classList.toggle('active', v==='active');
+  document.getElementById('tab-published').classList.toggle('active', v==='published');
+  load();
+}
 
 function TABLE(){ return LANG === 'ta' ? 'tamil_anchor' : 'english_anchor'; }
 function EP_TABLE(){ return LANG === 'ta' ? 'tamil_episodes' : 'english_episodes'; }
@@ -285,11 +301,17 @@ async function _doLookup(num){
 async function load(){
   const rows = await sbGet(TABLE());
   const el   = document.getElementById('list');
-  if(!rows.length){
-    el.innerHTML = `<div class="empty"><div class="big">🎬</div>No recordings yet — upload one above.</div>`;
+  const filtered = VIEW === 'published'
+    ? rows.filter(r => r.status === 'published')
+    : rows.filter(r => r.status !== 'published');
+  if(!filtered.length){
+    const msg = VIEW === 'published'
+      ? 'No published videos yet.'
+      : 'No active recordings — upload one above.';
+    el.innerHTML = `<div class="empty"><div class="big">🎬</div>${msg}</div>`;
     return;
   }
-  el.innerHTML = rows.map(r => renderCard(r)).join('');
+  el.innerHTML = filtered.map(r => renderCard(r)).join('');
 }
 
 function esc(s){ return (s==null?'':String(s)).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
