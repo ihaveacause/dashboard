@@ -245,6 +245,53 @@ def make_branded_card(logo_im, out_path, duration=2, logo_raw_path=None):
         return None
     print(f"   ✅ Branded card: {duration}s", flush=True)
     return out_path
+
+
+def make_slim_banner(logo_im, out_path):
+    """
+    Slim 28px branding bar baked into a full-frame transparent PNG.
+    Red accent line + logo + I Have a Cause + @IHaveACause
+    Placed at bottom of every frame.
+    """
+    from PIL import ImageDraw, ImageFont
+    canvas = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    draw   = ImageDraw.Draw(canvas)
+
+    BAR_H   = 28
+    bar_top = H - BAR_H
+    C_BAR   = (10, 12, 18, 220)
+    C_LINE  = (232, 65, 42, 255)
+    C_TEXT  = (238, 241, 247, 255)
+    C_MUTED = (160, 165, 190, 255)
+
+    draw.rectangle([0, bar_top, W, H], fill=C_BAR)
+    draw.rectangle([0, bar_top, W, bar_top + 2], fill=C_LINE)
+
+    logo_size = 18
+    logo_x    = 12
+    logo_y    = bar_top + (BAR_H - logo_size) // 2
+    if logo_im is not None:
+        try:
+            lim = logo_im.resize((logo_size, logo_size), Image.LANCZOS)
+            canvas.paste(lim, (logo_x, logo_y), lim)
+        except Exception:
+            pass
+
+    try:
+        f  = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 11)
+        f2 = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 10)
+    except Exception:
+        f = f2 = ImageFont.load_default()
+
+    text_x = logo_x + logo_size + 8
+    draw.text((text_x,       bar_top + 6), "I Have a Cause",  font=f,  fill=C_TEXT)
+    draw.text((text_x + 105, bar_top + 7), "·  @IHaveACause", font=f2, fill=C_MUTED)
+
+    canvas.save(out_path, "PNG")
+    print(f"   ✅ Slim banner PNG: {BAR_H}px bar at bottom", flush=True)
+    return out_path
+
+
 def render_video(src_path, image_overlays, out_path, watermark_png=None, banner_png=None):
     """
     75/25 split layout:
