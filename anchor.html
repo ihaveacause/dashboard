@@ -298,6 +298,45 @@ async function _doLookup(num){
 }
 
 // ── Load list ──────────────────────────────────────────────
+
+async function replaceRecording(cardId){
+  const input = document.createElement('input');
+  input.type = 'file'; input.accept = 'video/*';
+  input.onchange = async (e) => {
+    const file = e.target.files[0];
+    if(!file) return;
+    if(!confirm(`Replace recording with ${file.name} (${(file.size/1048576).toFixed(1)}MB)?`)) return;
+    toast('Uploading new recording…');
+    try{
+      const sres = await fetch(`${SB_URL}/functions/v1/anchor-upload-url`,{
+        method:'POST', headers:H,
+        body: JSON.stringify({filename:file.name, content_type:file.type||'video/mp4'})
+      });
+      if(!sres.ok) throw new Error('upload-url '+sres.status);
+      const {session_uri, object_url, gcs_path} = await sres.json();
+      try{
+        await gcsPut(session_uri, file, ()=>{});
+      }catch(putErr){
+        const vres = await fetch(`${SB_URL}/functions/v1/anchor-upload-url`,{
+          method:'POST', headers:H,
+          body: JSON.stringify({action:'verify', gcs_path})
+        });
+        const v = vres.ok ? await vres.json() : {exists:false};
+        if(!(v.exists && Number(v.size)===file.size)) throw putErr;
+      }
+      // Update record with new video URL and reset to pending
+      await sbPatch(TABLE(), cardId, {
+        source_video_url: object_url,
+        status: 'pending',
+        video_url: null
+      });
+      toast('Recording replaced ✓ — status reset to pending');
+      load();
+    }catch(err){ toast('Replace failed: '+(err.message||err)); }
+  };
+  input.click();
+}
+
 async function load(){
   const rows = await sbGet(TABLE());
   const el   = document.getElementById('list');
@@ -388,6 +427,7 @@ function renderCard(row){
     <div class="flow">
       <button class="btn btn-ghost btn-sm" onclick="saveTitle('${id}')">💾 Save title</button>
       <button class="btn btn-ghost btn-sm" onclick="saveImages('${id}')">💾 Save images</button>
+      <button class="btn btn-ghost btn-sm" onclick="replaceRecording('${id}')">🔄 Replace recording</button>
       ${canRender  ? `<button class="btn btn-primary btn-sm" onclick="triggerRender('${id}')">🎬 Render video</button>` : ''}
       ${canPublish ? `<button class="btn btn-primary btn-sm" onclick="triggerPublish('${id}')">🚀 Publish to YouTube</button>` : ''}
       ${row.video_url && !row.gcs_deleted ? `<a class="btn btn-ghost btn-sm" href="${esc(row.video_url)}" target="_blank">▶ Preview render</a>` : ''}
