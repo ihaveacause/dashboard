@@ -237,6 +237,7 @@ def make_branded_card(logo_im, out_path, duration=2, logo_raw_path=None):
         "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=48000",
         "-t", str(duration),
         "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
+        "-r", str(FPS),
         "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2",
         "-pix_fmt", "yuv420p", out_path
     ], capture_output=True, text=True)
@@ -454,6 +455,7 @@ def render_video(src_path, image_overlays, out_path, watermark_png=None, banner_
         ["-filter_complex", fc,
          "-map", "[vout]", "-map", "0:a",
          "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+         "-r", str(FPS),
          "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2",
          "-movflags", "+faststart", "-pix_fmt", "yuv420p", "-shortest",
          out_path]
@@ -493,8 +495,12 @@ def main():
         print(f"   ⏱  Duration: {src_dur:.1f}s", flush=True)
         print(f"   📐 Estimated render time: {src_dur/60*3:.0f}-{src_dur/60*4:.0f} mins on GitHub Actions", flush=True)
 
-        # 2) Logo watermark + slim banner
+        # 2) Logo watermark + slim banner + raw logo for card
         print("\n🎨 Loading logo…", flush=True)
+        # Download raw logo first (full size, for intro/outro card)
+        logo_raw_path = os.path.join(tmp, "logo_raw.png")
+        download_gcs_object(LOGO_GCS_PATH, logo_raw_path, "logo raw")
+        # Load resized versions for watermark and banner
         logo_video    = load_logo(tmp, LOGO_SIZE_VIDEO, opacity=LOGO_OPACITY_VIDEO)
         watermark_png = None
         banner_png    = None
@@ -536,8 +542,8 @@ def main():
         logo_full = load_logo(tmp, 200, opacity=255)
         intro_path = os.path.join(tmp, 'intro.mp4')
         outro_path = os.path.join(tmp, 'outro.mp4')
-        intro_ok = make_branded_card(logo_full, intro_path, duration=2, logo_raw_path=os.path.join(tmp, 'logo_raw.png'))
-        outro_ok = make_branded_card(logo_full, outro_path, duration=2, logo_raw_path=os.path.join(tmp, 'logo_raw.png'))
+        intro_ok = make_branded_card(logo_video, intro_path, duration=2, logo_raw_path=logo_raw_path)
+        outro_ok = make_branded_card(logo_video, outro_path, duration=2, logo_raw_path=logo_raw_path)
 
         # 5) Render main video with watermark + PiP images
         print(f'   🎬 Starting FFmpeg render — {len(image_overlays)} image(s), {src_dur:.0f}s video…', flush=True)
@@ -561,8 +567,10 @@ def main():
             'ffmpeg', '-y', '-f', 'concat', '-safe', '0',
             '-i', concat_file,
             '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20',
+            '-r', str(FPS),
             '-c:a', 'aac', '-b:a', '192k', '-ar', '48000', '-ac', '2',
             '-movflags', '+faststart', '-pix_fmt', 'yuv420p',
+            '-shortest',
             out
         ], capture_output=True, text=True)
         if rc.returncode != 0:
