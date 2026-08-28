@@ -432,13 +432,16 @@ def render_video(src_path, image_overlays, out_path, watermark_png=None, banner_
         cur = f"[sw{i}]"
 
     # Watermark then banner (topmost) overlays
+    # Track next input index explicitly (inputs list has pairs: ["-loop","1","-i","path",...])
+    # Source = 0, images = 1..n, watermark = wm_idx, banner = next
+    next_idx = 1 + n  # after source(0) + n images
     if wm_idx is not None:
         fc_parts.append(f"{cur}[{wm_idx}:v]overlay=0:0[wm_out]")
         cur = "[wm_out]"
-    bn_idx = None
+        next_idx += 1
     if banner_png:
+        bn_idx = next_idx
         inputs += ["-loop", "1", "-i", banner_png]
-        bn_idx = len(inputs) // 2 - 1
         fc_parts.append(f"{cur}[{bn_idx}:v]overlay=0:0[vout]")
         cur = "[vout]"
     if cur != "[vout]":
