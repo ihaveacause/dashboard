@@ -42,8 +42,8 @@ PIP_Y  = (H - PIP_H) // 2
 
 # Logo (Sprint 18)
 LOGO_GCS_PATH      = "ihaveacause_logo.png"
-LOGO_SIZE_VIDEO    = 60       # watermark on video frames
-LOGO_OPACITY_VIDEO = 179      # 70% opacity (179/255)
+LOGO_SIZE_VIDEO    = 100      # watermark — visible on 1280x720
+LOGO_OPACITY_VIDEO = 204      # 80% opacity (204/255)
 LOGO_MARGIN        = 20
 
 # Audio/Video enhancements (Sprint 18)
@@ -51,7 +51,7 @@ LOGO_MARGIN        = 20
 IMG_W   = 960   # image panel width (75% of 1280)
 STRIP_W = 320   # your video strip width (25% of 1280)
 
-AUDIO_FILTERS = "dynaudnorm=f=150:g=15"
+AUDIO_FILTERS = ""  # no audio filter — preserve original audio timing exactly
 VIDEO_ENHANCE = "eq=brightness=0.05:contrast=1.1"
 
 # ── Supabase ──────────────────────────────────────────────────
@@ -201,73 +201,51 @@ def make_watermark_png(logo_im, out_path):
 
 # ── FFmpeg render ─────────────────────────────────────────────
 
-def make_branded_card(logo_im, out_path, duration=2):
+def make_branded_card(logo_im, out_path, duration=2, logo_raw_path=None):
     """
-    Create a 2-second branded intro/outro card.
-    Dark background + centered logo + I Have a Cause text.
+    Intro/outro card: logo image fills full 1280x720 frame.
+    Falls back to dark card if logo_raw_path not available.
     """
-    from PIL import ImageDraw, ImageFont
-    C_BG     = (6, 7, 10)
-    C_ACCENT = (90, 220, 168)
-    C_TEXT   = (238, 241, 247)
-
-    img  = Image.new('RGB', (W, H), C_BG)
-    draw = ImageDraw.Draw(img)
-
-    # Accent lines top + bottom
-    draw.rectangle([0, 0, W, 4], fill=C_ACCENT)
-    draw.rectangle([0, H-4, W, H], fill=C_ACCENT)
-
-    # Logo centered
-    if logo_im is not None:
-        logo_size = 160
-        logo = logo_im.resize((logo_size, logo_size), Image.LANCZOS)
-        lx = (W - logo_size) // 2
-        ly = (H - logo_size) // 2 - 50
-        img.paste(logo, (lx, ly), logo)
-
-    # Fonts
-    try:
-        f_lg = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 52)
-        f_ta = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 28)
-    except Exception:
-        f_lg = f_ta = ImageFont.load_default()
-
-    # "I Have a Cause"
-    text = "I Have a Cause"
-    try:
-        tw = draw.textlength(text, font=f_lg)
-    except Exception:
-        tw = len(text) * 30
-    draw.text(((W - tw) // 2, H // 2 + 50), text, font=f_lg, fill=C_ACCENT)
-
-    # Tamil tagline
-    tag = "\u0b92\u0bb0\u0bc1 \u0b95\u0bbe\u0bb0\u0ba3\u0bae\u0bcd \u0b87\u0bb0\u0bc1\u0b95\u0bcd\u0b95\u0bbf\u0bb1\u0ba4\u0bc1"
-    try:
-        tw2 = draw.textlength(tag, font=f_ta)
-        draw.text(((W - tw2) // 2, H // 2 + 118), tag, font=f_ta, fill=C_TEXT)
-    except Exception:
-        pass
-
     card_jpg = out_path.replace('.mp4', '_card.jpg')
-    img.save(card_jpg, 'JPEG', quality=95)
+
+    # Try full-screen logo first
+    if logo_raw_path and os.path.exists(logo_raw_path):
+        try:
+            logo_full = Image.open(logo_raw_path).convert('RGB')
+            logo_full = logo_full.resize((W, H), Image.LANCZOS)
+            logo_full.save(card_jpg, 'JPEG', quality=95)
+            print(f"   ✅ Full-screen logo card: {logo_full.size}", flush=True)
+        except Exception as e:
+            print(f"   ⚠️  Full-screen failed: {e} — using dark card", flush=True)
+            logo_raw_path = None
+
+    # Fallback: dark card with centered logo
+    if not logo_raw_path or not os.path.exists(card_jpg):
+        from PIL import ImageDraw
+        img = Image.new('RGB', (W, H), (6, 7, 10))
+        draw = ImageDraw.Draw(img)
+        draw.rectangle([0, 0, W, 4], fill=(90, 220, 168))
+        draw.rectangle([0, H-4, W, H], fill=(90, 220, 168))
+        if logo_im is not None:
+            logo_size = 200
+            logo = logo_im.resize((logo_size, logo_size), Image.LANCZOS)
+            img.paste(logo, ((W-logo_size)//2, (H-logo_size)//2), logo)
+        img.save(card_jpg, 'JPEG', quality=95)
 
     r = subprocess.run([
         "ffmpeg", "-y", "-loop", "1", "-i", card_jpg,
         "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=48000",
         "-t", str(duration),
         "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
-        "-c:a", "aac", "-b:a", "192k", "-pix_fmt", "yuv420p",
-        out_path
+        "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2",
+        "-pix_fmt", "yuv420p", out_path
     ], capture_output=True, text=True)
     if r.returncode != 0:
-        print(f"   ⚠️  Branded card failed: {r.stderr[-300:]}", flush=True)
+        print(f"   ⚠️  Card failed: {r.stderr[-200:]}", flush=True)
         return None
-    print(f"   ✅ Branded card: {duration}s clip created", flush=True)
+    print(f"   ✅ Branded card: {duration}s", flush=True)
     return out_path
-
-
-def render_video(src_path, image_overlays, out_path, watermark_png=None):
+def render_video(src_path, image_overlays, out_path, watermark_png=None, banner_png=None):
     """
     75/25 split layout:
     - No images → your video full screen
@@ -287,14 +265,38 @@ def render_video(src_path, image_overlays, out_path, watermark_png=None):
     # ── No images — simple passthrough ────────────────────────
     if not image_overlays and watermark_png is None:
         print("   ℹ️  No images — passthrough render", flush=True)
-        cmd = [
-            "ffmpeg", "-y", "-i", src_path,
-            "-vf", base_vf, "-af", audio_filter,
-            "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
-            "-c:a", "aac", "-b:a", "192k",
-            "-movflags", "+faststart", "-pix_fmt", "yuv420p",
-            out_path
-        ]
+        # Add watermark + banner overlays if present
+        if watermark_png or banner_png:
+            extra_inputs = []
+            fc_parts_pt  = [f"[0:v]{base_vf}[base]"]
+            cur_pt = "[base]"
+            idx_pt = 1
+            if watermark_png:
+                extra_inputs += ["-loop", "1", "-i", watermark_png]
+                fc_parts_pt.append(f"[cur_pt][{idx_pt}:v]overlay=0:0[wm_pt]".replace("cur_pt", cur_pt))
+                cur_pt = "[wm_pt]"; idx_pt += 1
+            if banner_png:
+                extra_inputs += ["-loop", "1", "-i", banner_png]
+                fc_parts_pt.append(f"[cur_pt][{idx_pt}:v]overlay=0:0[vout_pt]".replace("cur_pt", cur_pt))
+                cur_pt = "[vout_pt]"
+            cmd = (
+                ["ffmpeg", "-y", "-i", src_path] + extra_inputs +
+                ["-filter_complex", ";".join(fc_parts_pt),
+                 "-map", cur_pt, "-map", "0:a",
+                 "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+                 "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2",
+                 "-movflags", "+faststart", "-pix_fmt", "yuv420p", "-shortest",
+                 out_path]
+            )
+        else:
+            cmd = [
+                "ffmpeg", "-y", "-i", src_path,
+                "-vf", base_vf,
+                "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+                "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2",
+                "-movflags", "+faststart", "-pix_fmt", "yuv420p",
+                out_path
+            ]
         r = subprocess.run(cmd, capture_output=True, text=True)
         if r.returncode != 0:
             print(f"   ❌ FFmpeg failed:\n{r.stderr[-2000:]}", flush=True)
@@ -311,9 +313,8 @@ def render_video(src_path, image_overlays, out_path, watermark_png=None):
             "-filter_complex",
             f"[0:v]{base_vf}[base];[base][1:v]overlay=0:0[vout]",
             "-map", "[vout]", "-map", "0:a",
-            "-af", audio_filter,
             "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
-            "-c:a", "aac", "-b:a", "192k",
+            "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2",
             "-movflags", "+faststart", "-pix_fmt", "yuv420p", "-shortest",
             out_path
         ]
@@ -383,10 +384,17 @@ def render_video(src_path, image_overlays, out_path, watermark_png=None):
         )
         cur = f"[sw{i}]"
 
-    # Watermark on top
+    # Watermark then banner (topmost) overlays
     if wm_idx is not None:
-        fc_parts.append(f"{cur}[{wm_idx}:v]overlay=0:0[vout]")
-    else:
+        fc_parts.append(f"{cur}[{wm_idx}:v]overlay=0:0[wm_out]")
+        cur = "[wm_out]"
+    bn_idx = None
+    if banner_png:
+        inputs += ["-loop", "1", "-i", banner_png]
+        bn_idx = len(inputs) // 2 - 1
+        fc_parts.append(f"{cur}[{bn_idx}:v]overlay=0:0[vout]")
+        cur = "[vout]"
+    if cur != "[vout]":
         fc_parts.append(f"{cur}format=yuv420p[vout]")
 
     fc = ";".join(p.rstrip(";") for p in fc_parts)
@@ -395,9 +403,8 @@ def render_video(src_path, image_overlays, out_path, watermark_png=None):
         ["ffmpeg", "-y"] + inputs +
         ["-filter_complex", fc,
          "-map", "[vout]", "-map", "0:a",
-         "-af", audio_filter,
          "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
-         "-c:a", "aac", "-b:a", "192k",
+         "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2",
          "-movflags", "+faststart", "-pix_fmt", "yuv420p", "-shortest",
          out_path]
     )
@@ -436,14 +443,18 @@ def main():
         print(f"   ⏱  Duration: {src_dur:.1f}s", flush=True)
         print(f"   📐 Estimated render time: {src_dur/60*3:.0f}-{src_dur/60*4:.0f} mins on GitHub Actions", flush=True)
 
-        # 2) Logo watermark (Sprint 18)
+        # 2) Logo watermark + slim banner
         print("\n🎨 Loading logo…", flush=True)
         logo_video    = load_logo(tmp, LOGO_SIZE_VIDEO, opacity=LOGO_OPACITY_VIDEO)
         watermark_png = None
+        banner_png    = None
         if logo_video:
             wm = os.path.join(tmp, "watermark.png")
             make_watermark_png(logo_video, wm)
             watermark_png = wm
+            bn = os.path.join(tmp, "slim_banner.png")
+            make_slim_banner(logo_video, bn)
+            banner_png = bn
 
         # 3) Image overlays
         raw_overlays = row.get("image_overlays") or []
@@ -475,13 +486,13 @@ def main():
         logo_full = load_logo(tmp, 200, opacity=255)
         intro_path = os.path.join(tmp, 'intro.mp4')
         outro_path = os.path.join(tmp, 'outro.mp4')
-        intro_ok = make_branded_card(logo_full, intro_path, duration=2)
-        outro_ok = make_branded_card(logo_full, outro_path, duration=2)
+        intro_ok = make_branded_card(logo_full, intro_path, duration=2, logo_raw_path=os.path.join(tmp, 'logo_raw.png'))
+        outro_ok = make_branded_card(logo_full, outro_path, duration=2, logo_raw_path=os.path.join(tmp, 'logo_raw.png'))
 
         # 5) Render main video with watermark + PiP images
         print(f'   🎬 Starting FFmpeg render — {len(image_overlays)} image(s), {src_dur:.0f}s video…', flush=True)
         main_out = os.path.join(tmp, 'main.mp4')
-        ok = render_video(src, image_overlays, main_out, watermark_png=watermark_png)
+        ok = render_video(src, image_overlays, main_out, watermark_png=watermark_png, banner_png=banner_png)
         if not ok:
             db_patch(RECORD_ID, {'status': 'error'}); return
         print(f'   ✅ FFmpeg done: {os.path.getsize(main_out)/1024/1024:.1f}MB', flush=True)
@@ -500,7 +511,7 @@ def main():
             'ffmpeg', '-y', '-f', 'concat', '-safe', '0',
             '-i', concat_file,
             '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20',
-            '-c:a', 'aac', '-b:a', '192k',
+            '-c:a', 'aac', '-b:a', '192k', '-ar', '48000', '-ac', '2',
             '-movflags', '+faststart', '-pix_fmt', 'yuv420p',
             out
         ], capture_output=True, text=True)
